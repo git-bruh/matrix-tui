@@ -16,7 +16,8 @@ INCLUDES = -isystem third_party/termbox/src
 
 OBJ = \
 	src/buffer.o \
-	src/input.o
+	src/input.o \
+	src/main.o
 
 all: release
 

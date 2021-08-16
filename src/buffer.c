@@ -29,7 +29,7 @@ void buffer_free(struct buffer *buffer) {
 
 int buffer_add(struct buffer *buffer, uint32_t uc) {
 	if ((buffer->len + 1) >= buffer_max) {
-		return -1;
+		return BUFFER_FAIL;
 	}
 
 	/* Insertion in between, move everything forward by 1 char. */
@@ -42,17 +42,17 @@ int buffer_add(struct buffer *buffer, uint32_t uc) {
 	buffer->len++;
 	buffer->buf[buffer->cur++] = uc;
 
-	return 0;
+	return BUFFER_SUCCESS;
 }
 
 int buffer_left(struct buffer *buffer) {
 	if (buffer->cur > 0) {
 		buffer->cur--;
 
-		return 0;
+		return BUFFER_SUCCESS;
 	}
 
-	return -1;
+	return BUFFER_FAIL;
 }
 
 int buffer_left_word(struct buffer *buffer) {
@@ -63,20 +63,20 @@ int buffer_left_word(struct buffer *buffer) {
 		         ((iswspace((wint_t)buffer->buf[buffer->cur])) ||
 		          !(iswspace((wint_t)buffer->buf[buffer->cur - 1]))));
 
-		return 0;
+		return BUFFER_SUCCESS;
 	}
 
-	return -1;
+	return BUFFER_FAIL;
 }
 
 int buffer_right(struct buffer *buffer) {
 	if (buffer->cur < buffer->len) {
 		buffer->cur++;
 
-		return 0;
+		return BUFFER_SUCCESS;
 	}
 
-	return -1;
+	return BUFFER_FAIL;
 }
 
 int buffer_right_word(struct buffer *buffer) {
@@ -87,10 +87,10 @@ int buffer_right_word(struct buffer *buffer) {
 		         !((iswspace((wint_t)buffer->buf[buffer->cur])) &&
 		           !(iswspace((wint_t)buffer->buf[buffer->cur - 1]))));
 
-		return 0;
+		return BUFFER_SUCCESS;
 	}
 
-	return -1;
+	return BUFFER_FAIL;
 }
 
 int buffer_delete(struct buffer *buffer) {
@@ -103,17 +103,17 @@ int buffer_delete(struct buffer *buffer) {
 			buffer->buf[i] = buffer->buf[i + 1];
 		}
 
-		return 0;
+		return BUFFER_SUCCESS;
 	}
 
-	return -1;
+	return BUFFER_FAIL;
 }
 
 int buffer_delete_word(struct buffer *buffer) {
 	size_t original_cur = buffer->cur;
 
 	if ((buffer_left_word(buffer)) == -1) {
-		return -1;
+		return BUFFER_FAIL;
 	}
 
 	size_t new_cur = buffer->cur;
@@ -126,5 +126,5 @@ int buffer_delete_word(struct buffer *buffer) {
 		buffer_delete(buffer);
 	}
 
-	return 0;
+	return BUFFER_SUCCESS;
 }

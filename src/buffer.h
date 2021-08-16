@@ -8,10 +8,14 @@ struct buffer {
 	size_t cur, len;
 };
 
+enum {
+	BUFFER_FAIL = -1,
+	BUFFER_SUCCESS,
+};
+
 struct buffer *buffer_alloc(void);
 void buffer_free(struct buffer *buffer);
 
-/* These functions return 0 on success, -1 on failure. */
 int buffer_add(struct buffer *buffer, uint32_t uc);
 int buffer_left(struct buffer *buffer);
 int buffer_left_word(struct buffer *buffer);

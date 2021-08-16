@@ -1,19 +1,11 @@
-#include "buffer.h"
-#include "termbox.h"
+#include "input.h"
 #include <assert.h>
-#include <locale.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <wchar.h>
 
-struct input {
-	struct buffer *buffer;
-	int max_height;
-};
-
-static const int ch_width = 2;     /* Max width of a character. */
-static const int input_height = 5; /* Max height of the input window. */
+static const int ch_width = 2; /* Max width of a character. */
 
 static uint32_t uc_sanitize(uint32_t uc, int *width) {
 	int tmp_width = wcwidth((wchar_t)uc);
@@ -67,7 +59,32 @@ static int adjust_xy(int width, int *x, int *y) {
 	return *y - original_y;
 }
 
-static void input_redraw(struct input *input) {
+struct input *input_alloc(int input_height) {
+	struct input *input = (struct input *)calloc(1, sizeof(struct input));
+
+	if (!input) {
+		return NULL;
+	}
+
+	input->buffer = buffer_alloc();
+
+	if (!input->buffer) {
+		free(input);
+
+		return NULL;
+	}
+
+	input->max_height = input_height;
+
+	return input;
+}
+
+void input_free(struct input *input) {
+	buffer_free(input->buffer);
+	free(input);
+}
+
+void input_redraw(struct input *input) {
 	tb_clear_buffer();
 
 	int cur_x = 0, cur_y = 0, cur_line = 0, line_start = 0, line_end = 0;
@@ -161,124 +178,41 @@ static void input_redraw(struct input *input) {
 	}
 }
 
-/* Returns -1 if there is no need to redraw, 1 if ^C was pressed, 0 if a redraw
- * should be performed. */
-static int handle_ev(struct tb_event ev, struct input *input) {
-	if (!ev.key && ev.ch) {
-		return buffer_add(input->buffer, ev.ch);
+int input_event(struct tb_event event, struct input *input) {
+	if (!event.key && event.ch) {
+		return buffer_add(input->buffer, event.ch);
 	}
 
-	switch (ev.key) {
+	switch (event.key) {
 	case TB_KEY_SPACE:
 		return buffer_add(input->buffer, ' ');
 	case TB_KEY_ENTER:
-		if (ev.meta == TB_META_ALTCTRL) {
+		if (event.meta == TB_META_ALTCTRL) {
 			return buffer_add(input->buffer, '\n');
 		}
 
 		return -1;
 	case TB_KEY_BACKSPACE:
-		if (ev.meta == TB_META_ALT) {
+		if (event.meta == TB_META_ALT) {
 			return buffer_delete_word(input->buffer);
 		}
 
 		return buffer_delete(input->buffer);
 	case TB_KEY_ARROW_RIGHT:
-		if (ev.meta == TB_META_CTRL) {
+		if (event.meta == TB_META_CTRL) {
 			return buffer_right_word(input->buffer);
 		}
 
 		return buffer_right(input->buffer);
 	case TB_KEY_ARROW_LEFT:
-		if (ev.meta == TB_META_CTRL) {
+		if (event.meta == TB_META_CTRL) {
 			return buffer_left_word(input->buffer);
 		}
 
 		return buffer_left(input->buffer);
 	case TB_KEY_CTRL_C:
-		return 1;
+		return INPUT_GOT_SHUTDOWN;
 	default:
-		return -1;
+		return INPUT_NOOP;
 	}
-}
-
-static struct input *input_alloc(void) {
-	struct input *input = (struct input *)calloc(1, sizeof(struct input));
-
-	if (!input) {
-		return NULL;
-	}
-
-	input->buffer = buffer_alloc();
-
-	if (!input->buffer) {
-		free(input);
-
-		return NULL;
-	}
-
-	input->max_height = input_height;
-
-	return input;
-}
-
-static void input_free(struct input *input) {
-	buffer_free(input->buffer);
-	free(input);
-}
-
-int main() {
-	setlocale(LC_ALL, "");
-
-	{
-		int ret = 0;
-
-		if ((ret = tb_init()) < 0) {
-			fprintf(stderr, "tb_init() failed: %d\n", ret);
-			return EXIT_FAILURE;
-		}
-	}
-
-	tb_clear_screen();
-
-	struct tb_event ev = {0};
-
-	struct input *input = input_alloc();
-
-	if (!input) {
-		tb_shutdown();
-		return EXIT_FAILURE;
-	}
-
-	tb_set_cursor(0, tb_height() - 1);
-	tb_render();
-
-	while ((tb_poll_event(&ev)) != -1) {
-		switch (ev.type) {
-		case TB_EVENT_KEY:
-			switch ((handle_ev(ev, input))) {
-			case 1:
-				tb_shutdown();
-				input_free(input);
-				return EXIT_SUCCESS;
-			case 0:
-				input_redraw(input);
-				tb_render();
-				break;
-			case -1:
-			default:
-				break;
-			}
-			break;
-		case TB_EVENT_RESIZE:
-			input_redraw(input);
-			tb_render();
-			break;
-		default:
-			break;
-		}
-	}
-
-	tb_shutdown();
-	input_free(input);
 }
