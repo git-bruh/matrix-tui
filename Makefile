@@ -1,36 +1,47 @@
+.POSIX:
+
+.PHONY: third_party format tidy clean
+
+include common.mk
+
 BIN = client
 
-XCFLAGS = $(CFLAGS) -O3 -std=c99 -g -fstack-protector-strong \
-		  --param=ssp-buffer-size=4 -D_FORTIFY_SOURCE=2 -DNAME=\"$(BIN)\" \
-		  -Wall -Wextra -Werror -Wpedantic -Wcast-qual -Wconversion \
-		  -Wc++-compat -Wshadow -Wnull-dereference -Wpointer-arith -Wunused-macros \
-		  -Wredundant-decls -Wformat=2 \
-		  -D_XOPEN_SOURCE
+XCFLAGS = \
+	$(CFLAGS_COMMON) -Wcast-qual -Wconversion -Wc++-compat -Wpointer-arith \
+	-Wunused-macros -Wredundant-decls
 
 LDLIBS = # -llmdb `pkg-config --libs libcurl`
 
+INCLUDES = -isystem third_party/termbox/src
+
 OBJ = \
 	src/buffer.o \
-	src/input.o \
-	third_party/termbox/src/termbox.o \
-	third_party/termbox/src/utf8.o
+	src/input.o
 
-all: $(BIN)
+all: release
 
-%.o: %.c
-	$(CC) $(XCFLAGS) -isystem third_party -c -o $@ $<
+.c.o:
+	$(CC) $(XCFLAGS) $(INCLUDES) -c $< -o $@
 
-third_party/%.o: third_party/%.c
-	$(CC) $(XCFLAGS) -w -c -o $@ $<
+# Makefile pattern matching isn't portable so we must use this hack :(
+third_party:
+	$(MAKE) -f third_party.mk
 
-$(BIN): $(OBJ)
-	$(CC) $(XCFLAGS) -o $@ $(OBJ) $(LDLIBS) $(LDFLAGS)
+$(BIN): $(OBJ) third_party
+	$(CC) $(XCFLAGS) -o $@ $(OBJ) $(THIRD_PARTY_OBJ) $(LDLIBS) $(LDFLAGS)
+
+release:
+	$(MAKE) $(BIN) CFLAGS="$(CFLAGS) -DNDEBUG"
+
+sanitize:
+	$(MAKE) $(BIN) CFLAGS="$(CFLAGS) -fsanitize=address,undefined"
 
 format:
 	clang-format -i src/*.c
 
-sanitize:
-	$(MAKE) CFLAGS="$(CFLAGS) -fsanitize=address,undefined"
+tidy:
+	clang-tidy src/*.c -- $(XCFLAGS) $(INCLUDES)
 
 clean:
 	rm -f $(BIN) $(OBJ)
+	$(MAKE) -f third_party.mk clean

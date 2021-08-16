@@ -120,6 +120,8 @@ int buffer_delete_word(struct buffer *buffer) {
 
 	buffer->cur = original_cur;
 
+	/* Maybe just realloc the array instead of iterating over the whole array
+	 * multiple times. */
 	for (size_t i = original_cur; i > new_cur; i--) {
 		buffer_delete(buffer);
 	}

@@ -1,5 +1,5 @@
 #include "buffer.h"
-#include "termbox/src/termbox.h"
+#include "termbox.h"
 #include <assert.h>
 #include <locale.h>
 #include <stdbool.h>
@@ -161,6 +161,8 @@ static void input_redraw(struct input *input) {
 	}
 }
 
+/* Returns -1 if there is no need to redraw, 1 if ^C was pressed, 0 if a redraw
+ * should be performed. */
 static int handle_ev(struct tb_event ev, struct input *input) {
 	if (!ev.key && ev.ch) {
 		return buffer_add(input->buffer, ev.ch);
@@ -264,7 +266,6 @@ int main() {
 				tb_render();
 				break;
 			case -1:
-				break;
 			default:
 				break;
 			}
