@@ -1,3 +1,6 @@
+/* SPDX-FileCopyrightText: 2021 git-bruh
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
 #include "input.h"
 #include <assert.h>
 #include <stdbool.h>

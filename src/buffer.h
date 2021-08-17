@@ -1,3 +1,6 @@
+/* SPDX-FileCopyrightText: 2021 git-bruh
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
 #ifndef BUFFER_H
 #define BUFFER_H
 #include <stdint.h>
