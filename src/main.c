@@ -3,54 +3,33 @@
 
 #include "input.h"
 #include <assert.h>
+#include <errno.h>
 #include <langinfo.h>
 #include <locale.h>
+#include <poll.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+
+#ifndef INFTIM
+#define INFTIM (-1)
+#endif
 
 static const int input_height = 5;
 
-int main() {
-	if (!(setlocale(LC_ALL, "")) ||
-	    (strcmp("UTF-8", nl_langinfo(CODESET))) != 0) {
-		return EXIT_FAILURE;
-	}
+enum { FD_INPUT, NUM_FDS };
 
-	switch (tb_init()) {
-	case TB_EUNSUPPORTED_TERMINAL:
-	case TB_EFAILED_TO_OPEN_TTY:
-	case TB_EPIPE_TRAP_ERROR:
-		return EXIT_FAILURE;
-	case 0:
-		break;
-	default:
-		assert(0);
-	}
-
+int peek_input(struct input *input) {
 	struct tb_event event = {0};
 
-	struct input *input = input_alloc(input_height);
-
-	if (!input) {
-		tb_shutdown();
-		return EXIT_FAILURE;
-	}
-
-	/* Set initial cursor. */
-	tb_set_cursor(0, tb_height() - 1);
-	tb_render();
-
-	while ((tb_poll_event(&event)) != -1) {
+	if ((tb_peek_event(&event, 0)) != -1) {
 		switch (event.type) {
 		case TB_EVENT_KEY:
 			switch ((input_event(event, input))) {
 			case INPUT_NOOP:
 				break;
 			case INPUT_GOT_SHUTDOWN:
-				tb_shutdown();
-				input_free(input);
-
-				return EXIT_SUCCESS;
+				return -1;
 			case INPUT_NEED_REDRAW:
 				input_redraw(input);
 				tb_render();
@@ -71,8 +50,57 @@ int main() {
 		}
 	}
 
-	tb_shutdown();
-	input_free(input);
+	return 0;
+}
 
-	return EXIT_SUCCESS;
+int main() {
+	if (!(setlocale(LC_ALL, "")) ||
+	    (strcmp("UTF-8", nl_langinfo(CODESET))) != 0) {
+		return EXIT_FAILURE;
+	}
+
+	switch ((tb_init())) {
+	case TB_EUNSUPPORTED_TERMINAL:
+	case TB_EFAILED_TO_OPEN_TTY:
+	case TB_EPIPE_TRAP_ERROR:
+		return EXIT_FAILURE;
+	case 0:
+		break;
+	default:
+		assert(0);
+	}
+
+	struct input *input = input_alloc(input_height);
+
+	if (!input) {
+		tb_shutdown();
+		return EXIT_FAILURE;
+	}
+
+	/* Set initial cursor. */
+	tb_set_cursor(0, tb_height() - 1);
+	tb_render();
+
+	struct pollfd fds[NUM_FDS] = {0};
+
+	fds[FD_INPUT].fd = STDIN_FILENO;
+	fds[FD_INPUT].events = POLLIN;
+
+	for (;;) {
+		if ((poll(fds, NUM_FDS, INFTIM)) != -1) {
+			if (fds[FD_INPUT].revents & POLLIN) {
+				if ((peek_input(input)) == -1) {
+					tb_shutdown();
+					input_free(input);
+
+					return EXIT_SUCCESS;
+				}
+			}
+		} else if (errno != EAGAIN) {
+			tb_shutdown();
+			input_free(input);
+
+			return EXIT_FAILURE;
+		}
+	}
 }
