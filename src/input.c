@@ -194,7 +194,7 @@ int input_event(struct tb_event event, struct input *input) {
 			return buffer_add(input->buffer, '\n');
 		}
 
-		return -1;
+		return INPUT_NOOP;
 	case TB_KEY_BACKSPACE:
 		if (event.meta == TB_META_ALT) {
 			return buffer_delete_word(input->buffer);

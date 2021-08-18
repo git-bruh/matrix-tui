@@ -59,9 +59,13 @@ int main() {
 			default:
 				assert(0);
 			}
+
+			break;
 		case TB_EVENT_RESIZE:
 			input_redraw(input);
 			tb_render();
+
+			break;
 		default:
 			break;
 		}
