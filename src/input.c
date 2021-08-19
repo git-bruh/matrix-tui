@@ -10,6 +10,11 @@
 
 static const int ch_width = 2; /* Max width of a character. */
 
+struct input {
+	struct buffer *buffer;
+	int max_height;
+};
+
 static uint32_t uc_sanitize(uint32_t uc, int *width) {
 	int tmp_width = wcwidth((wchar_t)uc);
 

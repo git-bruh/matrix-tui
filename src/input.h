@@ -6,10 +6,7 @@
 #include "buffer.h"
 #include "termbox.h"
 
-struct input {
-	struct buffer *buffer;
-	int max_height;
-};
+struct input;
 
 enum {
 	INPUT_GOT_SHUTDOWN = -2,
