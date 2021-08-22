@@ -10,14 +10,15 @@ XCFLAGS = \
 	$(CFLAGS_COMMON) -Wcast-qual -Wconversion -Wc++-compat -Wpointer-arith \
 	-Wunused-macros -Wredundant-decls
 
-LDLIBS = # -llmdb `pkg-config --libs libcurl`
+LDLIBS = `curl-config --libs`
 
-INCLUDES = -isystem third_party/termbox/src
+INCLUDES = -I libmatrix_src -isystem third_party/termbox/src
 
 OBJ = \
 	src/buffer.o \
 	src/input.o \
-	src/main.o
+	src/main.o \
+	libmatrix_src/matrix.o
 
 all: release
 
@@ -38,10 +39,10 @@ sanitize:
 	$(MAKE) $(BIN) CFLAGS="$(CFLAGS) -fsanitize=address,undefined"
 
 format:
-	clang-format -i src/*.c
+	clang-format -i ./*src/*.c ./*src/*.h
 
 tidy:
-	clang-tidy src/*.c -- $(XCFLAGS) $(INCLUDES)
+	clang-tidy ./*src/*.c ./*src/*.h -- $(XCFLAGS) $(INCLUDES)
 
 clean:
 	rm -f $(BIN) $(OBJ)

@@ -2,24 +2,27 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "input.h"
+#include "matrix.h"
 #include <assert.h>
-#include <errno.h>
 #include <langinfo.h>
 #include <locale.h>
-#include <poll.h>
+#include <signal.h>
+#include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-#ifndef INFTIM
-#define INFTIM (-1)
-#endif
-
 static const int input_height = 5;
+
+/* We catch SIGWINCH and set this variable as termbox's generates
+ * TB_EVENT_RESIZE only on the next input peek after getting SIGWINCH. This is
+ * not feasible in our case since we poll stdin ourselves. */
+static volatile sig_atomic_t resize = false;
 
 enum { FD_INPUT, NUM_FDS };
 
-int peek_input(struct input *input) {
+static int peek_input(struct input *input) {
 	struct tb_event event = {0};
 
 	if ((tb_peek_event(&event, 0)) != -1) {
@@ -41,6 +44,8 @@ int peek_input(struct input *input) {
 
 			break;
 		case TB_EVENT_RESIZE:
+			fprintf(stderr, "Got resiz\n");
+
 			input_redraw(input);
 			tb_render();
 
@@ -53,9 +58,19 @@ int peek_input(struct input *input) {
 	return 0;
 }
 
+static void handle_signal(int sig) {
+	(void)sig;
+
+	resize = true;
+}
+
 int main() {
 	if (!(setlocale(LC_ALL, "")) ||
 	    (strcmp("UTF-8", nl_langinfo(CODESET))) != 0) {
+		return EXIT_FAILURE;
+	}
+
+	if ((curl_global_init(CURL_GLOBAL_ALL)) != CURLE_OK) {
 		return EXIT_FAILURE;
 	}
 
@@ -70,6 +85,11 @@ int main() {
 		assert(0);
 	}
 
+	struct sigaction action = {0};
+
+	action.sa_handler = &handle_signal;
+	sigaction(SIGWINCH, &action, NULL);
+
 	struct input *input = input_alloc(input_height);
 
 	if (!input) {
@@ -81,26 +101,46 @@ int main() {
 	tb_set_cursor(0, tb_height() - 1);
 	tb_render();
 
-	struct pollfd fds[NUM_FDS] = {0};
+	struct curl_waitfd fds[NUM_FDS] = {0};
 
 	fds[FD_INPUT].fd = STDIN_FILENO;
-	fds[FD_INPUT].events = POLLIN;
+	fds[FD_INPUT].events = CURL_WAIT_POLLIN;
+
+	struct matrix_callbacks callbacks = {0};
+	struct matrix *matrix = matrix_alloc(callbacks);
+
+	matrix_perform(matrix);
 
 	for (;;) {
-		if ((poll(fds, NUM_FDS, INFTIM)) != -1) {
-			if (fds[FD_INPUT].revents & POLLIN) {
-				if ((peek_input(input)) == -1) {
-					tb_shutdown();
-					input_free(input);
+		int nfds = matrix_poll(matrix, fds, NUM_FDS, 1000);
 
-					return EXIT_SUCCESS;
-				}
+		if (resize) {
+			resize = false;
+
+			tb_resize();
+
+			input_redraw(input);
+			tb_render();
+		}
+
+		if ((nfds > 0 && (fds[FD_INPUT].revents & CURL_WAIT_POLLIN))) {
+			if ((peek_input(input)) == -1) {
+				tb_shutdown();
+
+				input_free(input);
+				matrix_destroy(matrix);
+
+				curl_global_cleanup();
+
+				return EXIT_SUCCESS;
 			}
-		} else if (errno != EAGAIN) {
-			tb_shutdown();
-			input_free(input);
 
-			return EXIT_FAILURE;
+			nfds--;
+		}
+
+		/* Any remaining fds belong to curl. */
+		if (nfds > 0) {
+			matrix_perform(matrix);
 		}
 	}
 }

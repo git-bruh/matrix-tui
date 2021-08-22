@@ -9,13 +9,13 @@
 static const size_t buffer_max = 2000;
 
 struct buffer *buffer_alloc(void) {
-	struct buffer *buffer = (struct buffer *)calloc(1, sizeof(struct buffer));
+	struct buffer *buffer = (struct buffer *)calloc(1, sizeof(*buffer));
 
 	if (!buffer) {
 		return NULL;
 	}
 
-	buffer->buf = (uint32_t *)calloc(buffer_max, sizeof(uint32_t));
+	buffer->buf = (uint32_t *)calloc(buffer_max, sizeof(*buffer->buf));
 
 	if (!buffer->buf) {
 		free(buffer);

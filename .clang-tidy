@@ -1,3 +1,3 @@
 ---
-Checks:          'clang-diagnostic-*,clang-analyzer-*,*,-readability-isolate-declaration,-llvmlibc-restrict-system-libc-headers'
+Checks:          'clang-diagnostic-*,clang-analyzer-*,*,-readability-isolate-declaration,-llvmlibc-restrict-system-libc-headers,-hicpp-signed-bitwise,-llvm-header-guard,-clang-diagnostic-unused-macros,-altera-struct-pack-align'
 ...

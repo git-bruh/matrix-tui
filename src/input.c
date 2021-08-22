@@ -68,7 +68,7 @@ static int adjust_xy(int width, int *x, int *y) {
 }
 
 struct input *input_alloc(int input_height) {
-	struct input *input = (struct input *)calloc(1, sizeof(struct input));
+	struct input *input = (struct input *)calloc(1, sizeof(*input));
 
 	if (!input) {
 		return NULL;
