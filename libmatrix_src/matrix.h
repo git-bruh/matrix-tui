@@ -12,7 +12,7 @@ struct matrix_callbacks {
 	void *ptr;
 };
 
-struct matrix *matrix_alloc(struct matrix_callbacks callbacks);
+struct matrix *matrix_create(struct matrix_callbacks callbacks);
 void matrix_destroy(struct matrix *matrix);
 int matrix_poll(struct matrix *matrix, struct curl_waitfd extra_fds[],
                 unsigned int extra_nfds, int timeout_ms);

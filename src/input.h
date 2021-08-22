@@ -14,8 +14,8 @@ enum {
 	INPUT_NEED_REDRAW,
 };
 
-struct input *input_alloc(int input_height);
-void input_free(struct input *input);
+struct input *input_create(int input_height);
+void input_destroy(struct input *input);
 
 void input_redraw(struct input *input);
 int input_event(struct tb_event event, struct input *input);

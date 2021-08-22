@@ -8,7 +8,7 @@
 
 static const size_t buffer_max = 2000;
 
-struct buffer *buffer_alloc(void) {
+struct buffer *buffer_create(void) {
 	struct buffer *buffer = (struct buffer *)calloc(1, sizeof(*buffer));
 
 	if (!buffer) {
@@ -25,7 +25,7 @@ struct buffer *buffer_alloc(void) {
 	return buffer;
 }
 
-void buffer_free(struct buffer *buffer) {
+void buffer_destroy(struct buffer *buffer) {
 	free(buffer->buf);
 	free(buffer);
 }

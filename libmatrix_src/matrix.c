@@ -16,7 +16,7 @@ static size_t writemem(void *c, size_t s, size_t n, void *up) {
 	return s * n;
 }
 
-struct matrix *matrix_alloc(struct matrix_callbacks callbacks) {
+struct matrix *matrix_create(struct matrix_callbacks callbacks) {
 	struct matrix *matrix = (struct matrix *)calloc(1, sizeof(*matrix));
 
 	if (!matrix) {

@@ -90,7 +90,7 @@ int main() {
 	action.sa_handler = &handle_signal;
 	sigaction(SIGWINCH, &action, NULL);
 
-	struct input *input = input_alloc(input_height);
+	struct input *input = input_create(input_height);
 
 	if (!input) {
 		tb_shutdown();
@@ -107,7 +107,7 @@ int main() {
 	fds[FD_INPUT].events = CURL_WAIT_POLLIN;
 
 	struct matrix_callbacks callbacks = {0};
-	struct matrix *matrix = matrix_alloc(callbacks);
+	struct matrix *matrix = matrix_create(callbacks);
 
 	matrix_perform(matrix);
 
@@ -127,7 +127,7 @@ int main() {
 			if ((peek_input(input)) == -1) {
 				tb_shutdown();
 
-				input_free(input);
+				input_destroy(input);
 				matrix_destroy(matrix);
 
 				curl_global_cleanup();

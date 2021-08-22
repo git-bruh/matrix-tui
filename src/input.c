@@ -67,14 +67,14 @@ static int adjust_xy(int width, int *x, int *y) {
 	return *y - original_y;
 }
 
-struct input *input_alloc(int input_height) {
+struct input *input_create(int input_height) {
 	struct input *input = (struct input *)calloc(1, sizeof(*input));
 
 	if (!input) {
 		return NULL;
 	}
 
-	input->buffer = buffer_alloc();
+	input->buffer = buffer_create();
 
 	if (!input->buffer) {
 		free(input);
@@ -87,8 +87,8 @@ struct input *input_alloc(int input_height) {
 	return input;
 }
 
-void input_free(struct input *input) {
-	buffer_free(input->buffer);
+void input_destroy(struct input *input) {
+	buffer_destroy(input->buffer);
 	free(input);
 }
 
