@@ -2,13 +2,10 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later */
 
 #include "matrix.h"
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-struct matrix {
-	CURL *easy;
-	CURLM *multi;
-};
+#include <string.h>
 
 static size_t writemem(void *c, size_t s, size_t n, void *up) {
 	// fprintf(stderr, "%.*s\n", s * n, c);
@@ -16,22 +13,14 @@ static size_t writemem(void *c, size_t s, size_t n, void *up) {
 	return s * n;
 }
 
-struct matrix *matrix_create(struct matrix_callbacks callbacks) {
-	struct matrix *matrix = (struct matrix *)calloc(1, sizeof(*matrix));
-
-	if (!matrix) {
-		return NULL;
-	}
-
+int matrix_init(struct matrix *matrix, struct matrix_callbacks callbacks) {
 	if (!(matrix->easy = curl_easy_init()) ||
 	    !(matrix->multi = curl_multi_init())) {
 		if (matrix->easy) {
 			curl_easy_cleanup(matrix->easy);
 		}
 
-		free(matrix);
-
-		return NULL;
+		return -1;
 	}
 
 	curl_easy_setopt(matrix->easy, CURLOPT_URL, "https://duckduckgo.com");
@@ -40,16 +29,20 @@ struct matrix *matrix_create(struct matrix_callbacks callbacks) {
 
 	curl_multi_add_handle(matrix->multi, matrix->easy);
 
-	return matrix;
+	return 0;
 }
 
-void matrix_destroy(struct matrix *matrix) {
-	curl_multi_remove_handle(matrix->multi, matrix->easy);
+void matrix_finish(struct matrix *matrix) {
+	if (matrix->multi) {
+		curl_multi_remove_handle(matrix->multi, matrix->easy);
+		curl_multi_cleanup(matrix->multi);
+	}
 
-	curl_easy_cleanup(matrix->easy);
-	curl_multi_cleanup(matrix->multi);
+	if (matrix->easy) {
+		curl_easy_cleanup(matrix->easy);
+	}
 
-	free(matrix);
+	memset(matrix, 0, sizeof(*matrix));
 }
 
 /* This is just for testing, will be replaced by a proper API like multi_socket

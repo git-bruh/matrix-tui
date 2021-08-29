@@ -2,32 +2,26 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "buffer.h"
+#include <assert.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 #include <wctype.h>
 
 static const size_t buffer_max = 2000;
 
-struct buffer *buffer_create(void) {
-	struct buffer *buffer = (struct buffer *)calloc(1, sizeof(*buffer));
-
-	if (!buffer) {
-		return NULL;
+int buffer_init(struct buffer *buffer) {
+	if (!(buffer->buf = calloc(buffer_max, sizeof(*buffer->buf)))) {
+		return -1;
 	}
 
-	buffer->buf = (uint32_t *)calloc(buffer_max, sizeof(*buffer->buf));
-
-	if (!buffer->buf) {
-		free(buffer);
-		return NULL;
-	}
-
-	return buffer;
+	return 0;
 }
 
-void buffer_destroy(struct buffer *buffer) {
+void buffer_finish(struct buffer *buffer) {
 	free(buffer->buf);
-	free(buffer);
+
+	memset(buffer, 0, sizeof(*buffer));
 }
 
 int buffer_add(struct buffer *buffer, uint32_t uc) {

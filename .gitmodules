@@ -1,3 +1,9 @@
 [submodule "third_party/termbox"]
 	path = third_party/termbox
 	url = https://github.com/tomas/termbox
+[submodule "third_party/cJSON"]
+	path = third_party/cJSON
+	url = https://github.com/DaveGamble/cJSON
+[submodule "third_party/stb"]
+	path = third_party/stb
+	url = https://github.com/nothings/stb

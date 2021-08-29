@@ -16,8 +16,8 @@ enum {
 	BUFFER_SUCCESS,
 };
 
-struct buffer *buffer_create(void);
-void buffer_destroy(struct buffer *buffer);
+int buffer_init(struct buffer *buffer);
+void buffer_finish(struct buffer *buffer);
 
 int buffer_add(struct buffer *buffer, uint32_t uc);
 int buffer_left(struct buffer *buffer);

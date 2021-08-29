@@ -6,14 +6,10 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <wchar.h>
 
 static const int ch_width = 2; /* Max width of a character. */
-
-struct input {
-	struct buffer *buffer;
-	int max_height;
-};
 
 static uint32_t uc_sanitize(uint32_t uc, int *width) {
 	int tmp_width = wcwidth((wchar_t)uc);
@@ -67,29 +63,20 @@ static int adjust_xy(int width, int *x, int *y) {
 	return *y - original_y;
 }
 
-struct input *input_create(int input_height) {
-	struct input *input = (struct input *)calloc(1, sizeof(*input));
-
-	if (!input) {
-		return NULL;
-	}
-
-	input->buffer = buffer_create();
-
-	if (!input->buffer) {
-		free(input);
-
-		return NULL;
+int input_init(struct input *input, int input_height) {
+	if ((buffer_init(&input->buffer)) == -1) {
+		return -1;
 	}
 
 	input->max_height = input_height;
 
-	return input;
+	return 0;
 }
 
-void input_destroy(struct input *input) {
-	buffer_destroy(input->buffer);
-	free(input);
+void input_finish(struct input *input) {
+	buffer_finish(&input->buffer);
+
+	memset(input, 0, sizeof(*input));
 }
 
 void input_redraw(struct input *input) {
@@ -101,12 +88,12 @@ void input_redraw(struct input *input) {
 	{
 		int x = 0, y = 0, width = 0, lines = 0;
 
-		for (size_t i = 0; i < input->buffer->len; i++) {
-			uc_sanitize(input->buffer->buf[i], &width);
+		for (size_t i = 0; i < input->buffer.len; i++) {
+			uc_sanitize(input->buffer.buf[i], &width);
 
 			lines += adjust_xy(width, &x, &y);
 
-			if ((i + 1) == input->buffer->cur) {
+			if ((i + 1) == input->buffer.cur) {
 				cur_x = x;
 				cur_line = lines;
 			}
@@ -153,12 +140,12 @@ void input_redraw(struct input *input) {
 	{
 		int tmp_x = 0, tmp_y = 0;
 
-		while (written < input->buffer->len) {
+		while (written < input->buffer.len) {
 			if (line == line_start) {
 				break;
 			}
 
-			uc_sanitize(input->buffer->buf[written++], &width);
+			uc_sanitize(input->buffer.buf[written++], &width);
 
 			line += adjust_xy(width, &tmp_x, &tmp_y);
 		}
@@ -167,7 +154,7 @@ void input_redraw(struct input *input) {
 	/* Print the characters. */
 	tb_set_cursor(cur_x, cur_y);
 
-	for (; written < input->buffer->len; written++) {
+	for (; written < input->buffer.len; written++) {
 		if (line >= line_end) {
 			break;
 		}
@@ -175,7 +162,7 @@ void input_redraw(struct input *input) {
 		assert(y < tb_height());
 		assert((tb_height() - y) <= input->max_height);
 
-		uc = uc_sanitize(input->buffer->buf[written], &width);
+		uc = uc_sanitize(input->buffer.buf[written], &width);
 
 		/* Don't print newlines directly as they mess up the screen. */
 		if (!should_forcebreak(width)) {
@@ -188,36 +175,36 @@ void input_redraw(struct input *input) {
 
 int input_event(struct tb_event event, struct input *input) {
 	if (!event.key && event.ch) {
-		return buffer_add(input->buffer, event.ch);
+		return buffer_add(&input->buffer, event.ch);
 	}
 
 	switch (event.key) {
 	case TB_KEY_SPACE:
-		return buffer_add(input->buffer, ' ');
+		return buffer_add(&input->buffer, ' ');
 	case TB_KEY_ENTER:
 		if (event.meta == TB_META_ALTCTRL) {
-			return buffer_add(input->buffer, '\n');
+			return buffer_add(&input->buffer, '\n');
 		}
 
 		return INPUT_NOOP;
 	case TB_KEY_BACKSPACE:
 		if (event.meta == TB_META_ALT) {
-			return buffer_delete_word(input->buffer);
+			return buffer_delete_word(&input->buffer);
 		}
 
-		return buffer_delete(input->buffer);
+		return buffer_delete(&input->buffer);
 	case TB_KEY_ARROW_RIGHT:
 		if (event.meta == TB_META_CTRL) {
-			return buffer_right_word(input->buffer);
+			return buffer_right_word(&input->buffer);
 		}
 
-		return buffer_right(input->buffer);
+		return buffer_right(&input->buffer);
 	case TB_KEY_ARROW_LEFT:
 		if (event.meta == TB_META_CTRL) {
-			return buffer_left_word(input->buffer);
+			return buffer_left_word(&input->buffer);
 		}
 
-		return buffer_left(input->buffer);
+		return buffer_left(&input->buffer);
 	case TB_KEY_CTRL_C:
 		return INPUT_GOT_SHUTDOWN;
 	default:

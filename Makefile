@@ -7,12 +7,16 @@ include common.mk
 BIN = client
 
 XCFLAGS = \
-	$(CFLAGS_COMMON) -Wcast-qual -Wconversion -Wc++-compat -Wpointer-arith \
+	$(CFLAGS_COMMON) -Wcast-qual -Wconversion -Wpointer-arith \
 	-Wunused-macros -Wredundant-decls
 
 LDLIBS = `curl-config --libs`
 
-INCLUDES = -I libmatrix_src -isystem third_party/termbox/src
+INCLUDES = \
+	-I libmatrix_src \
+	-isystem third_party/cJSON \
+	-isystem third_party/stb \
+	-isystem third_party/termbox/src
 
 OBJ = \
 	src/buffer.o \
@@ -30,7 +34,7 @@ third_party:
 	$(MAKE) -f third_party.mk
 
 $(BIN): $(OBJ) third_party
-	$(CC) $(XCFLAGS) -o $@ $(OBJ) $(THIRD_PARTY_OBJ) $(LDLIBS) $(LDFLAGS)
+	$(CC) $(XCFLAGS) -o $@ $(OBJ) $(THIRD_PARTY_OBJ) $(LDFLAGS) $(LDLIBS)
 
 release:
 	$(MAKE) $(BIN) CFLAGS="$(CFLAGS) -DNDEBUG"

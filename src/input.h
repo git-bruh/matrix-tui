@@ -6,7 +6,10 @@
 #include "buffer.h"
 #include "termbox.h"
 
-struct input;
+struct input {
+	struct buffer buffer;
+	int max_height, off_y;
+};
 
 enum {
 	INPUT_GOT_SHUTDOWN = -2,
@@ -14,8 +17,8 @@ enum {
 	INPUT_NEED_REDRAW,
 };
 
-struct input *input_create(int input_height);
-void input_destroy(struct input *input);
+int input_init(struct input *input, int input_height);
+void input_finish(struct input *input);
 
 void input_redraw(struct input *input);
 int input_event(struct tb_event event, struct input *input);

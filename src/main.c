@@ -13,6 +13,11 @@
 #include <string.h>
 #include <unistd.h>
 
+struct state {
+	struct input input;
+	struct matrix matrix;
+};
+
 static const int input_height = 5;
 
 /* We catch SIGWINCH and set this variable as termbox's generates
@@ -20,7 +25,7 @@ static const int input_height = 5;
  * not feasible in our case since we poll stdin ourselves. */
 static volatile sig_atomic_t resize = false;
 
-enum { FD_INPUT, NUM_FDS };
+enum { FD_INPUT = 0, NUM_FDS };
 
 static int peek_input(struct input *input) {
 	struct tb_event event = {0};
@@ -44,8 +49,6 @@ static int peek_input(struct input *input) {
 
 			break;
 		case TB_EVENT_RESIZE:
-			fprintf(stderr, "Got resiz\n");
-
 			input_redraw(input);
 			tb_render();
 
@@ -64,13 +67,17 @@ static void handle_signal(int sig) {
 	resize = true;
 }
 
+static void cleanup(struct state *state) {
+	tb_shutdown();
+	curl_global_cleanup();
+
+	input_finish(&state->input);
+	matrix_finish(&state->matrix);
+}
+
 int main() {
 	if (!(setlocale(LC_ALL, "")) ||
 	    (strcmp("UTF-8", nl_langinfo(CODESET))) != 0) {
-		return EXIT_FAILURE;
-	}
-
-	if ((curl_global_init(CURL_GLOBAL_ALL)) != CURLE_OK) {
 		return EXIT_FAILURE;
 	}
 
@@ -85,15 +92,24 @@ int main() {
 		assert(0);
 	}
 
-	struct sigaction action = {0};
+	{
+		/* Must be done after tb_init() to override termbox's signal handler. */
+		struct sigaction action = {0};
 
-	action.sa_handler = &handle_signal;
-	sigaction(SIGWINCH, &action, NULL);
+		action.sa_handler = &handle_signal;
+		sigaction(SIGWINCH, &action, NULL);
+	}
 
-	struct input *input = input_create(input_height);
+	struct state state = {0};
 
-	if (!input) {
-		tb_shutdown();
+	struct input *input = &state.input;
+	struct matrix *matrix = &state.matrix;
+
+	if ((curl_global_init(CURL_GLOBAL_ALL)) != CURLE_OK ||
+	    (input_init(input, input_height)) == -1 ||
+	    (matrix_init(matrix, (struct matrix_callbacks){0})) == -1) {
+		cleanup(&state);
+
 		return EXIT_FAILURE;
 	}
 
@@ -105,9 +121,6 @@ int main() {
 
 	fds[FD_INPUT].fd = STDIN_FILENO;
 	fds[FD_INPUT].events = CURL_WAIT_POLLIN;
-
-	struct matrix_callbacks callbacks = {0};
-	struct matrix *matrix = matrix_create(callbacks);
 
 	matrix_perform(matrix);
 
@@ -125,12 +138,7 @@ int main() {
 
 		if ((nfds > 0 && (fds[FD_INPUT].revents & CURL_WAIT_POLLIN))) {
 			if ((peek_input(input)) == -1) {
-				tb_shutdown();
-
-				input_destroy(input);
-				matrix_destroy(matrix);
-
-				curl_global_cleanup();
+				cleanup(&state);
 
 				return EXIT_SUCCESS;
 			}

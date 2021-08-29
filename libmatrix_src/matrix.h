@@ -6,14 +6,17 @@
 #include <curl/curl.h>
 #include <stdint.h>
 
-struct matrix;
+struct matrix {
+	CURL *easy;
+	CURLM *multi;
+};
 
 struct matrix_callbacks {
 	void *ptr;
 };
 
-struct matrix *matrix_create(struct matrix_callbacks callbacks);
-void matrix_destroy(struct matrix *matrix);
+int matrix_init(struct matrix *matrix, struct matrix_callbacks callbacks);
+void matrix_finish(struct matrix *matrix);
 int matrix_poll(struct matrix *matrix, struct curl_waitfd extra_fds[],
                 unsigned int extra_nfds, int timeout_ms);
 int matrix_perform(struct matrix *matrix);
