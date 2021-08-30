@@ -38,6 +38,7 @@ static bool should_scroll(int x, int width) {
 	return (x >= (tb_width() - width) || should_forcebreak(width));
 }
 
+/* Returns the number of times y was advanced. */
 static int adjust_xy(int width, int *x, int *y) {
 	int original_y = *y;
 
@@ -82,11 +83,11 @@ void input_finish(struct input *input) {
 void input_redraw(struct input *input) {
 	tb_clear_buffer();
 
-	int cur_x = 0, cur_y = 0, cur_line = 0, line_start = 0, line_end = 0;
+	int cur_x = 0, cur_y = 0, cur_line = 1, line_start = 0, line_end = 0;
 
 	/* Calculate needed lines as terminal height and width can vary. */
 	{
-		int x = 0, y = 0, width = 0, lines = 0;
+		int x = 0, y = 0, width = 0, lines = 1;
 
 		for (size_t i = 0; i < input->buffer.len; i++) {
 			uc_sanitize(input->buffer.buf[i], &width);
@@ -99,29 +100,29 @@ void input_redraw(struct input *input) {
 			}
 		}
 
-		line_end = lines + 1; /* Count the first line aswell. */
+		line_end = lines;
 	}
 
 	int x = 0, y = 0;
 
 	/* Calculate offsets. */
 	{
-		int off = line_end - input->max_height;
+		/* If the input will take more than the maximum lines available to
+		 * represent then we set the border's height to max_height. */
+		y = tb_height() -
+		    ((line_end - input->max_height) > 0 ? input->max_height : line_end);
 
-		/* off > 0 means the input will take more than the maximum lines
-		 * available to represent. */
-		y = tb_height() - (off > 0 ? input->max_height : line_end);
+		line_start +=
+			(cur_line > input->max_height) ? (cur_line - input->max_height) : 0;
 
-		line_start = (off > 0 ? off : 0);
+		int overflow = line_end - line_start;
 
-		int cur_off = line_start - cur_line;
+		/* Ensure that we don't write excess lines. */
+		line_end -=
+			(overflow > input->max_height) ? (overflow - input->max_height) : 0;
 
-		if (cur_off > 0) {
-			line_start -= cur_off;
-			line_end -= cur_off;
-		}
-
-		cur_y = y + (cur_line - line_start);
+		/* We subtract 1 as line_start has a minimum value of 0. */
+		cur_y = y + (cur_line - 1 - line_start);
 
 		assert(cur_y >= y);
 		assert(cur_y < tb_height());
@@ -137,18 +138,11 @@ void input_redraw(struct input *input) {
 	uint32_t uc = 0;
 
 	/* Calculate starting index. */
-	{
-		int tmp_x = 0, tmp_y = 0;
+	for (int tmp_x = 0, tmp_y = 0;
+	     line != line_start && written < input->buffer.len; written++) {
+		uc_sanitize(input->buffer.buf[written], &width);
 
-		while (written < input->buffer.len) {
-			if (line == line_start) {
-				break;
-			}
-
-			uc_sanitize(input->buffer.buf[written++], &width);
-
-			line += adjust_xy(width, &tmp_x, &tmp_y);
-		}
+		line += adjust_xy(width, &tmp_x, &tmp_y);
 	}
 
 	/* Print the characters. */
