@@ -37,10 +37,18 @@ $(BIN): $(OBJ) third_party
 	$(CC) $(XCFLAGS) -o $@ $(OBJ) $(THIRD_PARTY_OBJ) $(LDFLAGS) $(LDLIBS)
 
 release:
-	$(MAKE) $(BIN) CFLAGS="$(CFLAGS) -DNDEBUG"
+	$(MAKE) $(BIN) \
+		CFLAGS="$(CFLAGS) -DNDEBUG"
+
+release-static:
+	$(MAKE) $(BIN) \
+		CFLAGS="$(CFLAGS) -DNDEBUG" \
+		LDFLAGS="$(LDFLAGS) -static" \
+		LDLIBS="`curl-config --static-libs`"
 
 sanitize:
-	$(MAKE) $(BIN) CFLAGS="$(CFLAGS) -fsanitize=address,undefined"
+	$(MAKE) $(BIN) \
+		CFLAGS="$(CFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer -g3"
 
 format:
 	clang-format -i ./*src/*.c ./*src/*.h
