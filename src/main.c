@@ -4,6 +4,7 @@
 #include "input.h"
 #include "matrix.h"
 #include <assert.h>
+#include <ev.h>
 #include <langinfo.h>
 #include <locale.h>
 #include <signal.h>
@@ -20,51 +21,11 @@ struct state {
 
 static const int input_height = 5;
 
-/* We catch SIGWINCH and set this variable as termbox's generates
- * TB_EVENT_RESIZE only on the next input peek after getting SIGWINCH. This is
- * not feasible in our case since we poll stdin ourselves. */
-static volatile sig_atomic_t resize = false;
-
 enum { FD_INPUT = 0, NUM_FDS };
 
-static int peek_input(struct input *input) {
-	struct tb_event event = {0};
-
-	if ((tb_peek_event(&event, 0)) != -1) {
-		switch (event.type) {
-		case TB_EVENT_KEY:
-			switch ((input_event(event, input))) {
-			case INPUT_NOOP:
-				break;
-			case INPUT_GOT_SHUTDOWN:
-				return -1;
-			case INPUT_NEED_REDRAW:
-				input_redraw(input);
-				tb_render();
-
-				break;
-			default:
-				assert(0);
-			}
-
-			break;
-		case TB_EVENT_RESIZE:
-			input_redraw(input);
-			tb_render();
-
-			break;
-		default:
-			break;
-		}
-	}
-
-	return 0;
-}
-
-static void handle_signal(int sig) {
-	(void)sig;
-
-	resize = true;
+static void redraw(struct state *state) {
+	input_redraw(&state->input);
+	tb_render();
 }
 
 static void cleanup(struct state *state) {
@@ -73,6 +34,56 @@ static void cleanup(struct state *state) {
 
 	input_finish(&state->input);
 	matrix_finish(&state->matrix);
+}
+
+static void peek_input(EV_P_ ev_io *w, int revents) {
+	(void)revents;
+
+	struct state *state = (struct state *)w->data;
+
+	struct tb_event event = {0};
+
+	if ((tb_peek_event(&event, 0)) != -1) {
+		switch (event.type) {
+		case TB_EVENT_KEY:
+			switch ((input_event(event, &state->input))) {
+			case INPUT_NOOP:
+				break;
+			case INPUT_GOT_SHUTDOWN:
+				ev_io_stop(EV_A_ w);
+				ev_break(EV_A_ EVBREAK_ALL);
+
+				cleanup(state);
+				break;
+			case INPUT_NEED_REDRAW:
+				redraw(state);
+				break;
+			default:
+				assert(0);
+			}
+
+			break;
+		case TB_EVENT_RESIZE:
+			redraw(state);
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+/* We catch SIGWINCH and resize + redraw ourselves since termbox sends the
+ * TB_EVENT_RESIZE event only on the next input peek after getting SIGWINCH.
+ * This is not feasible in our case since we poll stdin ourselves. This function
+ * does NOT need to be async-signal safe as the signals are caught
+ * by libev and sent to us synchronously. */
+static void handle_sig(struct ev_loop *loop, ev_signal *w, int revents) {
+	(void)loop;
+	(void)revents;
+
+	tb_resize();
+
+	redraw((struct state *)w->data);
 }
 
 int main() {
@@ -92,22 +103,11 @@ int main() {
 		assert(0);
 	}
 
-	{
-		/* Must be done after tb_init() to override termbox's signal handler. */
-		struct sigaction action = {0};
-
-		action.sa_handler = &handle_signal;
-		sigaction(SIGWINCH, &action, NULL);
-	}
-
 	struct state state = {0};
 
-	struct input *input = &state.input;
-	struct matrix *matrix = &state.matrix;
-
 	if ((curl_global_init(CURL_GLOBAL_ALL)) != CURLE_OK ||
-	    (input_init(input, input_height)) == -1 ||
-	    (matrix_init(matrix, (struct matrix_callbacks){0})) == -1) {
+	    (input_init(&state.input, input_height)) == -1 ||
+	    (matrix_init(&state.matrix, (struct matrix_callbacks){0})) == -1) {
 		cleanup(&state);
 
 		return EXIT_FAILURE;
@@ -117,38 +117,18 @@ int main() {
 	tb_set_cursor(0, tb_height() - 1);
 	tb_render();
 
-	struct curl_waitfd fds[NUM_FDS] = {0};
+	struct ev_loop *loop = EV_DEFAULT;
 
-	fds[FD_INPUT].fd = STDIN_FILENO;
-	fds[FD_INPUT].events = CURL_WAIT_POLLIN;
+	struct ev_io stdin_event = {.data = &state};
+	struct ev_signal sig_event = {.data = &state};
 
-	matrix_perform(matrix);
+	ev_io_init(&stdin_event, peek_input, STDIN_FILENO, EV_READ);
+	ev_signal_init(&sig_event, handle_sig, SIGWINCH);
 
-	for (;;) {
-		int nfds = matrix_poll(matrix, fds, NUM_FDS, 1000);
+	ev_io_start(loop, &stdin_event);
+	ev_signal_start(loop, &sig_event);
 
-		if (resize) {
-			resize = false;
+	ev_run(loop, 0);
 
-			tb_resize();
-
-			input_redraw(input);
-			tb_render();
-		}
-
-		if ((nfds > 0 && (fds[FD_INPUT].revents & CURL_WAIT_POLLIN))) {
-			if ((peek_input(input)) == -1) {
-				cleanup(&state);
-
-				return EXIT_SUCCESS;
-			}
-
-			nfds--;
-		}
-
-		/* Any remaining fds belong to curl. */
-		if (nfds > 0) {
-			matrix_perform(matrix);
-		}
-	}
+	return EXIT_SUCCESS;
 }

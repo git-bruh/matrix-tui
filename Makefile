@@ -10,7 +10,7 @@ XCFLAGS = \
 	$(CFLAGS_COMMON) -Wcast-qual -Wconversion -Wpointer-arith \
 	-Wunused-macros -Wredundant-decls
 
-LDLIBS = `curl-config --libs`
+LDLIBS = `curl-config --libs` -lev
 
 INCLUDES = \
 	-I libmatrix_src \
@@ -44,7 +44,7 @@ release-static:
 	$(MAKE) $(BIN) \
 		CFLAGS="$(CFLAGS) -DNDEBUG" \
 		LDFLAGS="$(LDFLAGS) -static" \
-		LDLIBS="`curl-config --static-libs`"
+		LDLIBS="$(LDLIBS) `curl-config --static-libs`"
 
 sanitize:
 	$(MAKE) $(BIN) \
