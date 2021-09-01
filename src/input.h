@@ -8,7 +8,7 @@
 
 struct input {
 	struct buffer buffer;
-	int max_height, off_y;
+	int max_height;
 };
 
 enum {

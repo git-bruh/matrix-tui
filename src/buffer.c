@@ -8,6 +8,8 @@
 #include <string.h>
 #include <wctype.h>
 
+/* We use a basic array instead of something like a linked list of small arrays / gap buffer as pretty much all messages are small enough that array insertion / deletion performance isn't an issue. */
+
 static const size_t buffer_max = 2000;
 
 int buffer_init(struct buffer *buffer) {

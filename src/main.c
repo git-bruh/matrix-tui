@@ -16,12 +16,10 @@
 
 struct state {
 	struct input input;
-	struct matrix matrix;
+	struct matrix *matrix;
 };
 
 static const int input_height = 5;
-
-enum { FD_INPUT = 0, NUM_FDS };
 
 static void redraw(struct state *state) {
 	input_redraw(&state->input);
@@ -33,10 +31,10 @@ static void cleanup(struct state *state) {
 	curl_global_cleanup();
 
 	input_finish(&state->input);
-	matrix_finish(&state->matrix);
+	matrix_destroy(state->matrix);
 }
 
-static void peek_input(EV_P_ ev_io *w, int revents) {
+static void input_cb(EV_P_ ev_io *w, int revents) {
 	(void)revents;
 
 	struct state *state = (struct state *)w->data;
@@ -77,7 +75,7 @@ static void peek_input(EV_P_ ev_io *w, int revents) {
  * This is not feasible in our case since we poll stdin ourselves. This function
  * does NOT need to be async-signal safe as the signals are caught
  * by libev and sent to us synchronously. */
-static void handle_sig(struct ev_loop *loop, ev_signal *w, int revents) {
+static void sig_cb(struct ev_loop *loop, ev_signal *w, int revents) {
 	(void)loop;
 	(void)revents;
 
@@ -105,9 +103,15 @@ int main() {
 
 	struct state state = {0};
 
-	if ((curl_global_init(CURL_GLOBAL_ALL)) != CURLE_OK ||
+	struct ev_loop *loop = EV_DEFAULT;
+
+	if (!loop || (curl_global_init(CURL_GLOBAL_ALL)) != CURLE_OK ||
 	    (input_init(&state.input, input_height)) == -1 ||
-	    (matrix_init(&state.matrix, (struct matrix_callbacks){0})) == -1) {
+	    !(state.matrix = matrix_alloc(loop))) {
+		if (loop) {
+			ev_loop_destroy(loop);
+		}
+
 		cleanup(&state);
 
 		return EXIT_FAILURE;
@@ -117,16 +121,20 @@ int main() {
 	tb_set_cursor(0, tb_height() - 1);
 	tb_render();
 
-	struct ev_loop *loop = EV_DEFAULT;
-
 	struct ev_io stdin_event = {.data = &state};
 	struct ev_signal sig_event = {.data = &state};
 
-	ev_io_init(&stdin_event, peek_input, STDIN_FILENO, EV_READ);
-	ev_signal_init(&sig_event, handle_sig, SIGWINCH);
+	ev_io_init(&stdin_event, input_cb, STDIN_FILENO, EV_READ);
+	ev_signal_init(&sig_event, sig_cb, SIGWINCH);
 
 	ev_io_start(loop, &stdin_event);
 	ev_signal_start(loop, &sig_event);
+
+	if ((matrix_begin_sync(state.matrix, 0)) == -1) {
+		cleanup(&state);
+
+		return EXIT_FAILURE;
+	}
 
 	ev_run(loop, 0);
 
