@@ -11,8 +11,9 @@
 
 static const int ch_width = 2; /* Max width of a character. */
 
-static uint32_t uc_sanitize(uint32_t uc, int *width) {
-	int tmp_width = wcwidth((wchar_t)uc);
+static uint32_t
+uc_sanitize(uint32_t uc, int *width) {
+	int tmp_width = wcwidth((wchar_t) uc);
 
 	switch (uc) {
 	case '\n':
@@ -32,14 +33,19 @@ static uint32_t uc_sanitize(uint32_t uc, int *width) {
 	}
 }
 
-static bool should_forcebreak(int width) { return width == 0; }
+static bool
+should_forcebreak(int width) {
+	return width == 0;
+}
 
-static bool should_scroll(int x, int width) {
+static bool
+should_scroll(int x, int width) {
 	return (x >= (tb_width() - width) || should_forcebreak(width));
 }
 
 /* Returns the number of times y was advanced. */
-static int adjust_xy(int width, int *x, int *y) {
+static int
+adjust_xy(int width, int *x, int *y) {
 	int original_y = *y;
 
 	if (should_scroll(*x, width)) {
@@ -64,7 +70,8 @@ static int adjust_xy(int width, int *x, int *y) {
 	return *y - original_y;
 }
 
-int input_init(struct input *input, int input_height) {
+int
+input_init(struct input *input, int input_height) {
 	if ((buffer_init(&input->buffer)) == -1) {
 		return -1;
 	}
@@ -74,13 +81,15 @@ int input_init(struct input *input, int input_height) {
 	return 0;
 }
 
-void input_finish(struct input *input) {
+void
+input_finish(struct input *input) {
 	buffer_finish(&input->buffer);
 
 	memset(input, 0, sizeof(*input));
 }
 
-void input_redraw(struct input *input) {
+void
+input_redraw(struct input *input) {
 	tb_clear_buffer();
 
 	int cur_x = 0, cur_y = 0, cur_line = 1, line_start = 0, line_end = 0;
@@ -167,7 +176,8 @@ void input_redraw(struct input *input) {
 	}
 }
 
-int input_event(struct tb_event event, struct input *input) {
+int
+input_event(struct tb_event event, struct input *input) {
 	if (!event.key && event.ch) {
 		return buffer_add(&input->buffer, event.ch);
 	}

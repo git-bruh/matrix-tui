@@ -17,9 +17,13 @@ enum {
 	INPUT_NEED_REDRAW,
 };
 
-int input_init(struct input *input, int input_height);
-void input_finish(struct input *input);
+int
+input_init(struct input *input, int input_height);
+void
+input_finish(struct input *input);
 
-void input_redraw(struct input *input);
-int input_event(struct tb_event event, struct input *input);
+void
+input_redraw(struct input *input);
+int
+input_event(struct tb_event event, struct input *input);
 #endif /* !INPUT_H */

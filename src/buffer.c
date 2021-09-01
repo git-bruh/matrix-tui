@@ -8,11 +8,14 @@
 #include <string.h>
 #include <wctype.h>
 
-/* We use a basic array instead of something like a linked list of small arrays / gap buffer as pretty much all messages are small enough that array insertion / deletion performance isn't an issue. */
+/* We use a basic array instead of something like a linked list of small arrays
+ * / gap buffer as pretty much all messages are small enough that array
+ * insertion / deletion performance isn't an issue. */
 
 static const size_t buffer_max = 2000;
 
-int buffer_init(struct buffer *buffer) {
+int
+buffer_init(struct buffer *buffer) {
 	if (!(buffer->buf = calloc(buffer_max, sizeof(*buffer->buf)))) {
 		return -1;
 	}
@@ -20,13 +23,15 @@ int buffer_init(struct buffer *buffer) {
 	return 0;
 }
 
-void buffer_finish(struct buffer *buffer) {
+void
+buffer_finish(struct buffer *buffer) {
 	free(buffer->buf);
 
 	memset(buffer, 0, sizeof(*buffer));
 }
 
-int buffer_add(struct buffer *buffer, uint32_t uc) {
+int
+buffer_add(struct buffer *buffer, uint32_t uc) {
 	if ((buffer->len + 1) >= buffer_max) {
 		return BUFFER_FAIL;
 	}
@@ -44,7 +49,8 @@ int buffer_add(struct buffer *buffer, uint32_t uc) {
 	return BUFFER_SUCCESS;
 }
 
-int buffer_left(struct buffer *buffer) {
+int
+buffer_left(struct buffer *buffer) {
 	if (buffer->cur > 0) {
 		buffer->cur--;
 
@@ -54,13 +60,14 @@ int buffer_left(struct buffer *buffer) {
 	return BUFFER_FAIL;
 }
 
-int buffer_left_word(struct buffer *buffer) {
+int
+buffer_left_word(struct buffer *buffer) {
 	if (buffer->cur > 0) {
 		do {
 			buffer->cur--;
 		} while (buffer->cur > 0 &&
-		         ((iswspace((wint_t)buffer->buf[buffer->cur])) ||
-		          !(iswspace((wint_t)buffer->buf[buffer->cur - 1]))));
+		         ((iswspace((wint_t) buffer->buf[buffer->cur])) ||
+		          !(iswspace((wint_t) buffer->buf[buffer->cur - 1]))));
 
 		return BUFFER_SUCCESS;
 	}
@@ -68,7 +75,8 @@ int buffer_left_word(struct buffer *buffer) {
 	return BUFFER_FAIL;
 }
 
-int buffer_right(struct buffer *buffer) {
+int
+buffer_right(struct buffer *buffer) {
 	if (buffer->cur < buffer->len) {
 		buffer->cur++;
 
@@ -78,13 +86,14 @@ int buffer_right(struct buffer *buffer) {
 	return BUFFER_FAIL;
 }
 
-int buffer_right_word(struct buffer *buffer) {
+int
+buffer_right_word(struct buffer *buffer) {
 	if (buffer->cur < buffer->len) {
 		do {
 			buffer->cur++;
 		} while (buffer->cur < buffer->len &&
-		         !((iswspace((wint_t)buffer->buf[buffer->cur])) &&
-		           !(iswspace((wint_t)buffer->buf[buffer->cur - 1]))));
+		         !((iswspace((wint_t) buffer->buf[buffer->cur])) &&
+		           !(iswspace((wint_t) buffer->buf[buffer->cur - 1]))));
 
 		return BUFFER_SUCCESS;
 	}
@@ -92,7 +101,8 @@ int buffer_right_word(struct buffer *buffer) {
 	return BUFFER_FAIL;
 }
 
-int buffer_delete(struct buffer *buffer) {
+int
+buffer_delete(struct buffer *buffer) {
 	if (buffer->cur > 0) {
 		/* len > 0 as cur < len. */
 		buffer->len--;
@@ -108,7 +118,8 @@ int buffer_delete(struct buffer *buffer) {
 	return BUFFER_FAIL;
 }
 
-int buffer_delete_word(struct buffer *buffer) {
+int
+buffer_delete_word(struct buffer *buffer) {
 	size_t original_cur = buffer->cur;
 
 	if ((buffer_left_word(buffer)) == -1) {

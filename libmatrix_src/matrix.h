@@ -3,9 +3,9 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: LGPL-3.0-or-later */
 
-#include <stdint.h>
-#include <ev.h>
 #include <curl/curl.h>
+#include <ev.h>
+#include <stdint.h>
 
 struct matrix_callbacks {
 	/* TODO */
@@ -15,7 +15,10 @@ struct matrix_callbacks {
 
 struct matrix;
 
-struct matrix *matrix_alloc(struct ev_loop *loop);
-void matrix_destroy(struct matrix *matrix);
-int matrix_begin_sync(struct matrix *matrix, int timeout);
+struct matrix *
+matrix_alloc(struct ev_loop *loop);
+void
+matrix_destroy(struct matrix *matrix);
+int
+matrix_begin_sync(struct matrix *matrix, int timeout);
 #endif /* !MATRIX_H */

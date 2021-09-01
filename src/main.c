@@ -21,12 +21,14 @@ struct state {
 
 static const int input_height = 5;
 
-static void redraw(struct state *state) {
+static void
+redraw(struct state *state) {
 	input_redraw(&state->input);
 	tb_render();
 }
 
-static void cleanup(struct state *state) {
+static void
+cleanup(struct state *state) {
 	tb_shutdown();
 	curl_global_cleanup();
 
@@ -34,10 +36,11 @@ static void cleanup(struct state *state) {
 	matrix_destroy(state->matrix);
 }
 
-static void input_cb(EV_P_ ev_io *w, int revents) {
-	(void)revents;
+static void
+input_cb(EV_P_ ev_io *w, int revents) {
+	(void) revents;
 
-	struct state *state = (struct state *)w->data;
+	struct state *state = (struct state *) w->data;
 
 	struct tb_event event = {0};
 
@@ -75,16 +78,18 @@ static void input_cb(EV_P_ ev_io *w, int revents) {
  * This is not feasible in our case since we poll stdin ourselves. This function
  * does NOT need to be async-signal safe as the signals are caught
  * by libev and sent to us synchronously. */
-static void sig_cb(struct ev_loop *loop, ev_signal *w, int revents) {
-	(void)loop;
-	(void)revents;
+static void
+sig_cb(struct ev_loop *loop, ev_signal *w, int revents) {
+	(void) loop;
+	(void) revents;
 
 	tb_resize();
 
-	redraw((struct state *)w->data);
+	redraw((struct state *) w->data);
 }
 
-int main() {
+int
+main() {
 	if (!(setlocale(LC_ALL, "")) ||
 	    (strcmp("UTF-8", nl_langinfo(CODESET))) != 0) {
 		return EXIT_FAILURE;
