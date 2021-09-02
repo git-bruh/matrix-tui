@@ -94,7 +94,8 @@ input_redraw(struct input *input) {
 
 	int cur_x = 0, cur_y = 0, cur_line = 1, line_start = 0, line_end = 0;
 
-	/* Calculate needed lines as terminal height and width can vary. */
+	/* Calculate needed lines as terminal height / width can vary due to
+	 * resizes. */
 	{
 		int x = 0, y = 0, width = 0, lines = 1;
 
@@ -116,8 +117,6 @@ input_redraw(struct input *input) {
 
 	/* Calculate offsets. */
 	{
-		/* If the input will take more than the maximum lines available to
-		 * represent then we set the border's height to max_height. */
 		y = tb_height() -
 		    ((line_end - input->max_height) > 0 ? input->max_height : line_end);
 

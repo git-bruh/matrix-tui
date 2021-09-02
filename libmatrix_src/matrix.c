@@ -2,8 +2,20 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later */
 
 #include "matrix.h"
+#include <assert.h>
 #include <stdbool.h>
 #include <stdlib.h>
+
+struct node {
+	void *data;
+	struct node *next;
+	struct node *prev;
+};
+
+struct ll {
+	struct node *tail;
+	void (*free)(void *data);
+};
 
 struct matrix {
 	struct matrix_callbacks callbacks;
@@ -11,11 +23,14 @@ struct matrix {
 	struct ev_timer timer_event;
 	CURLM *multi;
 	int still_running;
+	struct ll *ll; /* Doubly linked list to keep track of added handles and
+	                  clean them up. */
 };
 
 /* Curl callbacks adapted from https://curl.se/libcurl/c/evhiperfifo.html. */
 struct sock_info {
 	struct ev_io ev;
+	struct matrix *matrix;
 	CURL *easy;
 	curl_socket_t sockfd;
 	int action;
@@ -23,15 +38,108 @@ struct sock_info {
 	long timeout;
 };
 
+struct transfer {
+	CURL *easy; /* We must keep track of the easy handle even though sock_info
+	               has it as transfers might be stopped before any progress is
+	               made on them, and sock_info would be NULL. */
+	struct sock_info *sock_info;
+};
+
+static struct ll *
+ll_alloc(void (*free)(void *data)) {
+	struct ll *ll = calloc(1, sizeof(*ll));
+
+	if (!ll) {
+		return NULL;
+	}
+
+	ll->free = free;
+
+	return ll;
+}
+
+struct node *
+ll_append(struct ll *ll, void *data) {
+	struct node *node = calloc(1, sizeof(*node));
+
+	if (!node) {
+		return NULL;
+	}
+
+	node->data = data;
+
+	if (ll->tail) {
+		node->prev = ll->tail;
+		ll->tail->next = node;
+		ll->tail = node;
+	} else {
+		ll->tail = node;
+		node->prev = node->next = NULL;
+	}
+
+	return node;
+}
+
+static void
+ll_remove(struct ll *ll, struct node *node) {
+	if (node->prev) {
+		node->prev->next = node->next;
+	}
+
+	node->next ? (node->next->prev = node->prev) : (ll->tail = node->prev);
+
+	ll->free(node->data);
+
+	free(node);
+}
+
+static void
+ll_free(struct ll *ll) {
+	struct node *prev = NULL;
+
+	while (ll->tail) {
+		prev = ll->tail->prev;
+
+		ll->free(ll->tail->data);
+		free(ll->tail);
+
+		ll->tail = prev;
+	}
+
+	free(ll);
+}
+
+static void
+free_transfer(void *data) {
+	struct transfer *transfer = (struct transfer *) data;
+
+	curl_easy_cleanup(transfer->easy);
+
+	if (transfer->sock_info && transfer->sock_info->evset) {
+		ev_io_stop(transfer->sock_info->matrix->loop, &transfer->sock_info->ev);
+		free(transfer->sock_info);
+	}
+
+	free(transfer);
+}
+
 static void
 check_multi_info(struct matrix *matrix) {
 	CURLMsg *msg = NULL;
 	int msgs_left = 0;
 
+	struct node *node = NULL;
+
 	while ((msg = curl_multi_info_read(matrix->multi, &msgs_left))) {
 		if (msg->msg == CURLMSG_DONE) {
+			curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &node);
+
+			assert(node);
+			assert(!((struct transfer *) node->data)->sock_info);
+			assert(msg->easy_handle == ((struct transfer *) node->data)->easy);
+
 			curl_multi_remove_handle(matrix->multi, msg->easy_handle);
-			curl_easy_cleanup(msg->easy_handle);
+			ll_remove(matrix->ll, node);
 		}
 	}
 }
@@ -122,6 +230,12 @@ static void
 addsock(curl_socket_t sockfd, CURL *easy, int action, struct matrix *matrix) {
 	struct sock_info *sock_info = calloc(sizeof(*sock_info), 1);
 
+	if (!sock_info) {
+		return;
+	}
+
+	sock_info->matrix = matrix;
+
 	setsock(sock_info, sockfd, easy, action, matrix);
 
 	curl_multi_assign(matrix->multi, sockfd, sock_info);
@@ -134,6 +248,14 @@ sock_cb(CURL *easy, curl_socket_t sockfd, int what, void *userp, void *sockp) {
 
 	if (what == CURL_POLL_REMOVE) {
 		remsock(sock_info, matrix);
+
+		struct node *node = NULL;
+
+		curl_easy_getinfo(easy, CURLINFO_PRIVATE, &node);
+
+		assert(node);
+
+		((struct transfer *) node->data)->sock_info = NULL;
 	} else {
 		if (!sock_info) {
 			addsock(sockfd, easy, what, matrix);
@@ -153,9 +275,14 @@ matrix_alloc(struct ev_loop *loop) {
 		return NULL;
 	}
 
-	matrix->multi = curl_multi_init();
+	if (!(matrix->ll = ll_alloc(free_transfer))) {
+		free(matrix);
 
-	if (!matrix->multi) {
+		return NULL;
+	}
+
+	if (!(matrix->multi = curl_multi_init())) {
+		ll_free(matrix->ll);
 		free(matrix);
 
 		return NULL;
@@ -180,28 +307,50 @@ matrix_destroy(struct matrix *matrix) {
 		return;
 	}
 
-	/* TODO cleanup pending easy handles that weren't cleaned up by callbacks.
-	 */
-	curl_multi_cleanup(matrix->multi);
+	/* TODO confirm if it is safe to call this multiple times (If it was already
+	 * stopped by a callback. */
+	ev_timer_stop(matrix->loop, &matrix->timer_event);
 
+	/* Cleanup the pending easy handles that weren't cleaned up by callbacks. */
+	ll_free(matrix->ll);
+
+	curl_multi_cleanup(matrix->multi);
 	free(matrix);
 }
 
 int
 matrix_begin_sync(struct matrix *matrix, int timeout) {
-	CURL *easy = curl_easy_init();
+	(void) timeout;
 
-	if (!easy) {
-		return -1;
+	CURL *easy = NULL;
+	struct transfer *transfer = NULL;
+	struct node *node = NULL;
+
+	for (;;) {
+		if (!(easy = curl_easy_init()) ||
+		    !(transfer = calloc(1, sizeof(*transfer))) ||
+		    !(node = ll_append(matrix->ll, transfer))) {
+			break;
+		}
+
+		transfer->easy = easy;
+
+		/* curl_easy_setopt(easy, CURLOPT_URL, ""); */
+		curl_easy_setopt(easy, CURLOPT_PRIVATE, node);
+
+		if ((curl_multi_add_handle(matrix->multi, easy)) != CURLM_OK) {
+			break;
+		}
+
+		return 0;
 	}
 
-	/* curl_easy_setopt(easy, CURLOPT_URL, "https://duckduckgo.com"); */
-
-	if ((curl_multi_add_handle(matrix->multi, easy)) != CURLM_OK) {
+	if (node) {
+		ll_remove(matrix->ll, node);
+	} else {
+		free(transfer);
 		curl_easy_cleanup(easy);
-
-		return -1;
 	}
 
-	return 0;
+	return -1;
 }
