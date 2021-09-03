@@ -25,6 +25,7 @@ struct matrix {
 	int still_running;
 	struct ll *ll; /* Doubly linked list to keep track of added handles and
 	                  clean them up. */
+	void *userp;
 };
 
 /* Curl callbacks adapted from https://curl.se/libcurl/c/evhiperfifo.html. */
@@ -43,6 +44,7 @@ struct transfer {
 	               has it as transfers might be stopped before any progress is
 	               made on them, and sock_info would be NULL. */
 	struct sock_info *sock_info;
+	bool is_sync;
 };
 
 static struct ll *
@@ -267,15 +269,40 @@ sock_cb(CURL *easy, curl_socket_t sockfd, int what, void *userp, void *sockp) {
 	return 0;
 }
 
-struct matrix *
-matrix_alloc(struct ev_loop *loop) {
-	struct matrix *matrix = calloc(1, sizeof(*matrix));
+static int
+add_transfer(struct matrix *matrix, CURL *easy, bool is_sync) {
+	struct transfer *transfer = calloc(1, sizeof(*transfer));
+	struct node *node = NULL;
 
-	if (!matrix) {
-		return NULL;
+	if (!transfer) {
+		goto cleanup;
 	}
 
-	if (!(matrix->ll = ll_alloc(free_transfer))) {
+	transfer->easy = easy;
+	transfer->is_sync = is_sync;
+
+	if ((node = ll_append(matrix->ll, transfer)) &&
+	    (curl_easy_setopt(easy, CURLOPT_PRIVATE, node) == CURLM_OK) &&
+	    (curl_multi_add_handle(matrix->multi, easy) == CURLM_OK)) {
+		return 0;
+	}
+
+cleanup:
+	if (node) {
+		ll_remove(matrix->ll, node);
+	} else {
+		free(transfer);
+		curl_easy_cleanup(easy);
+	}
+
+	return -1;
+}
+
+struct matrix *
+matrix_alloc(struct ev_loop *loop, void *userp) {
+	struct matrix *matrix = calloc(1, sizeof(*matrix));
+
+	if (!matrix || !(matrix->ll = ll_alloc(free_transfer))) {
 		free(matrix);
 
 		return NULL;
@@ -322,35 +349,9 @@ int
 matrix_begin_sync(struct matrix *matrix, int timeout) {
 	(void) timeout;
 
-	CURL *easy = NULL;
-	struct transfer *transfer = NULL;
-	struct node *node = NULL;
+	CURL *easy = curl_easy_init(); /* Cleaned up by add_transfer on failure. */
 
-	for (;;) {
-		if (!(easy = curl_easy_init()) ||
-		    !(transfer = calloc(1, sizeof(*transfer))) ||
-		    !(node = ll_append(matrix->ll, transfer))) {
-			break;
-		}
+	/* curl_easy_setopt(easy, CURLOPT_URL, ""); */
 
-		transfer->easy = easy;
-
-		/* curl_easy_setopt(easy, CURLOPT_URL, ""); */
-		curl_easy_setopt(easy, CURLOPT_PRIVATE, node);
-
-		if ((curl_multi_add_handle(matrix->multi, easy)) != CURLM_OK) {
-			break;
-		}
-
-		return 0;
-	}
-
-	if (node) {
-		ll_remove(matrix->ll, node);
-	} else {
-		free(transfer);
-		curl_easy_cleanup(easy);
-	}
-
-	return -1;
+	return add_transfer(matrix, easy, true);
 }

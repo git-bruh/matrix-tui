@@ -112,7 +112,7 @@ main() {
 
 	if (!loop || (curl_global_init(CURL_GLOBAL_ALL)) != CURLE_OK ||
 	    (input_init(&state.input, input_height)) == -1 ||
-	    !(state.matrix = matrix_alloc(loop))) {
+	    !(state.matrix = matrix_alloc(loop, NULL))) {
 		if (loop) {
 			ev_loop_destroy(loop);
 		}

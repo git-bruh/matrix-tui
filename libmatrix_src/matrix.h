@@ -16,7 +16,7 @@ struct matrix_callbacks {
 struct matrix;
 
 struct matrix *
-matrix_alloc(struct ev_loop *loop);
+matrix_alloc(struct ev_loop *loop, void *userp);
 void
 matrix_destroy(struct matrix *matrix);
 int
