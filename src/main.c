@@ -14,6 +14,16 @@
 #include <string.h>
 #include <unistd.h>
 
+#if 1
+#define MXID "@testuser:localhost"
+#define HOMESERVER "http://127.0.0.1:8008"
+#define PASS "0000000 072142 063162 026563 067543 072156 067562 005154 072542"
+#else
+#define MXID ""
+#define HOMESERVER ""
+#define PASS ""
+#endif
+
 struct state {
 	struct input input;
 	struct matrix *matrix;
@@ -29,12 +39,15 @@ redraw(struct state *state) {
 
 static void
 cleanup(struct state *state) {
-	tb_shutdown();
-	curl_global_cleanup();
-
 	input_finish(&state->input);
 	matrix_destroy(state->matrix);
+
+	tb_shutdown();
+	curl_global_cleanup();
 }
+
+static void
+login_cb(struct matrix *matrix, char *access_token, void *userp) {}
 
 static void
 input_cb(EV_P_ ev_io *w, int revents) {
@@ -112,7 +125,9 @@ main() {
 
 	if (!loop || (curl_global_init(CURL_GLOBAL_ALL)) != CURLE_OK ||
 	    (input_init(&state.input, input_height)) == -1 ||
-	    !(state.matrix = matrix_alloc(loop, NULL))) {
+	    !(state.matrix = matrix_alloc(
+			  loop, (struct matrix_callbacks){.on_login = login_cb}, MXID,
+			  HOMESERVER, &state))) {
 		if (loop) {
 			ev_loop_destroy(loop);
 		}
@@ -135,7 +150,8 @@ main() {
 	ev_io_start(loop, &stdin_event);
 	ev_signal_start(loop, &sig_event);
 
-	if ((matrix_begin_sync(state.matrix, 0)) == -1) {
+	if ((matrix_login(state.matrix, PASS, NULL)) == -1 ||
+	    (matrix_begin_sync(state.matrix, 0)) == -1) {
 		cleanup(&state);
 
 		return EXIT_FAILURE;
