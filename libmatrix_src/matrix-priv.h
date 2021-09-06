@@ -5,6 +5,7 @@
 
 struct matrix {
 	CURLM *multi;
+	struct curl_slist *headers;
 	struct ev_loop *loop;
 	struct matrix_callbacks cb;
 	struct ev_timer timer_event;
@@ -12,7 +13,7 @@ struct matrix {
 	                  clean them up. */
 	int still_running;
 	char mxid[MATRIX_MXID_MAX + 1];
-	char *homeserver, *access_token;
+	char *homeserver;
 	void *userp;
 };
 
@@ -36,6 +37,8 @@ extern void (*const matrix_dispatch[MATRIX_NUM_TYPES + 1])(
 
 int
 matrix_transfer_add(struct matrix *matrix, CURL *easy, enum matrix_type type);
+int
+matrix_header_append(struct matrix *matrix, const char *header);
 void
 matrix_parse_and_dispatch(struct matrix *matrix, struct transfer *transfer);
 #endif /* !MATRIX_PRIV_H */

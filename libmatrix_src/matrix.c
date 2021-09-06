@@ -126,7 +126,9 @@ check_multi_info(struct matrix *matrix) {
 
 			struct transfer *transfer = (struct transfer *) node->data;
 
-			matrix_parse_and_dispatch(matrix, transfer);
+			if (transfer->type != MATRIX_SYNC) {
+				matrix_parse_and_dispatch(matrix, transfer);
+			}
 
 			assert(!transfer->sock_info);
 			assert(msg->easy_handle == (transfer->easy));
@@ -297,6 +299,9 @@ matrix_transfer_add(struct matrix *matrix, CURL *easy, enum matrix_type type) {
 		        CURLE_OK &&
 		    (curl_easy_setopt(easy, CURLOPT_WRITEDATA, transfer)) == CURLE_OK &&
 		    (curl_multi_add_handle(matrix->multi, easy)) == CURLM_OK) {
+			curl_multi_socket_action(matrix->multi, CURL_SOCKET_TIMEOUT, 0,
+			                         &matrix->still_running); /* TODO remove */
+
 			return 0;
 		}
 	}
@@ -311,13 +316,28 @@ matrix_transfer_add(struct matrix *matrix, CURL *easy, enum matrix_type type) {
 	return -1;
 }
 
+int
+matrix_header_append(struct matrix *matrix, const char *header) {
+	struct curl_slist *tmp = curl_slist_append(matrix->headers, header);
+
+	if (tmp) {
+		matrix->headers = tmp;
+
+		return 0;
+	}
+
+	return -1;
+}
+
 struct matrix *
 matrix_alloc(struct ev_loop *loop, struct matrix_callbacks callbacks,
              const char *mxid, const char *homeserver, void *userp) {
 	struct matrix *matrix = calloc(1, sizeof(*matrix));
 
 	if (!matrix || !(matrix->ll = ll_alloc(free_transfer)) ||
-	    !(matrix->multi = curl_multi_init())) {
+	    !(matrix->multi = curl_multi_init()) ||
+	    (matrix_header_append(matrix, "Content-Type: application/json") ==
+	     -1)) {
 		matrix_destroy(matrix);
 
 		return NULL;
@@ -366,20 +386,8 @@ matrix_destroy(struct matrix *matrix) {
 	ll_free(matrix->ll);
 
 	curl_multi_cleanup(matrix->multi);
+	curl_slist_free_all(matrix->headers);
 
-	free(matrix->access_token);
 	free(matrix->homeserver);
 	free(matrix);
-}
-
-int
-matrix_begin_sync(struct matrix *matrix, int timeout) {
-	(void) timeout;
-
-	CURL *easy =
-		curl_easy_init(); /* Cleaned up by matrix_transfer_add on failure. */
-
-	/* curl_easy_setopt(easy, CURLOPT_URL, ""); */
-
-	return matrix_transfer_add(matrix, easy, true);
 }

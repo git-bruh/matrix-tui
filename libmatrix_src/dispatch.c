@@ -20,8 +20,26 @@ dispatch_login(struct matrix *matrix, struct transfer *transfer) {
 		cJSON_Delete(json);
 	}
 
-	matrix->access_token = access_token;
+	char *header = NULL;
+
+	{
+		const char auth[] = "Authorization: Bearer ";
+
+		size_t len_tmp = sizeof(auth) + strlen(access_token);
+
+		char *header = calloc(len_tmp, sizeof(char));
+
+		if (header) {
+			snprintf(header, len_tmp, "%s%s", auth, access_token);
+
+			matrix_header_append(matrix, header);
+		}
+	}
+
 	matrix->cb.on_login(matrix, access_token, matrix->userp);
+
+	free(access_token);
+	free(header);
 }
 
 void

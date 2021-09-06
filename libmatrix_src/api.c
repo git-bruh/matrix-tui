@@ -1,51 +1,59 @@
 #include "cJSON.h"
 #include "matrix-priv.h"
 #include <assert.h>
-#include <stdbool.h>
 #include <stdlib.h>
 
 enum method { GET = 0, POST, PUT };
 
 static char *
-endpoint_create(const char *homeserver, const char *endpoint) {
+endpoint_create(const char *homeserver, const char *endpoint,
+                const char *params) {
+	params = params ? params : "";
+
 	const char base[] = "/_matrix/client/r0";
 
-	size_t size = strlen(homeserver) + sizeof(base) + strlen(endpoint);
+	size_t size =
+		strlen(homeserver) + sizeof(base) + strlen(endpoint) + strlen(params);
 
 	char *final = calloc(size, sizeof(char));
 
 	if (final) {
-		snprintf(final, size, "%s%s%s", homeserver, base, endpoint);
+		snprintf(final, size, "%s%s%s%s", homeserver, base, endpoint, params);
 	}
 
 	return final;
 }
 
 static CURL *
-endpoint_create_with_handle(const char *homeserver, const char *endpoint,
-                            const char *data, enum method method) {
-	char *url = endpoint_create(homeserver, endpoint);
+endpoint_create_with_handle(const struct matrix *matrix, const char *endpoint,
+                            const char *data, const char *params,
+                            enum method method) {
+	char *url = endpoint_create(matrix->homeserver, endpoint, params);
 	CURL *easy = NULL;
 
 	if (url && (easy = curl_easy_init()) &&
-	    (curl_easy_setopt(easy, CURLOPT_URL, url)) == CURLE_OK) {
-
+	    (curl_easy_setopt(easy, CURLOPT_URL, url)) == CURLE_OK &&
+	    (curl_easy_setopt(easy, CURLOPT_HTTPHEADER, matrix->headers)) ==
+	        CURLE_OK) {
 		free(url); /* strdup'd by curl. */
 		url = NULL;
 
 		switch (method) {
 		case GET:
-			break;
+			assert(!data);
+
+			return easy;
 		case POST:
-			curl_easy_setopt(easy, CURLOPT_COPYPOSTFIELDS, data);
+			if ((curl_easy_setopt(easy, CURLOPT_COPYPOSTFIELDS, data)) ==
+			    CURLE_OK) {
+				return easy;
+			}
 			break;
 		case PUT:
 			break;
 		default:
 			assert(0);
 		}
-
-		return easy;
 	}
 
 	free(url);
@@ -75,12 +83,13 @@ matrix_login(struct matrix *matrix, const char *password,
 		    (cJSON_AddStringToObject(identifier, "type", "m.id.user")) &&
 		    (cJSON_AddStringToObject(identifier, "user", matrix->mxid)) &&
 		    (rendered = cJSON_PrintUnformatted(json))) {
-			CURL *easy = endpoint_create_with_handle(matrix->homeserver,
-			                                         "/login", rendered, POST);
+			CURL *easy = endpoint_create_with_handle(matrix, "/login", rendered,
+			                                         NULL, POST);
 
 			free(rendered);
 
-			if (easy && (matrix_transfer_add(matrix, easy, false)) == 0) {
+			if (easy &&
+			    (matrix_transfer_add(matrix, easy, MATRIX_LOGIN)) == 0) {
 				cJSON_Delete(json);
 
 				return 0;
@@ -92,6 +101,19 @@ matrix_login(struct matrix *matrix, const char *password,
 
 	if (json) {
 		cJSON_Delete(json);
+	}
+
+	return -1;
+}
+
+int
+matrix_sync(struct matrix *matrix, int timeout) {
+	(void) timeout;
+
+	CURL *easy = endpoint_create_with_handle(matrix, "/sync", NULL, "", GET);
+
+	if (easy && (matrix_transfer_add(matrix, easy, MATRIX_SYNC) == 0)) {
+		return 0;
 	}
 
 	return -1;

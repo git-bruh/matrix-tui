@@ -53,6 +53,8 @@ login_cb(struct matrix *matrix, char *access_token, void *userp) {
 	          access_token ? access_token : "Failed to login!");
 
 	tb_render();
+
+	matrix_sync(matrix, 0);
 }
 
 static void
