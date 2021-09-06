@@ -223,7 +223,7 @@ setsock(struct sock_info *sock_info, curl_socket_t sockfd, CURL *easy,
 
 static void
 addsock(curl_socket_t sockfd, CURL *easy, int action, struct matrix *matrix) {
-	struct sock_info *sock_info = calloc(sizeof(*sock_info), 1);
+	struct sock_info *sock_info = calloc(1, sizeof(*sock_info));
 
 	if (!sock_info) {
 		return;
@@ -299,9 +299,6 @@ matrix_transfer_add(struct matrix *matrix, CURL *easy, enum matrix_type type) {
 		        CURLE_OK &&
 		    (curl_easy_setopt(easy, CURLOPT_WRITEDATA, transfer)) == CURLE_OK &&
 		    (curl_multi_add_handle(matrix->multi, easy)) == CURLM_OK) {
-			curl_multi_socket_action(matrix->multi, CURL_SOCKET_TIMEOUT, 0,
-			                         &matrix->still_running); /* TODO remove */
-
 			return 0;
 		}
 	}
