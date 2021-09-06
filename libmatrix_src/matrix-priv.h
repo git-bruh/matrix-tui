@@ -2,9 +2,6 @@
 #define MATRIX_PRIV_H
 #include "matrix.h"
 #include <curl/curl.h>
-#include <stdbool.h>
-struct ll;
-struct sock_info;
 
 struct matrix {
 	CURLM *multi;
@@ -41,4 +38,4 @@ int
 matrix_transfer_add(struct matrix *matrix, CURL *easy, enum matrix_type type);
 void
 matrix_parse_and_dispatch(struct matrix *matrix, struct transfer *transfer);
-#endif
+#endif /* !MATRIX_PRIV_H */

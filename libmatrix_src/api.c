@@ -1,6 +1,7 @@
 #include "cJSON.h"
 #include "matrix-priv.h"
 #include <assert.h>
+#include <stdbool.h>
 #include <stdlib.h>
 
 enum method { GET = 0, POST, PUT };

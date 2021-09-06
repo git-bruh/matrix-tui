@@ -2,8 +2,6 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "buffer.h"
-#include <assert.h>
-#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wctype.h>

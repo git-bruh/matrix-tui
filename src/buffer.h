@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include <stdint.h>
-#include <sys/types.h>
+#include <stddef.h>
 
 struct buffer {
 	uint32_t *buf;

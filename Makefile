@@ -58,6 +58,11 @@ format:
 tidy:
 	clang-tidy ./*src/*.c ./*src/*.h -- $(XCFLAGS) $(INCLUDES)
 
+iwyu:
+	for src in ./*src/*.c; do \
+		include-what-you-use $$src $(XCFLAGS) $(INCLUDES) ||:; \
+	done
+
 clean:
 	rm -f $(BIN) $(OBJ)
 	$(MAKE) -f third_party.mk clean
