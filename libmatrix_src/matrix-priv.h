@@ -15,7 +15,7 @@ struct matrix {
 	                  clean them up. */
 	int still_running;
 	char mxid[MATRIX_MXID_MAX + 1];
-	char *homeserver;
+	char *homeserver, *access_token;
 	void *userp;
 };
 

@@ -368,6 +368,7 @@ matrix_destroy(struct matrix *matrix) {
 
 	curl_multi_cleanup(matrix->multi);
 
+	free(matrix->access_token);
 	free(matrix->homeserver);
 	free(matrix);
 }

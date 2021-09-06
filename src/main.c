@@ -48,7 +48,12 @@ cleanup(struct state *state) {
 }
 
 static void
-login_cb(struct matrix *matrix, char *access_token, void *userp) {}
+login_cb(struct matrix *matrix, char *access_token, void *userp) {
+	tb_string(0, 0, TB_DEFAULT, TB_DEFAULT,
+	          access_token ? access_token : "Failed to login!");
+
+	tb_render();
+}
 
 static void
 input_cb(EV_P_ ev_io *w, int revents) {
@@ -151,8 +156,7 @@ main() {
 	ev_io_start(loop, &stdin_event);
 	ev_signal_start(loop, &sig_event);
 
-	if ((matrix_login(state.matrix, PASS, NULL)) == -1 ||
-	    (matrix_begin_sync(state.matrix, 0)) == -1) {
+	if ((matrix_login(state.matrix, PASS, NULL)) == -1) {
 		cleanup(&state);
 
 		return EXIT_FAILURE;

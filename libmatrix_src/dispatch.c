@@ -1,16 +1,27 @@
 #include "cJSON.h"
 #include "matrix-priv.h"
 #include <assert.h>
+#include <stdlib.h>
 
 static void
 dispatch_login(struct matrix *matrix, struct transfer *transfer) {
+	char *access_token = NULL;
+
 	cJSON *json = cJSON_Parse(transfer->mem.buf);
 
 	if (json) {
+		cJSON *token = cJSON_GetObjectItem(json, "access_token");
+
+		if (token) {
+			access_token =
+				token->valuestring ? strdup(token->valuestring) : NULL;
+		}
+
 		cJSON_Delete(json);
 	}
 
-	matrix->cb.on_login(matrix, NULL, matrix->userp);
+	matrix->access_token = access_token;
+	matrix->cb.on_login(matrix, access_token, matrix->userp);
 }
 
 void
