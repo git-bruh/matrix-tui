@@ -1,18 +1,11 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: LGPL-3.0-or-later */
 
-#include "matrix.h"
 #include "cJSON.h"
+#include "matrix-priv.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stdlib.h>
-
-enum method { GET = 0, POST, PUT };
-
-enum matrix_type {
-	MATRIX_LOGIN,
-	NUM_TYPES,
-};
 
 struct node {
 	void *data;
@@ -25,19 +18,6 @@ struct ll {
 	void (*free)(void *data);
 };
 
-struct matrix {
-	CURLM *multi;
-	struct ev_loop *loop;
-	struct matrix_callbacks cb;
-	struct ev_timer timer_event;
-	struct ll *ll; /* Doubly linked list to keep track of added handles and
-	                  clean them up. */
-	int still_running;
-	char mxid[MATRIX_MXID_MAX + 1];
-	char *homeserver;
-	void *userp;
-};
-
 /* Curl callbacks adapted from https://curl.se/libcurl/c/evhiperfifo.html. */
 struct sock_info {
 	struct ev_io ev;
@@ -47,40 +27,6 @@ struct sock_info {
 	int action;
 	bool evset;
 	long timeout;
-};
-
-struct transfer {
-	CURL *easy; /* We must keep track of the easy handle even though sock_info
-	               has it as transfers might be stopped before any progress is
-	               made on them, and sock_info would be NULL. */
-	struct sock_info *sock_info;
-	struct {
-		char *buf;
-		size_t size;
-	} mem;
-	enum matrix_type type;
-	char error[CURL_ERROR_SIZE];
-	bool is_sync;
-};
-
-static void
-dispatch_login(struct matrix *matrix, struct transfer *transfer) {
-	if (!matrix->cb.on_login) {
-		return;
-	}
-
-	cJSON *json = cJSON_Parse(transfer->mem.buf);
-
-	if (json) {
-		cJSON_Delete(json);
-	}
-
-	matrix->cb.on_login(matrix, NULL, matrix->userp);
-}
-
-static void (*const dispatch[NUM_TYPES + 1])(struct matrix *matrix,
-                                             struct transfer *transfer) = {
-	dispatch_login,
 };
 
 static struct ll *
@@ -152,20 +98,8 @@ ll_free(struct ll *ll) {
 }
 
 static void
-check_and_dispatch(struct matrix *matrix, struct transfer *transfer) {
-	if (!transfer->mem.buf) {
-		return;
-	}
-
-	dispatch[transfer->type](matrix, transfer);
-}
-
-static void
 free_transfer(void *data) {
 	struct transfer *transfer = (struct transfer *) data;
-
-	char *url = NULL;
-	curl_easy_getinfo(transfer->easy, CURLINFO_EFFECTIVE_URL, &url);
 
 	curl_easy_cleanup(transfer->easy);
 
@@ -193,7 +127,7 @@ check_multi_info(struct matrix *matrix) {
 
 			struct transfer *transfer = (struct transfer *) node->data;
 
-			check_and_dispatch(matrix, transfer);
+			matrix_parse_and_dispatch(matrix, transfer);
 
 			assert(!transfer->sock_info);
 			assert(msg->easy_handle == (transfer->easy));
@@ -347,14 +281,14 @@ write_cb(void *contents, size_t size, size_t nmemb, void *userp) {
 	return realsize;
 }
 
-static int
-transfer_add(struct matrix *matrix, CURL *easy, bool is_sync) {
+int
+matrix_transfer_add(struct matrix *matrix, CURL *easy, enum matrix_type type) {
 	struct transfer *transfer = calloc(1, sizeof(*transfer));
 	struct node *node = NULL;
 
 	if (transfer) {
 		transfer->easy = easy;
-		transfer->is_sync = is_sync;
+		transfer->type = type;
 
 		if ((node = ll_append(matrix->ll, transfer)) &&
 		    (curl_easy_setopt(easy, CURLOPT_PRIVATE, node)) == CURLE_OK &&
@@ -376,54 +310,6 @@ transfer_add(struct matrix *matrix, CURL *easy, bool is_sync) {
 	}
 
 	return -1;
-}
-
-static char *
-endpoint_create(const char *homeserver, const char *endpoint) {
-	const char base[] = "/_matrix/client/r0";
-
-	size_t size = strlen(homeserver) + sizeof(base) + strlen(endpoint);
-
-	char *final = calloc(size, sizeof(char));
-
-	if (final) {
-		snprintf(final, size, "%s%s%s", homeserver, base, endpoint);
-	}
-
-	return final;
-}
-
-static CURL *
-endpoint_create_with_handle(const char *homeserver, const char *endpoint,
-                            const char *data, enum method method) {
-	char *url = endpoint_create(homeserver, endpoint);
-	CURL *easy = NULL;
-
-	if (url && (easy = curl_easy_init()) &&
-	    (curl_easy_setopt(easy, CURLOPT_URL, url)) == CURLE_OK) {
-
-		free(url); /* strdup'd by curl. */
-		url = NULL;
-
-		switch (method) {
-		case GET:
-			break;
-		case POST:
-			curl_easy_setopt(easy, CURLOPT_COPYPOSTFIELDS, data);
-			break;
-		case PUT:
-			break;
-		default:
-			assert(0);
-		}
-
-		return easy;
-	}
-
-	free(url);
-	curl_easy_cleanup(easy);
-
-	return NULL;
 }
 
 struct matrix *
@@ -487,55 +373,13 @@ matrix_destroy(struct matrix *matrix) {
 }
 
 int
-matrix_login(struct matrix *matrix, const char *password,
-             const char *device_id) {
-	(void) device_id;
-
-	if (!password) {
-		return -1;
-	}
-
-	cJSON *json = NULL;
-
-	if ((json = cJSON_CreateObject()) &&
-	    (cJSON_AddStringToObject(json, "type", "m.login.password")) &&
-	    (cJSON_AddStringToObject(json, "password", password))) {
-		cJSON *identifier = cJSON_AddObjectToObject(json, "identifier");
-		char *rendered = NULL;
-
-		if (identifier &&
-		    (cJSON_AddStringToObject(identifier, "type", "m.id.user")) &&
-		    (cJSON_AddStringToObject(identifier, "user", matrix->mxid)) &&
-		    (rendered = cJSON_PrintUnformatted(json))) {
-			CURL *easy = endpoint_create_with_handle(matrix->homeserver,
-			                                         "/login", rendered, POST);
-
-			free(rendered);
-
-			if (easy && (transfer_add(matrix, easy, false)) == 0) {
-				cJSON_Delete(json);
-
-				return 0;
-			}
-
-			curl_easy_cleanup(easy);
-		}
-	}
-
-	if (json) {
-		cJSON_Delete(json);
-	}
-
-	return -1;
-}
-
-int
 matrix_begin_sync(struct matrix *matrix, int timeout) {
 	(void) timeout;
 
-	CURL *easy = curl_easy_init(); /* Cleaned up by transfer_add on failure. */
+	CURL *easy =
+		curl_easy_init(); /* Cleaned up by matrix_transfer_add on failure. */
 
 	/* curl_easy_setopt(easy, CURLOPT_URL, ""); */
 
-	return transfer_add(matrix, easy, true);
+	return matrix_transfer_add(matrix, easy, true);
 }

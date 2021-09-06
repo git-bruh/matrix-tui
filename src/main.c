@@ -4,6 +4,7 @@
 #include "input.h"
 #include "matrix.h"
 #include <assert.h>
+#include <curl/curl.h>
 #include <ev.h>
 #include <langinfo.h>
 #include <locale.h>

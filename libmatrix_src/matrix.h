@@ -3,7 +3,6 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: LGPL-3.0-or-later */
 
-#include <curl/curl.h>
 #include <ev.h>
 #include <stdint.h>
 
@@ -18,6 +17,12 @@ struct matrix_callbacks {
 /* Must allocate enum + 1. */
 enum {
 	MATRIX_MXID_MAX = 255,
+};
+
+enum matrix_type {
+	MATRIX_SYNC = -1, /* Internal. */
+	MATRIX_LOGIN = 0,
+	MATRIX_NUM_TYPES,
 };
 
 struct matrix *
