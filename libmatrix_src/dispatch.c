@@ -18,9 +18,11 @@ dispatch_login(struct matrix *matrix, struct transfer *transfer) {
 
 			const char auth[] = "Authorization: Bearer ";
 
+			/* sizeof includes the NUL terminator required for the final string.
+			 */
 			size_t len_tmp = sizeof(auth) + strlen(access_token);
 
-			char *header = calloc(len_tmp, sizeof(char));
+			char *header = calloc(len_tmp, sizeof(*header));
 
 			if (header) {
 				snprintf(header, len_tmp, "%s%s", auth, access_token);

@@ -299,6 +299,13 @@ matrix_transfer_add(struct matrix *matrix, CURL *easy, enum matrix_type type) {
 		        CURLE_OK &&
 		    (curl_easy_setopt(easy, CURLOPT_WRITEDATA, transfer)) == CURLE_OK &&
 		    (curl_multi_add_handle(matrix->multi, easy)) == CURLM_OK) {
+			/* FIXME Without this, after the first transfer is completed,
+			 * subsequent transfers get
+			 * thier multi_timer_cb called with a value of 0, but no activity
+			 * occurs after that. */
+			curl_multi_socket_action(matrix->multi, CURL_SOCKET_TIMEOUT, 0,
+			                         &matrix->still_running);
+
 			return 0;
 		}
 	}
