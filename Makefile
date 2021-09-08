@@ -29,14 +29,14 @@ OBJ = \
 all: release
 
 .c.o:
-	$(CC) $(XCFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(XCFLAGS) $(INCLUDES) $(CPPFLAGS) -c $< -o $@
 
 # Makefile pattern matching isn't portable so we must use this hack :(
 third_party:
 	$(MAKE) -f third_party.mk
 
 $(BIN): $(OBJ) third_party
-	$(CC) $(XCFLAGS) -o $@ $(OBJ) $(THIRD_PARTY_OBJ) $(LDFLAGS) $(LDLIBS)
+	$(CC) $(XCFLAGS) -o $@ $(OBJ) $(THIRD_PARTY_OBJ) $(LDLIBS) $(LDFLAGS)
 
 release:
 	$(MAKE) $(BIN) \

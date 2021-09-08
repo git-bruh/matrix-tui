@@ -33,12 +33,12 @@ is
 };
 
 extern void (*const matrix_dispatch[MATRIX_NUM_TYPES + 1])(
-	struct matrix *matrix, struct transfer *transfer);
+	struct matrix *matrix, const char *resp);
 
 int
 matrix_transfer_add(struct matrix *matrix, CURL *easy, enum matrix_type type);
 int
 matrix_header_append(struct matrix *matrix, const char *header);
 void
-matrix_parse_and_dispatch(struct matrix *matrix, struct transfer *transfer);
+matrix_dispatch_response(struct matrix *matrix, struct transfer *transfer);
 #endif /* !MATRIX_PRIV_H */

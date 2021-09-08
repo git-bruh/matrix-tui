@@ -52,6 +52,10 @@ login_cb(struct matrix *matrix, char *access_token, void *userp) {
 	tb_string(0, 0, TB_DEFAULT, TB_DEFAULT,
 	          access_token ? access_token : "Failed to login!");
 
+	if ((matrix_sync(matrix, 0)) == -1) {
+		tb_string(0, 1, TB_DEFAULT, TB_DEFAULT, "Failed to start sync!");
+	}
+
 	tb_render();
 }
 

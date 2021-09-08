@@ -126,9 +126,7 @@ check_multi_info(struct matrix *matrix) {
 
 			struct transfer *transfer = (struct transfer *) node->data;
 
-			if (transfer->type != MATRIX_SYNC) {
-				matrix_parse_and_dispatch(matrix, transfer);
-			}
+			matrix_dispatch_response(matrix, transfer);
 
 			assert(!transfer->sock_info);
 			assert(msg->easy_handle == (transfer->easy));
@@ -349,16 +347,19 @@ matrix_alloc(struct ev_loop *loop, struct matrix_callbacks callbacks,
 
 	{
 		size_t len_mxid = strlen(mxid);
-		size_t len_homeserver = strlen(homeserver);
 
-		if (len_mxid < 1 || len_mxid > MATRIX_MXID_MAX || len_homeserver < 1 ||
-		    !(matrix->homeserver = strndup(homeserver, len_homeserver))) {
+		/* We allocate MATRIX_MXID_MAX + 1 bytes. */
+		if (len_mxid < 1 || len_mxid > MATRIX_MXID_MAX ||
+		    (strlen(homeserver)) < 1 ||
+		    !(matrix->homeserver = strdup(homeserver))) {
 			matrix_destroy(matrix);
 
 			return NULL;
 		}
 
-		memcpy(matrix->mxid, mxid, len_mxid);
+		/* Copy NUL aswell, doesn't really matter in our case since we already
+		 * zero out everything on allocation. */
+		memcpy(matrix->mxid, mxid, len_mxid + 1);
 	}
 
 	matrix->cb = callbacks;

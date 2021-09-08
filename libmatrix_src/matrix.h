@@ -34,5 +34,5 @@ int
 matrix_login(struct matrix *matrix, const char *password,
              const char *device_id);
 int
-matrix_begin_sync(struct matrix *matrix, int timeout);
+matrix_sync(struct matrix *matrix, int timeout);
 #endif /* !MATRIX_H */
