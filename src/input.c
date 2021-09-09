@@ -77,6 +77,7 @@ input_init(struct input *input, int input_height) {
 	}
 
 	input->max_height = input_height;
+	input->last_cur_line = 1;
 
 	return 0;
 }
@@ -92,12 +93,10 @@ void
 input_redraw(struct input *input) {
 	tb_clear_buffer();
 
-	int cur_x = 0, cur_y = 0, cur_line = 1, line_start = 0, line_end = 0;
+	int cur_x = 0, cur_line = 1, lines = 1;
 
-	/* Calculate needed lines as terminal height / width can vary due to
-	 * resizes. */
 	{
-		int x = 0, y = 0, width = 0, lines = 1;
+		int x = 0, y = 0, width = 0;
 
 		for (size_t i = 0; i < input->buffer.len; i++) {
 			uc_sanitize(input->buffer.buf[i], &width);
@@ -109,35 +108,33 @@ input_redraw(struct input *input) {
 				cur_line = lines;
 			}
 		}
-
-		line_end = lines;
 	}
 
-	int x = 0, y = 0;
-
-	/* Calculate offsets. */
 	{
-		y = tb_height() -
-		    ((line_end - input->max_height) > 0 ? input->max_height : line_end);
+		int cur_delta = cur_line - input->last_cur_line;
 
-		line_start +=
-			(cur_line > input->max_height) ? (cur_line - input->max_height) : 0;
+		if (cur_delta > 0) {
+			input->cur_y == (input->max_height - 1) ? input->line_off++
+													: input->cur_y++;
+		} else if (cur_delta < 0) {
+			input->cur_y -= (input->cur_y > 0);
+			input->line_off -= (input->line_off && input->cur_y == 0);
+		}
 
-		int overflow = line_end - line_start;
-
-		/* Ensure that we don't write excess lines. */
-		line_end -=
-			(overflow > input->max_height) ? (overflow - input->max_height) : 0;
-
-		/* We subtract 1 as line_start has a minimum value of 0. */
-		cur_y = y + (cur_line - 1 - line_start);
-
-		assert(cur_y >= y);
-		assert(cur_y < tb_height());
+#if 0
+		fprintf(
+			stderr,
+			"cur_y: %d, line_off: %d, delta: %d\n",
+			input->cur_y, input->line_off, cur_delta
+		);
+#endif
 	}
 
-	assert(line_start >= 0);
-	assert(line_end > line_start);
+	assert(input->cur_y < input->max_height);
+	assert(input->line_off >= 0);
+	assert(input->line_off < lines);
+
+	input->last_cur_line = cur_line;
 
 	int width = 0, line = 0;
 
@@ -146,25 +143,30 @@ input_redraw(struct input *input) {
 	uint32_t uc = 0;
 
 	/* Calculate starting index. */
-	for (int tmp_x = 0, tmp_y = 0;
-	     line != line_start && written < input->buffer.len; written++) {
+	for (int x = 0, y = 0; written < input->buffer.len; written++) {
+		if (line == input->line_off) {
+			break;
+		}
+
 		uc_sanitize(input->buffer.buf[written], &width);
 
-		line += adjust_xy(width, &tmp_x, &tmp_y);
+		line += adjust_xy(width, &x, &y);
 	}
 
-	/* Print the characters. */
-	tb_set_cursor(cur_x, cur_y);
+	int x = 0;
+	int y = tb_height() - (input->line_off ? input->max_height : lines);
 
-	for (; written < input->buffer.len; written++) {
-		if (line >= line_end) {
+	tb_set_cursor(cur_x, y + input->cur_y);
+
+	while (written < input->buffer.len) {
+		if (line >= lines) {
 			break;
 		}
 
 		assert(y < tb_height());
 		assert((tb_height() - y) <= input->max_height);
 
-		uc = uc_sanitize(input->buffer.buf[written], &width);
+		uc = uc_sanitize(input->buffer.buf[written++], &width);
 
 		/* Don't print newlines directly as they mess up the screen. */
 		if (!should_forcebreak(width)) {

@@ -8,33 +8,29 @@ dispatch_login(struct matrix *matrix, const char *resp) {
 	char *access_token = NULL;
 
 	cJSON *json = cJSON_Parse(resp);
+	cJSON *token = NULL;
 
-	if (json) {
-		cJSON *token = cJSON_GetObjectItem(json, "access_token");
+	if (json && (token = cJSON_GetObjectItem(json, "access_token"))) {
+		access_token = token->valuestring ? strdup(token->valuestring) : NULL;
 
-		if (token) {
-			access_token =
-				token->valuestring ? strdup(token->valuestring) : NULL;
+		const char auth[] = "Authorization: Bearer ";
 
-			const char auth[] = "Authorization: Bearer ";
+		/* sizeof includes the NUL terminator required for the final string.
+		 */
+		size_t len_tmp = sizeof(auth) + strlen(access_token);
 
-			/* sizeof includes the NUL terminator required for the final string.
-			 */
-			size_t len_tmp = sizeof(auth) + strlen(access_token);
+		char *header = calloc(len_tmp, sizeof(*header));
 
-			char *header = calloc(len_tmp, sizeof(*header));
+		if (header) {
+			snprintf(header, len_tmp, "%s%s", auth, access_token);
 
-			if (header) {
-				snprintf(header, len_tmp, "%s%s", auth, access_token);
-
-				matrix_header_append(matrix, header);
-			}
-
-			free(header);
+			matrix_header_append(matrix, header);
 		}
 
-		cJSON_Delete(json);
+		free(header);
 	}
+
+	cJSON_Delete(json);
 
 	matrix->cb.on_login(matrix, access_token, matrix->userp);
 

@@ -9,6 +9,11 @@
 struct input {
 	struct buffer buffer;
 	int max_height;
+	int line_off; /* The number of lines to skip when rendering the buffer. */
+	int last_cur_line; /* The "line" where the cursor was placed in the last
+	                      draw, used to advance / decrement cur_y and line_off.
+	                    */
+	int cur_y; /* y co-ordinate relative to the input field (not window). */
 };
 
 enum {

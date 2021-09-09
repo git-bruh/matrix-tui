@@ -49,6 +49,7 @@ cleanup(struct state *state) {
 
 static void
 login_cb(struct matrix *matrix, char *access_token, void *userp) {
+#if 0
 	tb_string(0, 0, TB_DEFAULT, TB_DEFAULT,
 	          access_token ? access_token : "Failed to login!");
 
@@ -57,6 +58,7 @@ login_cb(struct matrix *matrix, char *access_token, void *userp) {
 	}
 
 	tb_render();
+#endif
 }
 
 static void
