@@ -130,9 +130,6 @@ input_redraw(struct input *input) {
 				input->cur_y = 0;
 			}
 		}
-
-		fprintf(stderr, "cur_y: %d, line_off: %d, delta: %d\n", input->cur_y,
-		        input->line_off, cur_delta);
 	}
 
 	if (!input->line_off) {
