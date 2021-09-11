@@ -113,29 +113,30 @@ input_redraw(struct input *input) {
 	{
 		int cur_delta = cur_line - input->last_cur_line;
 
-		if (cur_delta > 0) {
-			if (input->cur_y == (input->max_height - 1)) {
-				input->line_off += cur_delta;
-			} else if ((input->cur_y += cur_delta) > input->max_height - 1) {
-				/* Prevent cur_y from overflowing. */
-				input->line_off += (input->cur_y - (input->max_height - 1));
-				input->cur_y = input->max_height - 1;
-			}
-		} else if (cur_delta < 0) {
-			if (input->cur_y == 0 && (input->line_off -= -cur_delta) < 0) {
-				input->line_off = 0;
-			}
-
-			if (input->cur_y > 0 && (input->cur_y -= -cur_delta) < 0) {
-				input->cur_y = 0;
-			}
+		/* We moved forward, add the delta to the cursor position and add the
+		 * overflow to the line offset. */
+		if (cur_delta > 0 &&
+		    (input->cur_y += cur_delta) > (input->max_height - 1)) {
+			input->line_off += (input->cur_y - (input->max_height - 1));
+			input->cur_y -= (input->cur_y - (input->max_height - 1));
+		}
+		/* We moved backward, subtract the delta from the cursor position and
+		   subtract the underflow from the line offset. */
+		else if (cur_delta < 0 && (input->cur_y -= -cur_delta) < 0) {
+			input->line_off -= -(input->cur_y);
+			input->cur_y += -(input->cur_y);
 		}
 	}
+
+	assert(input->line_off >= 0);
+	assert(input->cur_y >= 0);
+	assert(input->cur_y < input->max_height);
+	assert(input->line_off < lines);
 
 	if (!input->line_off) {
 		/* Prevent overflow if the cursor if on the first line and input would
 		 * take more than the available lines to represent. */
-		lines = (lines - input->max_height) > 0 ? input->max_height : lines;
+		lines = lines > input->max_height ? input->max_height : lines;
 	} else {
 		/* Don't write more lines than will be visible. */
 		lines = (input->line_off + input->max_height) < lines
@@ -143,8 +144,6 @@ input_redraw(struct input *input) {
 		            : lines;
 	}
 
-	assert(input->cur_y < input->max_height);
-	assert(input->line_off >= 0);
 	assert(input->line_off < lines);
 
 	input->last_cur_line = cur_line;
