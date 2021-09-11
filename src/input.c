@@ -98,12 +98,12 @@ input_redraw(struct input *input) {
 	{
 		int x = 0, y = 0, width = 0;
 
-		for (size_t i = 0; i < input->buffer.len; i++) {
-			uc_sanitize(input->buffer.buf[i], &width);
+		for (size_t written = 0; written < input->buffer.len; written++) {
+			uc_sanitize(input->buffer.buf[written], &width);
 
 			lines += adjust_xy(width, &x, &y);
 
-			if ((i + 1) == input->buffer.cur) {
+			if ((written + 1) == input->buffer.cur) {
 				cur_x = x;
 				cur_line = lines;
 			}
@@ -114,20 +114,36 @@ input_redraw(struct input *input) {
 		int cur_delta = cur_line - input->last_cur_line;
 
 		if (cur_delta > 0) {
-			input->cur_y == (input->max_height - 1) ? input->line_off++
-													: input->cur_y++;
+			if (input->cur_y == (input->max_height - 1)) {
+				input->line_off += cur_delta;
+			} else if ((input->cur_y += cur_delta) > input->max_height - 1) {
+				/* Prevent cur_y from overflowing. */
+				input->line_off += (input->cur_y - (input->max_height - 1));
+				input->cur_y = input->max_height - 1;
+			}
 		} else if (cur_delta < 0) {
-			input->cur_y -= (input->cur_y > 0);
-			input->line_off -= (input->line_off && input->cur_y == 0);
+			if (input->cur_y == 0 && (input->line_off -= -cur_delta) < 0) {
+				input->line_off = 0;
+			}
+
+			if (input->cur_y > 0 && (input->cur_y -= -cur_delta) < 0) {
+				input->cur_y = 0;
+			}
 		}
 
-#if 0
-		fprintf(
-			stderr,
-			"cur_y: %d, line_off: %d, delta: %d\n",
-			input->cur_y, input->line_off, cur_delta
-		);
-#endif
+		fprintf(stderr, "cur_y: %d, line_off: %d, delta: %d\n", input->cur_y,
+		        input->line_off, cur_delta);
+	}
+
+	if (!input->line_off) {
+		/* Prevent overflow if the cursor if on the first line and input would
+		 * take more than the available lines to represent. */
+		lines = (lines - input->max_height) > 0 ? input->max_height : lines;
+	} else {
+		/* Don't write more lines than will be visible. */
+		lines = (input->line_off + input->max_height) < lines
+		            ? input->line_off + input->max_height
+		            : lines;
 	}
 
 	assert(input->cur_y < input->max_height);
