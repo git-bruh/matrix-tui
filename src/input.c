@@ -121,7 +121,7 @@ input_redraw(struct input *input) {
 			input->cur_y -= (input->cur_y - (input->max_height - 1));
 		}
 		/* We moved backward, subtract the delta from the cursor position and
-		   subtract the underflow from the line offset. */
+		 * subtract the underflow from the line offset. */
 		else if (cur_delta < 0 && (input->cur_y -= -cur_delta) < 0) {
 			input->line_off -= -(input->cur_y);
 			input->cur_y += -(input->cur_y);

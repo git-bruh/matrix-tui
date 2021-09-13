@@ -331,6 +331,29 @@ matrix_header_append(struct matrix *matrix, const char *header) {
 	return -1;
 }
 
+int
+matrix_set_authorization(struct matrix *matrix, const char *token) {
+	const char auth[] = "Authorization: Bearer ";
+
+	/* sizeof includes the NUL terminator required for the final string. */
+	size_t len_tmp = sizeof(auth) + strlen(token);
+
+	char *header = calloc(len_tmp, sizeof(*header));
+
+	if (!header) {
+		return -1;
+	}
+
+	snprintf(header, len_tmp, "%s%s", auth, token);
+	matrix_header_append(matrix, header);
+
+	matrix->authorized = true;
+
+	free(header);
+
+	return 0;
+}
+
 struct matrix *
 matrix_alloc(struct ev_loop *loop, struct matrix_callbacks callbacks,
              const char *mxid, const char *homeserver, void *userp) {

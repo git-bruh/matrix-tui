@@ -56,7 +56,8 @@ format:
 	clang-format -i ./*src/*.c ./*src/*.h
 
 tidy:
-	clang-tidy ./*src/*.c ./*src/*.h -- $(XCFLAGS) $(INCLUDES)
+	clang-tidy ./*src/*.[hc] -- $(XCFLAGS) $(INCLUDES) \
+		-DNDEBUG # Prevent assertions from increasing cognitive complexity.
 
 iwyu:
 	for src in ./*src/*.c; do \

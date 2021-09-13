@@ -3,38 +3,22 @@
 #include <assert.h>
 #include <stdlib.h>
 
+/* TODO pass errors to callbacks. */
+
 static void
 dispatch_login(struct matrix *matrix, const char *resp) {
-	char *access_token = NULL;
-
 	cJSON *json = cJSON_Parse(resp);
-	cJSON *token = NULL;
+	cJSON *token = cJSON_GetObjectItem(json, "access_token");
 
-	if (json && (token = cJSON_GetObjectItem(json, "access_token"))) {
-		access_token = token->valuestring ? strdup(token->valuestring) : NULL;
+	char *access_token = token->valuestring;
 
-		const char auth[] = "Authorization: Bearer ";
-
-		/* sizeof includes the NUL terminator required for the final string.
-		 */
-		size_t len_tmp = sizeof(auth) + strlen(access_token);
-
-		char *header = calloc(len_tmp, sizeof(*header));
-
-		if (header) {
-			snprintf(header, len_tmp, "%s%s", auth, access_token);
-
-			matrix_header_append(matrix, header);
-		}
-
-		free(header);
+	if (access_token) {
+		matrix_set_authorization(matrix, access_token);
 	}
-
-	cJSON_Delete(json);
 
 	matrix->cb.on_login(matrix, access_token, matrix->userp);
 
-	free(access_token);
+	cJSON_Delete(json);
 }
 
 static void

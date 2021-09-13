@@ -64,8 +64,17 @@ endpoint_create_with_handle(const struct matrix *matrix, const char *endpoint,
 }
 
 int
+matrix_login_with_token(struct matrix *matrix, const char *token) {
+	return matrix->authorized ? -1 : matrix_set_authorization(matrix, token);
+}
+
+int
 matrix_login(struct matrix *matrix, const char *password,
              const char *device_id) {
+	if (matrix->authorized) {
+		return -1;
+	}
+
 	(void) device_id;
 
 	if (!password || !matrix->cb.on_login) {
@@ -109,6 +118,10 @@ matrix_login(struct matrix *matrix, const char *password,
 
 int
 matrix_sync(struct matrix *matrix, int timeout) {
+	if (!matrix->authorized) {
+		return -1;
+	}
+
 	(void) timeout;
 
 	CURL *easy = endpoint_create_with_handle(matrix, "/sync", NULL, "", GET);

@@ -2,6 +2,7 @@
 #define MATRIX_PRIV_H
 #include "matrix.h"
 #include <curl/curl.h>
+#include <stdbool.h>
 
 struct matrix {
 	CURLM *multi;
@@ -12,6 +13,7 @@ struct matrix {
 	struct ll *ll; /* Doubly linked list to keep track of added handles and
 	                  clean them up. */
 	int still_running;
+	bool authorized;
 	char mxid[MATRIX_MXID_MAX + 1];
 	char *homeserver;
 	void *userp;
@@ -38,7 +40,7 @@ extern void (*const matrix_dispatch[MATRIX_NUM_TYPES + 1])(
 int
 matrix_transfer_add(struct matrix *matrix, CURL *easy, enum matrix_type type);
 int
-matrix_header_append(struct matrix *matrix, const char *header);
+matrix_set_authorization(struct matrix *matrix, const char *token);
 void
 matrix_dispatch_response(struct matrix *matrix, struct transfer *transfer);
 #endif /* !MATRIX_PRIV_H */

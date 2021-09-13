@@ -9,8 +9,7 @@ CFLAGS_COMMON = \
 	-Werror=implicit-function-declaration \
 	-Werror=incompatible-pointer-types \
 	-Werror=discarded-qualifiers \
-	-Werror=ignored-qualifiers \
-	-Wno-unknown-warning-option
+	-Werror=ignored-qualifiers
 
 THIRD_PARTY_OBJ = \
 	third_party/cJSON/cJSON.o \
