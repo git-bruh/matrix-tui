@@ -34,9 +34,6 @@ is
 	char error[CURL_ERROR_SIZE];
 };
 
-extern void (*const matrix_dispatch[MATRIX_NUM_TYPES + 1])(
-	struct matrix *matrix, const char *resp);
-
 int
 matrix_transfer_add(struct matrix *matrix, CURL *easy, enum matrix_type type);
 int

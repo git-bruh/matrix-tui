@@ -48,8 +48,15 @@ cleanup(struct state *state) {
 }
 
 static void
-login_cb(struct matrix *matrix, char *access_token, void *userp) {
-#if 0
+room_event_cb(struct matrix *matrix, const struct matrix_room_event *event,
+              void *userp) {
+	tb_string(0, 1, TB_DEFAULT, TB_DEFAULT, event->room_id);
+
+	tb_render();
+}
+
+static void
+login_cb(struct matrix *matrix, const char *access_token, void *userp) {
 	tb_string(0, 0, TB_DEFAULT, TB_DEFAULT,
 	          access_token ? access_token : "Failed to login!");
 
@@ -58,7 +65,6 @@ login_cb(struct matrix *matrix, char *access_token, void *userp) {
 	}
 
 	tb_render();
-#endif
 }
 
 static void
@@ -138,8 +144,10 @@ main() {
 	if (!loop || (curl_global_init(CURL_GLOBAL_ALL)) != CURLE_OK ||
 	    (input_init(&state.input, input_height)) == -1 ||
 	    !(state.matrix = matrix_alloc(
-			  loop, (struct matrix_callbacks){.on_login = login_cb}, MXID,
-			  HOMESERVER, &state))) {
+			  loop,
+			  (struct matrix_callbacks){.on_login = login_cb,
+	                                    .on_room_event = room_event_cb},
+			  MXID, HOMESERVER, &state))) {
 		if (loop) {
 			ev_loop_destroy(loop);
 		}
