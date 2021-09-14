@@ -10,7 +10,7 @@ dispatch_login(struct matrix *matrix, const char *resp) {
 	cJSON *json = cJSON_Parse(resp);
 	cJSON *token = cJSON_GetObjectItem(json, "access_token");
 
-	char *access_token = token->valuestring;
+	char *access_token = cJSON_GetStringValue(token);
 
 	if (access_token) {
 		matrix_set_authorization(matrix, access_token);

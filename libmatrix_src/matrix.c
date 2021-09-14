@@ -1,6 +1,3 @@
-/* SPDX-FileCopyrightText: 2021 git-bruh
- * SPDX-License-Identifier: LGPL-3.0-or-later */
-
 #include "matrix-priv.h"
 #include <assert.h>
 #include <stdbool.h>

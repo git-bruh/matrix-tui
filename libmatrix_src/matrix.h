@@ -1,14 +1,12 @@
 #ifndef MATRIX_H
 #define MATRIX_H
-/* SPDX-FileCopyrightText: 2021 git-bruh
- * SPDX-License-Identifier: LGPL-3.0-or-later */
-
 #include <ev.h>
 
 struct matrix;
 
+/* Any data received from these callbacks (except userp) _SHOULD_ be treated as read-only, users should create a local copy of the data when required instead of storing the returned pointers. */
 struct matrix_callbacks {
-	void (*on_login)(struct matrix *matrix, char *access_token, void *userp);
+	void (*on_login)(struct matrix *matrix, const char *access_token, void *userp);
 	/* void (*on_room_event)(struct matrix *matrix, struct matrix_event *event,
 	 * void *userp); */
 };
