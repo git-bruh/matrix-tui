@@ -4,7 +4,7 @@
 
 include common.mk
 
-XCFLAGS = $(CFLAGS_COMMON)
+XCFLAGS = $(CFLAGS_COMMON) -DLOG_USE_COLOR
 
 all: $(THIRD_PARTY_OBJ)
 

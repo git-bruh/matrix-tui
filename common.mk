@@ -13,5 +13,6 @@ CFLAGS_COMMON = \
 
 THIRD_PARTY_OBJ = \
 	third_party/cJSON/cJSON.o \
+	third_party/log.c/src/log.o \
 	third_party/termbox/src/termbox.o \
 	third_party/termbox/src/utf8.o

@@ -15,6 +15,7 @@ LDLIBS = `curl-config --libs` -lev
 INCLUDES = \
 	-I libmatrix_src \
 	-isystem third_party/cJSON \
+	-isystem third_party/log.c/src \
 	-isystem third_party/stb \
 	-isystem third_party/termbox/src
 

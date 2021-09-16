@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "input.h"
+#include "log.h"
 #include "matrix.h"
 #include <assert.h>
 #include <curl/curl.h>
@@ -26,8 +27,10 @@
 #endif
 
 struct state {
+	struct ev_loop *loop;
 	struct input input;
 	struct matrix *matrix;
+	FILE *log_fp;
 };
 
 static const int input_height = 5;
@@ -45,6 +48,8 @@ cleanup(struct state *state) {
 
 	tb_shutdown();
 	curl_global_cleanup();
+
+	fclose(state->log_fp);
 }
 
 static void
@@ -119,47 +124,109 @@ sig_cb(struct ev_loop *loop, ev_signal *w, int revents) {
 	redraw((struct state *) w->data);
 }
 
-int
-main() {
+static int
+init_terminal(void) {
 	if (!(setlocale(LC_ALL, "")) ||
 	    (strcmp("UTF-8", nl_langinfo(CODESET))) != 0) {
-		return EXIT_FAILURE;
+		log_fatal("Locale is not UTF-8.");
+
+		return -1;
 	}
 
 	switch ((tb_init())) {
 	case TB_EUNSUPPORTED_TERMINAL:
+		log_fatal("Unsupported terminal. Is TERM set ?");
+
+		return -1;
 	case TB_EFAILED_TO_OPEN_TTY:
+		log_fatal("Failed to open TTY.");
+
+		return -1;
 	case TB_EPIPE_TRAP_ERROR:
-		return EXIT_FAILURE;
+		log_fatal("Failed to create pipe.");
+
+		return -1;
 	case 0:
 		break;
 	default:
 		assert(0);
 	}
 
+	return 0;
+}
+
+static int
+init_matrix_and_ui(struct state *state) {
+	struct matrix_callbacks callbacks = {.on_login = login_cb,
+	                                     .on_room_event = room_event_cb};
+
+	bool err = false;
+
+	if (!err && (err = (curl_global_init(CURL_GLOBAL_ALL != CURLE_OK)))) {
+		log_fatal("Failed to initialize curl.");
+	}
+
+	if (!err && (err = ((input_init(&state->input, input_height)) == -1))) {
+		log_fatal("Failed to initialize input.");
+	}
+
+	if (!err &&
+	    (err = (!(state->matrix = matrix_alloc(state->loop, callbacks, MXID,
+	                                           HOMESERVER, &state))))) {
+		log_fatal("Failed to initialize libmatrix.");
+	}
+
+	return err ? -1 : 0;
+}
+
+int
+main() {
 	struct state state = {0};
 
-	struct ev_loop *loop = EV_DEFAULT;
+	{
+		const char *log_path = "/tmp/matrix-client.log";
 
-	if (!loop || (curl_global_init(CURL_GLOBAL_ALL)) != CURLE_OK ||
-	    (input_init(&state.input, input_height)) == -1 ||
-	    !(state.matrix = matrix_alloc(
-			  loop,
-			  (struct matrix_callbacks){.on_login = login_cb,
-	                                    .on_room_event = room_event_cb},
-			  MXID, HOMESERVER, &state))) {
-		if (loop) {
-			ev_loop_destroy(loop);
+		FILE *log_fp = fopen(log_path, "w");
+
+		if (!log_fp) {
+			log_fatal("Failed to open log file '%s'.", log_path);
+			return EXIT_FAILURE;
 		}
 
-		cleanup(&state);
+		if ((init_terminal()) == -1) {
+			fclose(log_fp);
+			return EXIT_FAILURE;
+		}
 
+		state.log_fp = log_fp;
+	}
+
+	if ((log_add_fp(state.log_fp, LOG_TRACE)) == -1) {
+		log_fatal("Failed to initialize logging callback.");
+
+		cleanup(&state);
 		return EXIT_FAILURE;
 	}
 
-	/* Set initial cursor. */
-	tb_set_cursor(0, tb_height() - 1);
-	tb_render();
+	bool err = (!(state.loop = EV_DEFAULT));
+
+	if (err) {
+		log_fatal("Failed to initialize event loop.");
+	}
+
+	err = err ? err : ((init_matrix_and_ui(&state)) == -1);
+
+	if (err) {
+		if (state.loop) {
+			ev_loop_destroy(state.loop);
+		}
+
+		cleanup(&state);
+		return EXIT_FAILURE;
+	}
+
+	input_set_initial_cursor(&state.input);
+	redraw(&state);
 
 	struct ev_io stdin_event = {.data = &state};
 	struct ev_signal sig_event = {.data = &state};
@@ -167,16 +234,18 @@ main() {
 	ev_io_init(&stdin_event, input_cb, STDIN_FILENO, EV_READ);
 	ev_signal_init(&sig_event, sig_cb, SIGWINCH);
 
-	ev_io_start(loop, &stdin_event);
-	ev_signal_start(loop, &sig_event);
+	ev_io_start(state.loop, &stdin_event);
+	ev_signal_start(state.loop, &sig_event);
 
 	if ((matrix_login(state.matrix, PASS, NULL)) == -1) {
-		cleanup(&state);
+		log_fatal("Failed to login.");
 
+		ev_loop_destroy(state.loop);
+		cleanup(&state);
 		return EXIT_FAILURE;
 	}
 
-	ev_run(loop, 0);
+	ev_run(state.loop, 0);
 
 	return EXIT_SUCCESS;
 }

@@ -29,6 +29,8 @@ input_finish(struct input *input);
 
 void
 input_redraw(struct input *input);
+void
+input_set_initial_cursor(struct input *input);
 int
 input_event(struct tb_event event, struct input *input);
 #endif /* !INPUT_H */

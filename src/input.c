@@ -189,6 +189,13 @@ input_redraw(struct input *input) {
 	}
 }
 
+void
+input_set_initial_cursor(struct input *input) {
+	(void) input;
+
+	tb_set_cursor(0, tb_height() - 1);
+}
+
 int
 input_event(struct tb_event event, struct input *input) {
 	if (!event.key && event.ch) {
