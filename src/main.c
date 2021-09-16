@@ -48,6 +48,7 @@ cleanup(struct state *state) {
 
 	tb_shutdown();
 	curl_global_cleanup();
+	ev_loop_destroy(state->loop);
 
 	fclose(state->log_fp);
 }
@@ -115,8 +116,7 @@ input_cb(EV_P_ ev_io *w, int revents) {
  * does NOT need to be async-signal safe as the signals are caught
  * by libev and sent to us synchronously. */
 static void
-sig_cb(struct ev_loop *loop, ev_signal *w, int revents) {
-	(void) loop;
+sig_cb(EV_P_ ev_signal *w, int revents) {
 	(void) revents;
 
 	tb_resize();
@@ -217,10 +217,6 @@ main() {
 	err = err ? err : ((init_matrix_and_ui(&state)) == -1);
 
 	if (err) {
-		if (state.loop) {
-			ev_loop_destroy(state.loop);
-		}
-
 		cleanup(&state);
 		return EXIT_FAILURE;
 	}
@@ -240,7 +236,6 @@ main() {
 	if ((matrix_login(state.matrix, PASS, NULL)) == -1) {
 		log_fatal("Failed to login.");
 
-		ev_loop_destroy(state.loop);
 		cleanup(&state);
 		return EXIT_FAILURE;
 	}
