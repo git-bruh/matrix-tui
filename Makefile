@@ -8,7 +8,8 @@ BIN = client
 
 XCFLAGS = \
 	$(CFLAGS_COMMON) -Wcast-qual -Wconversion -Wpointer-arith \
-	-Wunused-macros -Wredundant-decls
+	-Wunused-macros -Wredundant-decls \
+	-DCLIENT_NAME=\"matrix-client\"
 
 LDLIBS = `curl-config --libs` -lev
 
