@@ -14,25 +14,36 @@ enum matrix_room_status {
 
 struct matrix;
 
+/* All members in these structs are non-nullable unless explicitly mentioned. */
+
 struct matrix_room {
 	char *id;
 	/* TODO summary. */
 };
 
-struct matrix_state_event {};
+struct matrix_state_event {
+	struct matrix_room *room;
+};
 
 struct matrix_timeline_event {
 	struct {
 		char *body;
-		char *formatted_body;
+		char *formatted_body; /* nullable. */
 	} content;
+	struct matrix_room *room;
 	char *sender;
 	char *type;
 	char *event_id;
 };
 
-struct matrix_ephemeral_event {};
-struct matrix_account_data {};
+struct matrix_ephemeral_event {
+	struct matrix_room *room;
+};
+
+struct matrix_account_data {
+	struct matrix_room
+		*room; /* nullable if the data doesn't belong to a specific room. */
+};
 
 /* Any data received from these callbacks (except userp) _SHOULD_ be treated as
  * read-only. Users should create a local copy of the data when required instead
@@ -40,11 +51,6 @@ struct matrix_account_data {};
 struct matrix_callbacks {
 	void (*on_login)(struct matrix *matrix, const char *access_token,
 					 void *userp);
-	/* This callback is called to notify the application of the room that is
-	 * currently being processed. Events present in subsequent invokations of
-	 * the on_room_event callback belong to this room. */
-	void (*on_room)(struct matrix *matrix, const struct matrix_room *room,
-					enum matrix_room_status status, void *userp);
 	void (*on_state_event)(struct matrix *matrix,
 						   const struct matrix_state_event *event, void *userp);
 	void (*on_timeline_event)(struct matrix *matrix,

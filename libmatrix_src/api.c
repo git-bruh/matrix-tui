@@ -109,9 +109,7 @@ matrix_login(struct matrix *matrix, const char *password,
 		}
 	}
 
-	if (json) {
-		cJSON_Delete(json);
-	}
+	cJSON_Delete(json);
 
 	return -1;
 }
