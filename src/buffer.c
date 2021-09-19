@@ -64,8 +64,8 @@ buffer_left_word(struct buffer *buffer) {
 		do {
 			buffer->cur--;
 		} while (buffer->cur > 0 &&
-		         ((iswspace((wint_t) buffer->buf[buffer->cur])) ||
-		          !(iswspace((wint_t) buffer->buf[buffer->cur - 1]))));
+				 ((iswspace((wint_t) buffer->buf[buffer->cur])) ||
+				  !(iswspace((wint_t) buffer->buf[buffer->cur - 1]))));
 
 		return BUFFER_SUCCESS;
 	}
@@ -90,8 +90,8 @@ buffer_right_word(struct buffer *buffer) {
 		do {
 			buffer->cur++;
 		} while (buffer->cur < buffer->len &&
-		         !((iswspace((wint_t) buffer->buf[buffer->cur])) &&
-		           !(iswspace((wint_t) buffer->buf[buffer->cur - 1]))));
+				 !((iswspace((wint_t) buffer->buf[buffer->cur])) &&
+				   !(iswspace((wint_t) buffer->buf[buffer->cur - 1]))));
 
 		return BUFFER_SUCCESS;
 	}

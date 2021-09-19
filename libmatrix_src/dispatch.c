@@ -31,7 +31,7 @@ dispatch_timeline(struct matrix *matrix, const cJSON *events) {
 		const struct matrix_timeline_event matrix_event = {
 			.content = {.body = cJSON_GetStringValue(
 							cJSON_GetObjectItem(content, "body")),
-		                .formatted_body = cJSON_GetStringValue(
+						.formatted_body = cJSON_GetStringValue(
 							cJSON_GetObjectItem(content, "formatted_body"))},
 			.sender =
 				cJSON_GetStringValue(cJSON_GetObjectItem(event, "sender")),
@@ -41,7 +41,7 @@ dispatch_timeline(struct matrix *matrix, const cJSON *events) {
 		};
 
 		if (matrix_event.content.body && matrix_event.sender &&
-		    matrix_event.type && matrix_event.event_id) {
+			matrix_event.type && matrix_event.event_id) {
 			matrix->cb.on_timeline_event(matrix, &matrix_event, matrix->userp);
 		}
 	}
@@ -71,7 +71,7 @@ dispatch_sync(struct matrix *matrix, const char *resp) {
 
 		if (matrix->cb.on_room) {
 			matrix->cb.on_room(matrix, &matrix_room, MATRIX_ROOM_JOINED,
-			                   matrix->userp);
+							   matrix->userp);
 		}
 
 #if 0

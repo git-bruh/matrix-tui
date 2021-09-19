@@ -68,7 +68,7 @@ log_if_err(bool condition, const char *error) {
 static void
 login_cb(struct matrix *matrix, const char *access_token, void *userp) {
 	tb_string(0, 0, TB_DEFAULT, TB_DEFAULT,
-	          access_token ? access_token : "Failed to login!");
+			  access_token ? access_token : "Failed to login!");
 
 	if ((matrix_sync(matrix, 0)) == -1) {
 		tb_string(0, 1, TB_DEFAULT, TB_DEFAULT, "Failed to start sync!");
@@ -130,8 +130,8 @@ sig_cb(EV_P_ ev_signal *w, int revents) {
 int
 main() {
 	if ((log_if_err((setlocale(LC_ALL, "")), "Failed to set locale.")) ||
-	    (log_if_err(((strcmp("UTF-8", nl_langinfo(CODESET))) == 0),
-	                "Locale is not UTF-8."))) {
+		(log_if_err(((strcmp("UTF-8", nl_langinfo(CODESET))) == 0),
+					"Locale is not UTF-8."))) {
 		return EXIT_FAILURE;
 	}
 
@@ -174,16 +174,16 @@ main() {
 	struct matrix_callbacks callbacks = {.on_login = login_cb};
 
 	if (!(log_if_err(((log_add_fp(state.log_fp, LOG_TRACE)) == 0),
-	                 "Failed to initialize logging callbacks.")) &&
-	    !(log_if_err((state.loop = EV_DEFAULT),
-	                 "Failed to initialize event loop.")) &&
-	    !(log_if_err(((curl_global_init(CURL_GLOBAL_ALL)) == CURLE_OK),
-	                 "Failed to initialize curl.")) &&
-	    !(log_if_err(((input_init(&state.input, input_height)) == 0),
-	                 "Failed to initialize input layer.")) &&
-	    !(log_if_err((state.matrix = matrix_alloc(state.loop, callbacks, MXID,
-	                                              HOMESERVER, &state)),
-	                 "Failed to initialize libmatrix."))) {
+					 "Failed to initialize logging callbacks.")) &&
+		!(log_if_err((state.loop = EV_DEFAULT),
+					 "Failed to initialize event loop.")) &&
+		!(log_if_err(((curl_global_init(CURL_GLOBAL_ALL)) == CURLE_OK),
+					 "Failed to initialize curl.")) &&
+		!(log_if_err(((input_init(&state.input, input_height)) == 0),
+					 "Failed to initialize input layer.")) &&
+		!(log_if_err((state.matrix = matrix_alloc(state.loop, callbacks, MXID,
+												  HOMESERVER, &state)),
+					 "Failed to initialize libmatrix."))) {
 		input_set_initial_cursor(&state.input);
 		redraw(&state);
 
@@ -197,7 +197,7 @@ main() {
 		ev_signal_start(state.loop, &sig_event);
 
 		if (!(log_if_err(((matrix_login(state.matrix, PASS, NULL)) == 0),
-		                 "Failed to login."))) {
+						 "Failed to login."))) {
 			ev_run(state.loop, 0); /* Blocks until completion. */
 
 			cleanup(&state);

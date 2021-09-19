@@ -116,7 +116,7 @@ input_redraw(struct input *input) {
 		/* We moved forward, add the delta to the cursor position and add the
 		 * overflow to the line offset. */
 		if (cur_delta > 0 &&
-		    (input->cur_y += cur_delta) > (input->max_height - 1)) {
+			(input->cur_y += cur_delta) > (input->max_height - 1)) {
 			input->line_off += (input->cur_y - (input->max_height - 1));
 			input->cur_y -= (input->cur_y - (input->max_height - 1));
 		}
@@ -140,8 +140,8 @@ input_redraw(struct input *input) {
 	} else {
 		/* Don't write more lines than will be visible. */
 		lines = (input->line_off + input->max_height) < lines
-		            ? input->line_off + input->max_height
-		            : lines;
+					? input->line_off + input->max_height
+					: lines;
 	}
 
 	assert(input->line_off < lines);

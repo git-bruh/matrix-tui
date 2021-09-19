@@ -139,10 +139,10 @@ event_cb(EV_P_ struct ev_io *w, int revents) {
 	struct matrix *matrix = (struct matrix *) w->data;
 
 	int action = ((revents & EV_READ) ? CURL_POLL_IN : 0) |
-	             ((revents & EV_WRITE) ? CURL_POLL_OUT : 0);
+				 ((revents & EV_WRITE) ? CURL_POLL_OUT : 0);
 
 	if ((curl_multi_socket_action(matrix->multi, w->fd, action,
-	                              &matrix->still_running)) != CURLM_OK) {
+								  &matrix->still_running)) != CURLM_OK) {
 		return;
 	}
 
@@ -161,7 +161,7 @@ timer_cb(EV_P_ struct ev_timer *w, int revents) {
 	struct matrix *matrix = (struct matrix *) w->data;
 
 	if ((curl_multi_socket_action(matrix->multi, CURL_SOCKET_TIMEOUT, 0,
-	                              &matrix->still_running)) == CURLM_OK) {
+								  &matrix->still_running)) == CURLM_OK) {
 		check_multi_info(matrix);
 	}
 }
@@ -196,9 +196,9 @@ remsock(struct sock_info *sock_info, struct matrix *matrix) {
 
 static void
 setsock(struct sock_info *sock_info, curl_socket_t sockfd, CURL *easy,
-        int action, struct matrix *matrix) {
+		int action, struct matrix *matrix) {
 	int kind = ((action & CURL_POLL_IN) ? EV_READ : 0) |
-	           ((action & CURL_POLL_OUT) ? EV_WRITE : 0);
+			   ((action & CURL_POLL_OUT) ? EV_WRITE : 0);
 
 	sock_info->sockfd = sockfd;
 	sock_info->action = action;
@@ -287,19 +287,19 @@ matrix_transfer_add(struct matrix *matrix, CURL *easy, enum matrix_type type) {
 		transfer->type = type;
 
 		if ((node = ll_append(matrix->ll, transfer)) &&
-		    (curl_easy_setopt(easy, CURLOPT_PRIVATE, node)) == CURLE_OK &&
-		    (curl_easy_setopt(easy, CURLOPT_ERRORBUFFER, transfer->error)) ==
-		        CURLE_OK &&
-		    (curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, write_cb)) ==
-		        CURLE_OK &&
-		    (curl_easy_setopt(easy, CURLOPT_WRITEDATA, transfer)) == CURLE_OK &&
-		    (curl_multi_add_handle(matrix->multi, easy)) == CURLM_OK) {
+			(curl_easy_setopt(easy, CURLOPT_PRIVATE, node)) == CURLE_OK &&
+			(curl_easy_setopt(easy, CURLOPT_ERRORBUFFER, transfer->error)) ==
+				CURLE_OK &&
+			(curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, write_cb)) ==
+				CURLE_OK &&
+			(curl_easy_setopt(easy, CURLOPT_WRITEDATA, transfer)) == CURLE_OK &&
+			(curl_multi_add_handle(matrix->multi, easy)) == CURLM_OK) {
 			/* FIXME Without this, after the first transfer is completed,
 			 * subsequent transfers get
 			 * thier multi_timer_cb called with a value of 0, but no activity
 			 * occurs after that. */
 			curl_multi_socket_action(matrix->multi, CURL_SOCKET_TIMEOUT, 0,
-			                         &matrix->still_running);
+									 &matrix->still_running);
 
 			return 0;
 		}
@@ -353,13 +353,13 @@ matrix_set_authorization(struct matrix *matrix, const char *token) {
 
 struct matrix *
 matrix_alloc(struct ev_loop *loop, struct matrix_callbacks callbacks,
-             const char *mxid, const char *homeserver, void *userp) {
+			 const char *mxid, const char *homeserver, void *userp) {
 	struct matrix *matrix = calloc(1, sizeof(*matrix));
 
 	if (!matrix || !(matrix->ll = ll_alloc(free_transfer)) ||
-	    !(matrix->multi = curl_multi_init()) ||
-	    (matrix_header_append(matrix, "Content-Type: application/json") ==
-	     -1)) {
+		!(matrix->multi = curl_multi_init()) ||
+		(matrix_header_append(matrix, "Content-Type: application/json") ==
+		 -1)) {
 		matrix_destroy(matrix);
 
 		return NULL;
@@ -370,8 +370,8 @@ matrix_alloc(struct ev_loop *loop, struct matrix_callbacks callbacks,
 
 		/* We allocate MATRIX_MXID_MAX + 1 bytes. */
 		if (len_mxid < 1 || len_mxid > MATRIX_MXID_MAX ||
-		    (strlen(homeserver)) < 1 ||
-		    !(matrix->homeserver = strdup(homeserver))) {
+			(strlen(homeserver)) < 1 ||
+			!(matrix->homeserver = strdup(homeserver))) {
 			matrix_destroy(matrix);
 
 			return NULL;

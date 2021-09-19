@@ -7,7 +7,7 @@ enum method { GET = 0, POST, PUT };
 
 static char *
 endpoint_create(const char *homeserver, const char *endpoint,
-                const char *params) {
+				const char *params) {
 	params = params ? params : "";
 
 	const char base[] = "/_matrix/client/r0";
@@ -27,15 +27,15 @@ endpoint_create(const char *homeserver, const char *endpoint,
 
 static CURL *
 endpoint_create_with_handle(const struct matrix *matrix, const char *endpoint,
-                            const char *data, const char *params,
-                            enum method method) {
+							const char *data, const char *params,
+							enum method method) {
 	char *url = endpoint_create(matrix->homeserver, endpoint, params);
 	CURL *easy = NULL;
 
 	if (url && (easy = curl_easy_init()) &&
-	    (curl_easy_setopt(easy, CURLOPT_URL, url)) == CURLE_OK &&
-	    (curl_easy_setopt(easy, CURLOPT_HTTPHEADER, matrix->headers)) ==
-	        CURLE_OK) {
+		(curl_easy_setopt(easy, CURLOPT_URL, url)) == CURLE_OK &&
+		(curl_easy_setopt(easy, CURLOPT_HTTPHEADER, matrix->headers)) ==
+			CURLE_OK) {
 		free(url); /* strdup'd by curl. */
 		url = NULL;
 
@@ -46,7 +46,7 @@ endpoint_create_with_handle(const struct matrix *matrix, const char *endpoint,
 			return easy;
 		case POST:
 			if ((curl_easy_setopt(easy, CURLOPT_COPYPOSTFIELDS, data)) ==
-			    CURLE_OK) {
+				CURLE_OK) {
 				return easy;
 			}
 			break;
@@ -70,7 +70,7 @@ matrix_login_with_token(struct matrix *matrix, const char *token) {
 
 int
 matrix_login(struct matrix *matrix, const char *password,
-             const char *device_id) {
+			 const char *device_id) {
 	if (matrix->authorized) {
 		return -1;
 	}
@@ -84,22 +84,22 @@ matrix_login(struct matrix *matrix, const char *password,
 	cJSON *json = NULL;
 
 	if ((json = cJSON_CreateObject()) &&
-	    (cJSON_AddStringToObject(json, "type", "m.login.password")) &&
-	    (cJSON_AddStringToObject(json, "password", password))) {
+		(cJSON_AddStringToObject(json, "type", "m.login.password")) &&
+		(cJSON_AddStringToObject(json, "password", password))) {
 		cJSON *identifier = cJSON_AddObjectToObject(json, "identifier");
 		char *rendered = NULL;
 
 		if (identifier &&
-		    (cJSON_AddStringToObject(identifier, "type", "m.id.user")) &&
-		    (cJSON_AddStringToObject(identifier, "user", matrix->mxid)) &&
-		    (rendered = cJSON_PrintUnformatted(json))) {
+			(cJSON_AddStringToObject(identifier, "type", "m.id.user")) &&
+			(cJSON_AddStringToObject(identifier, "user", matrix->mxid)) &&
+			(rendered = cJSON_PrintUnformatted(json))) {
 			CURL *easy = endpoint_create_with_handle(matrix, "/login", rendered,
-			                                         NULL, POST);
+													 NULL, POST);
 
 			free(rendered);
 
 			if (easy &&
-			    (matrix_transfer_add(matrix, easy, MATRIX_LOGIN)) == 0) {
+				(matrix_transfer_add(matrix, easy, MATRIX_LOGIN)) == 0) {
 				cJSON_Delete(json);
 
 				return 0;
