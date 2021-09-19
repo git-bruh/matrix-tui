@@ -66,14 +66,6 @@ log_if_err(bool condition, const char *error) {
 }
 
 static void
-room_event_cb(struct matrix *matrix, const struct matrix_room_event *event,
-              void *userp) {
-	tb_string(0, 1, TB_DEFAULT, TB_DEFAULT, event->room_id);
-
-	tb_render();
-}
-
-static void
 login_cb(struct matrix *matrix, const char *access_token, void *userp) {
 	tb_string(0, 0, TB_DEFAULT, TB_DEFAULT,
 	          access_token ? access_token : "Failed to login!");
@@ -179,8 +171,7 @@ main() {
 		state.log_fp = log_fp;
 	}
 
-	struct matrix_callbacks callbacks = {.on_login = login_cb,
-	                                     .on_room_event = room_event_cb};
+	struct matrix_callbacks callbacks = {.on_login = login_cb};
 
 	if (!(log_if_err(((log_add_fp(state.log_fp, LOG_TRACE)) == 0),
 	                 "Failed to initialize logging callbacks.")) &&
