@@ -55,7 +55,7 @@ sanitize:
 		CFLAGS="$(CFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer -g3"
 
 format:
-	clang-format -i ./*src/*.c ./*src/*.h
+	clang-format -i ./*src/*.[hc]
 
 tidy:
 	clang-tidy ./*src/*.[hc] -- $(XCFLAGS) $(INCLUDES) \
