@@ -4,6 +4,11 @@
 #include <curl/curl.h>
 #include <stdbool.h>
 
+enum matrix_type {
+	MATRIX_SYNC = 0,
+	MATRIX_LOGIN,
+};
+
 struct matrix {
 	CURLM *multi;
 	struct curl_slist *headers;

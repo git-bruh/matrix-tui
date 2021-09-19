@@ -22,11 +22,33 @@ dispatch_login(struct matrix *matrix, const char *resp) {
 }
 
 static void
-dispatch_sync(struct matrix *matrix, const char *resp) {
-	if (!matrix->cb.on_room_event) {
-		return;
-	}
+dispatch_timeline(struct matrix *matrix, const cJSON *events) {
+	cJSON *event = NULL;
 
+	cJSON_ArrayForEach(event, events) {
+		cJSON *content = cJSON_GetObjectItem(event, "content");
+
+		const struct matrix_timeline_event matrix_event = {
+			.content = {.body = cJSON_GetStringValue(
+							cJSON_GetObjectItem(content, "body")),
+		                .formatted_body = cJSON_GetStringValue(
+							cJSON_GetObjectItem(content, "formatted_body"))},
+			.sender =
+				cJSON_GetStringValue(cJSON_GetObjectItem(event, "sender")),
+			.type = cJSON_GetStringValue(cJSON_GetObjectItem(event, "type")),
+			.event_id =
+				cJSON_GetStringValue(cJSON_GetObjectItem(event, "event_id")),
+		};
+
+		if (matrix_event.content.body && matrix_event.sender &&
+		    matrix_event.type && matrix_event.event_id) {
+			matrix->cb.on_timeline_event(matrix, &matrix_event, matrix->userp);
+		}
+	}
+}
+
+static void
+dispatch_sync(struct matrix *matrix, const char *resp) {
 	cJSON *json = cJSON_Parse(resp);
 
 	if (!json) {
@@ -43,32 +65,39 @@ dispatch_sync(struct matrix *matrix, const char *resp) {
 			continue;
 		}
 
-		cJSON *events = cJSON_GetObjectItem(
-			cJSON_GetObjectItem(room, "timeline"), "events");
-		cJSON *event = NULL;
+		struct matrix_room matrix_room = {
+			.id = room->string,
+		};
 
-		cJSON_ArrayForEach(event, events) {
-			cJSON *content = cJSON_GetObjectItem(event, "content");
-
-			const struct matrix_room_event matrix_event = {
-				.content = {.body = cJSON_GetStringValue(
-								cJSON_GetObjectItem(content, "body")),
-			                .formatted_body =
-			                    cJSON_GetStringValue(cJSON_GetObjectItem(
-									content, "formatted_body"))},
-				.sender =
-					cJSON_GetStringValue(cJSON_GetObjectItem(event, "sender")),
-				.type =
-					cJSON_GetStringValue(cJSON_GetObjectItem(event, "type")),
-				.event_id = cJSON_GetStringValue(
-					cJSON_GetObjectItem(event, "event_id")),
-				.room_id = room->string};
-
-			if (matrix_event.content.body && matrix_event.sender &&
-			    matrix_event.type && matrix_event.event_id) {
-				matrix->cb.on_room_event(matrix, &matrix_event, matrix->userp);
-			}
+		if (matrix->cb.on_room) {
+			matrix->cb.on_room(matrix, &matrix_room, MATRIX_ROOM_JOINED,
+			                   matrix->userp);
 		}
+
+#if 0
+		if (matrix->cb.on_state_event) {
+			cJSON *events = cJSON_GetObjectItem(cJSON_GetObjectItem(room, "state"), "events");
+			dispatch_state(matrix, events);
+		}
+#endif
+
+		if (matrix->cb.on_timeline_event) {
+			cJSON *events = cJSON_GetObjectItem(
+				cJSON_GetObjectItem(room, "timeline"), "events");
+			dispatch_timeline(matrix, events);
+		}
+
+#if 0
+		if (matrix->cb.on_ephemeral_event) {
+			cJSON *events = cJSON_GetObjectItem(cJSON_GetObjectItem(room, "ephemeral"), "events");
+			dispatch_ephemeral(matrix, events);
+		}
+
+		if (matrix->cb.on_account_data_event) {
+			cJSON *events = cJSON_GetObjectItem(cJSON_GetObjectItem(room, "events");
+			dispatch_account_data(matrix, events);
+		}
+#endif
 	}
 
 	cJSON_Delete(json);
