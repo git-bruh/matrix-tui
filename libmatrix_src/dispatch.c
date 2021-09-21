@@ -86,11 +86,9 @@ room_init(struct matrix_room *matrix_room, const cJSON *room) {
 					calloc(len_heroes, sizeof(*matrix_room->summary.heroes)),
 				/* We must ensure that we don't cast NaN to an int. */
 				.joined_member_count =
-					(!(isnan(double_joined)) ? (int) double_joined
-														: 0),
+					(!(isnan(double_joined)) ? (int) double_joined : 0),
 				.invited_member_count =
-					(!(isnan(double_invited)) ? (int) double_invited
-														 : 0),
+					(!(isnan(double_invited)) ? (int) double_invited : 0),
 			},
 	};
 
@@ -144,26 +142,30 @@ dispatch_sync(struct matrix *matrix, const char *resp) {
 			continue;
 		}
 
-		struct matrix_dispatch_info info = {
-			.timeline =
-				{
-					.limited =
-						cJSON_IsTrue(cJSON_GetObjectItem(room, "limited"))
-							? true
-							: false,
-					.prev_batch = cJSON_GetStringValue(
-						cJSON_GetObjectItem(room, "prev_batch")),
-				},
-			.prev_batch = prev_batch,
-			.next_batch = next_batch,
-		};
+		{
+			cJSON *timeline = cJSON_GetObjectItem(room, "timeline");
 
-		if ((room_init(&info.room, room)) == -1) {
-			continue;
+			struct matrix_dispatch_info info = {
+				.timeline =
+					{
+						.limited = cJSON_IsTrue(
+									   cJSON_GetObjectItem(timeline, "limited"))
+									   ? true
+									   : false,
+						.prev_batch = cJSON_GetStringValue(
+							cJSON_GetObjectItem(timeline, "prev_batch")),
+					},
+				.prev_batch = prev_batch,
+				.next_batch = next_batch,
+			};
+
+			if ((room_init(&info.room, room)) == -1) {
+				continue;
+			}
+
+			matrix->cb.on_dispatch_start(matrix, &info, matrix->userp);
+			room_finish(&info.room);
 		}
-
-		matrix->cb.on_dispatch_start(matrix, &info, matrix->userp);
-		room_finish(&info.room);
 
 		if (matrix->cb.on_state_event) {
 			dispatch_state(
