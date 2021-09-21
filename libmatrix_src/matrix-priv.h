@@ -2,7 +2,6 @@
 #define MATRIX_PRIV_H
 #include "matrix.h"
 #include <curl/curl.h>
-#include <stdbool.h>
 
 enum matrix_type {
 	MATRIX_SYNC = 0,
