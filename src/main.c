@@ -78,6 +78,21 @@ login_cb(struct matrix *matrix, const char *access_token, void *userp) {
 }
 
 static void
+dispatch_start_cb(struct matrix *matrix,
+				  const struct matrix_dispatch_info *info, void *userp) {}
+
+static void
+timeline_cb(struct matrix *matrix, const struct matrix_timeline_event *event,
+			void *userp) {
+	tb_string(0, 0, TB_DEFAULT, TB_DEFAULT, event->content.body);
+
+	tb_render();
+}
+
+static void
+dispatch_end_cb(struct matrix *matrix, void *userp) {}
+
+static void
 input_cb(EV_P_ ev_io *w, int revents) {
 	(void) revents;
 
@@ -171,7 +186,10 @@ main() {
 		state.log_fp = log_fp;
 	}
 
-	struct matrix_callbacks callbacks = {.on_login = login_cb};
+	struct matrix_callbacks callbacks = {.on_login = login_cb,
+										 .on_dispatch_start = dispatch_start_cb,
+										 .on_timeline_event = timeline_cb,
+										 .on_dispatch_end = dispatch_end_cb};
 
 	if (!(log_if_err(((log_add_fp(state.log_fp, LOG_TRACE)) == 0),
 					 "Failed to initialize logging callbacks.")) &&
