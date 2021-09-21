@@ -1,8 +1,8 @@
 #include "cJSON.h"
 #include "matrix-priv.h"
 #include <assert.h>
+#include <math.h>
 #include <stdlib.h>
-#define NAN (0.0 / 0.0)
 /* TODO pass errors to callbacks. */
 
 static void
@@ -84,10 +84,13 @@ room_init(struct matrix_room *matrix_room, const cJSON *room) {
 			{
 				.heroes =
 					calloc(len_heroes, sizeof(*matrix_room->summary.heroes)),
+				/* We must ensure that we don't cast NaN to an int. */
 				.joined_member_count =
-					(double_joined != NAN ? (int) double_joined : 0),
+					(!(isunordered(double_joined, 0.0)) ? (int) double_joined
+														: 0),
 				.invited_member_count =
-					(double_invited != NAN ? (int) double_invited : 0),
+					(!(isunordered(double_invited, 0.0)) ? (int) double_invited
+														 : 0),
 			},
 	};
 
