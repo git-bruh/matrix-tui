@@ -86,10 +86,10 @@ room_init(struct matrix_room *matrix_room, const cJSON *room) {
 					calloc(len_heroes, sizeof(*matrix_room->summary.heroes)),
 				/* We must ensure that we don't cast NaN to an int. */
 				.joined_member_count =
-					(!(isunordered(double_joined, 0.0)) ? (int) double_joined
+					(!(isnan(double_joined)) ? (int) double_joined
 														: 0),
 				.invited_member_count =
-					(!(isunordered(double_invited, 0.0)) ? (int) double_invited
+					(!(isnan(double_invited)) ? (int) double_invited
 														 : 0),
 			},
 	};
