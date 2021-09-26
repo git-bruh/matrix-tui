@@ -1,5 +1,4 @@
-#ifndef MATRIX_H
-#define MATRIX_H
+#pragma once
 #include <ev.h>
 #include <stdbool.h>
 /* Must allocate enum + 1. */
@@ -108,4 +107,3 @@ matrix_login(struct matrix *matrix, const char *password,
  * timeout >= 1 && timeout <= 60 */
 int
 matrix_sync(struct matrix *matrix, int timeout);
-#endif /* !MATRIX_H */

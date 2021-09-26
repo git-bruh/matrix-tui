@@ -1,5 +1,4 @@
-#ifndef INPUT_H
-#define INPUT_H
+#pragma once
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
@@ -33,4 +32,3 @@ void
 input_set_initial_cursor(struct input *input);
 int
 input_event(struct tb_event event, struct input *input);
-#endif /* !INPUT_H */

@@ -1,5 +1,4 @@
-#ifndef BUFFER_H
-#define BUFFER_H
+#pragma once
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
@@ -35,4 +34,3 @@ int
 buffer_delete(struct buffer *buffer);
 int
 buffer_delete_word(struct buffer *buffer);
-#endif /* !BUFFER_H */
