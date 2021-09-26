@@ -184,7 +184,8 @@ multi_timer_cb(CURLM *multi, long timeout_ms, struct matrix *matrix) {
 
 	/* -1 indicates that we should stop the timer. */
 	if (timeout_ms >= 0) {
-		double seconds = (double) (timeout_ms / 1000);
+		const int ms_in_sec = 1000;
+		double seconds = (double) (timeout_ms / ms_in_sec);
 
 		ev_timer_init(&matrix->timer_event, timer_cb, seconds, 0.);
 		ev_timer_start(matrix->loop, &matrix->timer_event);
