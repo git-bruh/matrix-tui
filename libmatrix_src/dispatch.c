@@ -23,6 +23,10 @@ dispatch_login(struct matrix *matrix, const char *resp) {
 
 static void
 dispatch_state(struct matrix *matrix, const cJSON *events) {
+	if (!matrix->cb.on_state_event) {
+		return;
+	}
+
 	cJSON *event = NULL;
 
 	cJSON_ArrayForEach(event, events) {
@@ -34,6 +38,10 @@ dispatch_state(struct matrix *matrix, const cJSON *events) {
 
 static void
 dispatch_timeline(struct matrix *matrix, const cJSON *events) {
+	if (!matrix->cb.on_timeline_event) {
+		return;
+	}
+
 	cJSON *event = NULL;
 
 	cJSON_ArrayForEach(event, events) {
@@ -60,6 +68,10 @@ dispatch_timeline(struct matrix *matrix, const cJSON *events) {
 
 static void
 dispatch_ephemeral(struct matrix *matrix, const cJSON *events) {
+	if (!matrix->cb.on_ephemeral_event) {
+		return;
+	}
+
 	cJSON *event = NULL;
 
 	cJSON_ArrayForEach(event, events) {}
@@ -170,23 +182,17 @@ dispatch_sync(struct matrix *matrix, const char *resp) {
 			room_finish(&info.room);
 		}
 
-		if (matrix->cb.on_state_event) {
-			dispatch_state(
-				matrix, cJSON_GetObjectItem(cJSON_GetObjectItem(room, "state"),
-											"events"));
-		}
+		dispatch_state(
+			matrix,
+			cJSON_GetObjectItem(cJSON_GetObjectItem(room, "state"), "events"));
 
-		if (matrix->cb.on_timeline_event) {
-			dispatch_timeline(
-				matrix, cJSON_GetObjectItem(
-							cJSON_GetObjectItem(room, "timeline"), "events"));
-		}
+		dispatch_timeline(
+			matrix, cJSON_GetObjectItem(cJSON_GetObjectItem(room, "timeline"),
+										"events"));
 
-		if (matrix->cb.on_ephemeral_event) {
-			dispatch_ephemeral(
-				matrix, cJSON_GetObjectItem(
-							cJSON_GetObjectItem(room, "ephemeral"), "events"));
-		}
+		dispatch_ephemeral(
+			matrix, cJSON_GetObjectItem(cJSON_GetObjectItem(room, "ephemeral"),
+										"events"));
 
 		matrix->cb.on_dispatch_end(matrix, matrix->userp);
 	}

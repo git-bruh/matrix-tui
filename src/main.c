@@ -79,8 +79,7 @@ login_cb(struct matrix *matrix, const char *access_token, void *userp) {
 
 static void
 dispatch_start_cb(struct matrix *matrix,
-				  const struct matrix_dispatch_info *info, void *userp) {
-}
+				  const struct matrix_dispatch_info *info, void *userp) {}
 
 static void
 timeline_cb(struct matrix *matrix, const struct matrix_timeline_event *event,
