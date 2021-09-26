@@ -12,14 +12,11 @@ endpoint_create(const char *homeserver, const char *endpoint,
 
 	const char base[] = "/_matrix/client/r0";
 
-	/* sizeof includes the NUL terminator required for the final string. */
-	size_t size =
-		strlen(homeserver) + sizeof(base) + strlen(endpoint) + strlen(params);
+	char *final = NULL;
 
-	char *final = calloc(size, sizeof(*final));
-
-	if (final) {
-		snprintf(final, size, "%s%s%s%s", homeserver, base, endpoint, params);
+	if ((asprintf(&final, "%s%s%s%s", homeserver, base, endpoint, params)) ==
+		-1) {
+		return NULL;
 	}
 
 	return final;

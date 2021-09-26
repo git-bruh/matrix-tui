@@ -332,16 +332,12 @@ int
 matrix_set_authorization(struct matrix *matrix, const char *token) {
 	const char auth[] = "Authorization: Bearer ";
 
-	/* sizeof includes the NUL terminator required for the final string. */
-	size_t len_tmp = sizeof(auth) + strlen(token);
+	char *header = NULL;
 
-	char *header = calloc(len_tmp, sizeof(*header));
-
-	if (!header) {
+	if ((asprintf(&header, "%s%s", auth, token)) == -1) {
 		return -1;
 	}
 
-	snprintf(header, len_tmp, "%s%s", auth, token);
 	matrix_header_append(matrix, header);
 
 	matrix->authorized = true;
