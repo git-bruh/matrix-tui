@@ -29,10 +29,11 @@
 #define LOG_PATH "/tmp/" CLIENT_NAME ".log"
 
 struct state {
-	struct ev_loop *loop;
-	struct input input;
-	struct matrix *matrix;
+	char *current_room;
 	FILE *log_fp;
+	struct ev_loop *loop;
+	struct matrix *matrix;
+	struct input input;
 };
 
 static const int input_height = 5;
@@ -67,6 +68,9 @@ log_if_err(bool condition, const char *error) {
 
 static void
 login_cb(struct matrix *matrix, const char *access_token, void *userp) {
+	(void) matrix;
+	(void) userp;
+
 	tb_string(0, 0, TB_DEFAULT, TB_DEFAULT,
 			  access_token ? access_token : "Failed to login!");
 
@@ -79,24 +83,54 @@ login_cb(struct matrix *matrix, const char *access_token, void *userp) {
 
 static void
 dispatch_start_cb(struct matrix *matrix,
-				  const struct matrix_dispatch_info *info, void *userp) {}
+				  const struct matrix_dispatch_info *info, void *userp) {
+	(void) matrix;
+
+	struct state *state = userp;
+
+	if (!(state->current_room = strdup(info->room.id))) {
+		return;
+	}
+
+	fprintf(stderr,
+			"(%s) Timeline -> (limited = %d, prev_batch = %s)\n"
+			"Global -> next_batch = %s\n--\n",
+			state->current_room, info->timeline.limited,
+			info->timeline.prev_batch, info->next_batch);
+}
 
 static void
 timeline_cb(struct matrix *matrix, const struct matrix_timeline_event *event,
 			void *userp) {
-	tb_string(0, 0, TB_DEFAULT, TB_DEFAULT, event->content.body);
+	(void) matrix;
 
-	tb_render();
+	struct state *state = userp;
+
+	if (!state->current_room) {
+		return;
+	}
+
+	fprintf(stderr,
+			"%s:\nBody: '%s'\nSender: '%s'\nType: '%s'\nEvent_id: '%s'\n",
+			state->current_room, event->content.body, event->sender,
+			event->type, event->event_id);
 }
 
 static void
-dispatch_end_cb(struct matrix *matrix, void *userp) {}
+dispatch_end_cb(struct matrix *matrix, void *userp) {
+	(void) matrix;
+
+	struct state *state = userp;
+
+	free(state->current_room);
+	state->current_room = NULL;
+}
 
 static void
 input_cb(EV_P_ ev_io *w, int revents) {
 	(void) revents;
 
-	struct state *state = (struct state *) w->data;
+	struct state *state = w->data;
 
 	struct tb_event event = {0};
 
