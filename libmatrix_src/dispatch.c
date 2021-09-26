@@ -39,7 +39,7 @@ dispatch_timeline(struct matrix *matrix, const cJSON *events) {
 	cJSON_ArrayForEach(event, events) {
 		cJSON *content = cJSON_GetObjectItem(event, "content");
 
-		const struct matrix_timeline_event matrix_event = {
+		struct matrix_timeline_event matrix_event = {
 			.content = {.body = cJSON_GetStringValue(
 							cJSON_GetObjectItem(content, "body")),
 						.formatted_body = cJSON_GetStringValue(
@@ -132,10 +132,14 @@ dispatch_sync(struct matrix *matrix, const char *resp) {
 		cJSON_GetObjectItem(cJSON_GetObjectItem(json, "rooms"), "join");
 	cJSON *room = NULL;
 
-	char *prev_batch =
-		cJSON_GetStringValue(cJSON_GetObjectItem(json, "prev_batch"));
 	char *next_batch =
 		cJSON_GetStringValue(cJSON_GetObjectItem(json, "next_batch"));
+
+	if (!next_batch) {
+		cJSON_Delete(json);
+
+		return;
+	}
 
 	cJSON_ArrayForEach(room, rooms) {
 		if (!room->string) {
@@ -155,7 +159,6 @@ dispatch_sync(struct matrix *matrix, const char *resp) {
 						.prev_batch = cJSON_GetStringValue(
 							cJSON_GetObjectItem(timeline, "prev_batch")),
 					},
-				.prev_batch = prev_batch,
 				.next_batch = next_batch,
 			};
 

@@ -55,7 +55,6 @@ struct matrix_timeline_event {
 
 struct matrix_ephemeral_event {};
 
-/* TODO confirm where next/prev batch fields can be present. */
 struct matrix_dispatch_info {
 	struct matrix_room room; /* The current room. */
 	struct {
@@ -64,8 +63,7 @@ struct matrix_dispatch_info {
 	} timeline;			  /* The current room's timeline. */
 	/* These fields correspond to the whole sync response and not the current
 	 * room's timeline. */
-	char *prev_batch; /* nullable. */
-	char *next_batch; /* nullable. */
+	char *next_batch;
 };
 
 /* Any data received from these callbacks (except userp) _SHOULD_ be treated as
