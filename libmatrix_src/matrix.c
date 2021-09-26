@@ -95,7 +95,7 @@ ll_free(struct ll *ll) {
 
 static void
 free_transfer(void *data) {
-	struct transfer *transfer = (struct transfer *) data;
+	struct transfer *transfer = data;
 
 	curl_easy_cleanup(transfer->easy);
 
@@ -121,7 +121,7 @@ check_multi_info(struct matrix *matrix) {
 
 			assert(node);
 
-			struct transfer *transfer = (struct transfer *) node->data;
+			struct transfer *transfer = node->data;
 
 			matrix_dispatch_response(matrix, transfer);
 
@@ -136,7 +136,7 @@ check_multi_info(struct matrix *matrix) {
 
 static void
 event_cb(EV_P_ struct ev_io *w, int revents) {
-	struct matrix *matrix = (struct matrix *) w->data;
+	struct matrix *matrix = w->data;
 
 	int action = ((revents & EV_READ) ? CURL_POLL_IN : 0) |
 				 ((revents & EV_WRITE) ? CURL_POLL_OUT : 0);
@@ -158,7 +158,7 @@ static void
 timer_cb(EV_P_ struct ev_timer *w, int revents) {
 	(void) revents;
 
-	struct matrix *matrix = (struct matrix *) w->data;
+	struct matrix *matrix = w->data;
 
 	if ((curl_multi_socket_action(matrix->multi, CURL_SOCKET_TIMEOUT, 0,
 								  &matrix->still_running)) == CURLM_OK) {
@@ -233,8 +233,8 @@ addsock(curl_socket_t sockfd, CURL *easy, int action, struct matrix *matrix) {
 
 static int
 sock_cb(CURL *easy, curl_socket_t sockfd, int what, void *userp, void *sockp) {
-	struct matrix *matrix = (struct matrix *) userp;
-	struct sock_info *sock_info = (struct sock_info *) sockp;
+	struct matrix *matrix = userp;
+	struct sock_info *sock_info = sockp;
 
 	if (what == CURL_POLL_REMOVE) {
 		remsock(sock_info, matrix);
@@ -259,7 +259,7 @@ sock_cb(CURL *easy, curl_socket_t sockfd, int what, void *userp, void *sockp) {
 
 static size_t
 write_cb(void *contents, size_t size, size_t nmemb, void *userp) {
-	struct transfer *transfer = (struct transfer *) userp;
+	struct transfer *transfer = userp;
 
 	size_t realsize = size * nmemb;
 
