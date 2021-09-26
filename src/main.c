@@ -16,6 +16,13 @@
 #include <string.h>
 #include <unistd.h>
 
+/* Silence unused parameter warnings. */
+#if EV_MULTIPLICITY
+#define CAST_LOOP (void) EV_A
+#else
+#define CAST_LOOP (void) 0
+#endif
+
 #if 1
 #define MXID "@testuser:localhost"
 #define HOMESERVER "http://127.0.0.1:8008"
@@ -169,6 +176,7 @@ input_cb(EV_P_ ev_io *w, int revents) {
  * by libev and sent to us synchronously. */
 static void
 sig_cb(EV_P_ ev_signal *w, int revents) {
+	CAST_LOOP;
 	(void) revents;
 
 	tb_resize();

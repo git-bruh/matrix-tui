@@ -3,6 +3,13 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
+/* Silence unused parameter warnings. */
+#if EV_MULTIPLICITY
+#define CAST_LOOP (void) EV_A
+#else
+#define CAST_LOOP (void) 0
+#endif
+
 struct node {
 	void *data;
 	struct node *next;
@@ -136,6 +143,8 @@ check_multi_info(struct matrix *matrix) {
 
 static void
 event_cb(EV_P_ struct ev_io *w, int revents) {
+	CAST_LOOP;
+
 	struct matrix *matrix = w->data;
 
 	int action = ((revents & EV_READ) ? CURL_POLL_IN : 0) |
@@ -156,6 +165,7 @@ event_cb(EV_P_ struct ev_io *w, int revents) {
 
 static void
 timer_cb(EV_P_ struct ev_timer *w, int revents) {
+	CAST_LOOP;
 	(void) revents;
 
 	struct matrix *matrix = w->data;
