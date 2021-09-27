@@ -6,12 +6,6 @@ enum matrix_limits {
 	MATRIX_MXID_MAX = 255,
 };
 
-enum matrix_room_status {
-	MATRIX_ROOM_JOINED = 0,
-	MATRIX_ROOM_INVITED,
-	MATRIX_ROOM_LEFT,
-};
-
 struct matrix;
 
 /* All members in these structs are non-nullable unless explicitly mentioned. */
@@ -26,30 +20,131 @@ struct matrix_room {
 	} summary;
 };
 
-struct matrix_state_content {
-	bool is_direct;	   /* false if not present in the response. */
-	char *avatar_url;  /* nullable. */
+/* https://github.com/libuv/libuv/blob/bcc4f8fdde45471f30e168fe27be347076ebdf2c/include/uv.h#L399 */
+#define MATRIX_STATE_BASEFIELDS \
+	unsigned origin_server_ts; \
+	char *event_id; \
+	char *sender; \
+	char *state_key; \
+	char *type
+
+#define MATRIX_STATE_STRUCTGEN(name) \
+	struct matrix_ ## name ## _content; \
+	struct matrix_ ## name ## _state { \
+		MATRIX_STATE_BASEFIELDS; \
+		struct matrix_ ## name ## _content *prev_content; \
+		struct matrix_ ## name ## _content *content; \
+	}; \
+	struct matrix_ ## name ## _content
+
+MATRIX_STATE_STRUCTGEN(room_canonical_alias) {
+	char *alias;
+	char **alt_aliases;
+	size_t len_alt_aliases;
+};
+
+MATRIX_STATE_STRUCTGEN(room_create) {
+	bool federate;
+	char *creator;
+	char *room_version;
+	struct {
+		char *event_id;
+		char *room_id;
+	} predecessor;
+};
+
+MATRIX_STATE_STRUCTGEN(room_join_rules) {
+	enum matrix_join_rule {
+		MATRIX_JOIN_PUBLIC = 0,
+		MATRIX_JOIN_KNOCK,
+		MATRIX_JOIN_INVITE,
+		MATRIX_JOIN_PRIVATE
+	} join_rule;
+};
+
+MATRIX_STATE_STRUCTGEN(room_member) {
+	bool is_direct;
+	enum matrix_membership {
+		MATRIX_MEMBERSHIP_INVITE = 0,
+		MATRIX_MEMBERSHIP_JOIN,
+		MATRIX_MEMBERSHIP_KNOCK,
+		MATRIX_MEMBERSHIP_LEAVE,
+		MATRIX_MEMBERSHIP_BAN
+	} membership;
+	char *avatar_url; /* nullable. */
 	char *displayname; /* nullable. */
-					   // enum matrix_membership membership;
 };
 
-struct matrix_state_event {
-	struct matrix_state_content *content;
-	struct matrix_state_content *prev_content; /* nullable. */
-	char *type;
-	char *event_id;
-	char *sender;
-	char *state_key;
+MATRIX_STATE_STRUCTGEN(room_power_levels) {
+	int ban;
+	int events_default;
+	int invite;
+	int kick;
+	int redact;
+	int state_default;
+	int users_default;
+	struct {
+		int room;
+	} notifications;
+	struct {
+		// Hashmap of user: level
+	} users;
 };
 
-struct matrix_timeline_event {
+MATRIX_STATE_STRUCTGEN(room_name) {
+	char *name;
+};
+
+MATRIX_STATE_STRUCTGEN(room_topic) {
+	char *topic;
+};
+
+MATRIX_STATE_STRUCTGEN(room_avatar) {
+	char *url;
+};
+
+MATRIX_STATE_STRUCTGEN(room_pinned_events) {
+	char **pinned;
+	size_t len_pinned;
+};
+
+
+#define MATRIX_ROOM_BASEFIELDS \
+	unsigned origin_server_ts; \
+	char *event_id; \
+	char *sender; \
+	char *type
+
+struct matrix_message_event {
+	MATRIX_ROOM_BASEFIELDS;
 	struct {
 		char *body;
-		char *formatted_body; /* nullable. */
+		char *msgtype;
+		char *format;
+		char *formatted_body;
 	} content;
-	char *sender;
-	char *type;
-	char *event_id;
+};
+
+struct matrix_redaction_event {
+	MATRIX_ROOM_BASEFIELDS;
+	char *redacts;
+	struct {
+		char *reason;
+	} content;
+};
+
+struct matrix_attachment_event {
+	MATRIX_ROOM_BASEFIELDS;
+	struct {
+		char *body;
+		char *msgtype;
+		char *url;
+		char *filename;
+		struct {
+			size_t size;
+			char *mimetype;
+		} info;
+	} content;
 };
 
 struct matrix_ephemeral_event {};
@@ -76,14 +171,6 @@ struct matrix_callbacks {
 	void (*on_dispatch_start)(struct matrix *matrix,
 							  const struct matrix_dispatch_info *info,
 							  void *userp);
-	void (*on_state_event)(struct matrix *matrix,
-						   const struct matrix_state_event *event, void *userp);
-	void (*on_timeline_event)(struct matrix *matrix,
-							  const struct matrix_timeline_event *event,
-							  void *userp);
-	void (*on_ephemeral_event)(struct matrix *matrix,
-							   const struct matrix_ephemeral_event *event,
-							   void *userp);
 	/* Called once all events for a given room are consumed, does not indicate
 	 * end of sync parsing. */
 	void (*on_dispatch_end)(struct matrix *matrix, void *userp);
