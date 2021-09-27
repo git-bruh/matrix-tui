@@ -20,30 +20,47 @@ struct matrix_room {
 	} summary;
 };
 
-/* https://github.com/libuv/libuv/blob/bcc4f8fdde45471f30e168fe27be347076ebdf2c/include/uv.h#L399 */
-#define MATRIX_STATE_BASEFIELDS \
-	unsigned origin_server_ts; \
-	char *event_id; \
-	char *sender; \
-	char *state_key; \
+/* https://github.com/libuv/libuv/blob/bcc4f8fdde45471f30e168fe27be347076ebdf2c/include/uv.h#L399
+ */
+#define MATRIX_STATE_BASEFIELDS                                                \
+	unsigned origin_server_ts;                                                 \
+	char *event_id;                                                            \
+	char *sender;                                                              \
+	char *state_key;                                                           \
 	char *type
 
-#define MATRIX_STATE_STRUCTGEN(name) \
-	struct matrix_ ## name ## _content; \
-	struct matrix_ ## name ## _state { \
-		MATRIX_STATE_BASEFIELDS; \
-		struct matrix_ ## name ## _content *prev_content; \
-		struct matrix_ ## name ## _content *content; \
-	}; \
-	struct matrix_ ## name ## _content
+/* Generate a name_content and name_state struct with the common fields set. */
+#define MATRIX_STATE_STRUCTGEN(name)                                           \
+	struct name##_content;                                                     \
+	struct name##_state {                                                      \
+		MATRIX_STATE_BASEFIELDS;                                               \
+		struct name##_content *prev_content;                                   \
+		struct name##_content *content;                                        \
+	};                                                                         \
+	struct name##_content /* struct representing the "content" key. */
 
-MATRIX_STATE_STRUCTGEN(room_canonical_alias) {
+/* Expands to:
+ * struct matrix_room_canonical_alias_content;
+ * struct matrix_room_canonical_alias_state {
+ *     unsigned origin_server_ts;
+ *     ...
+ *     struct matrix_room_canonical_alias_content *prev_content;
+ *     struct matrix_room_canonical_alias_content *content;
+ * };
+ * struct matrix_room_canonical_alias_content {
+ *     char *alias;
+ *     char **alt_aliases;
+ *     size_t len_alt_aliases;
+ * };
+ */
+
+MATRIX_STATE_STRUCTGEN(matrix_room_canonical_alias) {
 	char *alias;
 	char **alt_aliases;
 	size_t len_alt_aliases;
 };
 
-MATRIX_STATE_STRUCTGEN(room_create) {
+MATRIX_STATE_STRUCTGEN(matrix_room_create) {
 	bool federate;
 	char *creator;
 	char *room_version;
@@ -53,7 +70,7 @@ MATRIX_STATE_STRUCTGEN(room_create) {
 	} predecessor;
 };
 
-MATRIX_STATE_STRUCTGEN(room_join_rules) {
+MATRIX_STATE_STRUCTGEN(matrix_room_join_rules) {
 	enum matrix_join_rule {
 		MATRIX_JOIN_PUBLIC = 0,
 		MATRIX_JOIN_KNOCK,
@@ -62,7 +79,7 @@ MATRIX_STATE_STRUCTGEN(room_join_rules) {
 	} join_rule;
 };
 
-MATRIX_STATE_STRUCTGEN(room_member) {
+MATRIX_STATE_STRUCTGEN(matrix_room_member) {
 	bool is_direct;
 	enum matrix_membership {
 		MATRIX_MEMBERSHIP_INVITE = 0,
@@ -71,11 +88,11 @@ MATRIX_STATE_STRUCTGEN(room_member) {
 		MATRIX_MEMBERSHIP_LEAVE,
 		MATRIX_MEMBERSHIP_BAN
 	} membership;
-	char *avatar_url; /* nullable. */
+	char *avatar_url;  /* nullable. */
 	char *displayname; /* nullable. */
 };
 
-MATRIX_STATE_STRUCTGEN(room_power_levels) {
+MATRIX_STATE_STRUCTGEN(matrix_room_power_levels) {
 	int ban;
 	int events_default;
 	int invite;
@@ -91,28 +108,21 @@ MATRIX_STATE_STRUCTGEN(room_power_levels) {
 	} users;
 };
 
-MATRIX_STATE_STRUCTGEN(room_name) {
-	char *name;
-};
+MATRIX_STATE_STRUCTGEN(matrix_room_name) { char *name; };
 
-MATRIX_STATE_STRUCTGEN(room_topic) {
-	char *topic;
-};
+MATRIX_STATE_STRUCTGEN(matrix_room_topic) { char *topic; };
 
-MATRIX_STATE_STRUCTGEN(room_avatar) {
-	char *url;
-};
+MATRIX_STATE_STRUCTGEN(matrix_room_avatar) { char *url; };
 
-MATRIX_STATE_STRUCTGEN(room_pinned_events) {
+MATRIX_STATE_STRUCTGEN(matrix_room_pinned_events) {
 	char **pinned;
 	size_t len_pinned;
 };
 
-
-#define MATRIX_ROOM_BASEFIELDS \
-	unsigned origin_server_ts; \
-	char *event_id; \
-	char *sender; \
+#define MATRIX_ROOM_BASEFIELDS                                                 \
+	unsigned origin_server_ts;                                                 \
+	char *event_id;                                                            \
+	char *sender;                                                              \
 	char *type
 
 struct matrix_message_event {
