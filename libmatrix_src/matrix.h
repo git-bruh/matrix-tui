@@ -13,150 +13,129 @@ struct matrix;
 struct matrix_room {
 	char *id;
 	struct {
-		char **heroes;
+		unsigned joined_member_count;
+		unsigned invited_member_count;
 		size_t len_heroes;
-		int joined_member_count;
-		int invited_member_count;
+		char **heroes;
 	} summary;
 };
 
-/* https://github.com/libuv/libuv/blob/bcc4f8fdde45471f30e168fe27be347076ebdf2c/include/uv.h#L399
- */
-#define MATRIX_STATE_BASEFIELDS                                                \
+#define MATRIX_EVENT_BASEFIELDS                                                \
 	unsigned origin_server_ts;                                                 \
 	char *event_id;                                                            \
 	char *sender;                                                              \
-	char *state_key;                                                           \
 	char *type
 
-/* Generate a name_content and name_state struct with the common fields set. */
-#define MATRIX_STATE_STRUCTGEN(name)                                           \
-	struct name##_content;                                                     \
-	struct name##_state {                                                      \
-		MATRIX_STATE_BASEFIELDS;                                               \
-		struct name##_content *prev_content;                                   \
-		struct name##_content *content;                                        \
-	};                                                                         \
-	struct name##_content /* struct representing the "content" key. */
+struct matrix_state_base {
+	MATRIX_EVENT_BASEFIELDS;
+	char *state_key;
+};
 
-/* Expands to:
- * struct matrix_room_canonical_alias_content;
- * struct matrix_room_canonical_alias_state {
- *     unsigned origin_server_ts;
- *     ...
- *     struct matrix_room_canonical_alias_content *prev_content;
- *     struct matrix_room_canonical_alias_content *content;
- * };
- * struct matrix_room_canonical_alias_content {
- *     char *alias;
- *     char **alt_aliases;
- *     size_t len_alt_aliases;
- * };
- */
+struct matrix_room_base {
+	MATRIX_EVENT_BASEFIELDS;
+};
 
-MATRIX_STATE_STRUCTGEN(matrix_room_canonical_alias) {
+#undef MATRIX_EVENT_BASEFIELDS
+
+struct matrix_room_canonical_alias {
+	struct matrix_state_base *base;
 	char *alias;
 	char **alt_aliases;
 	size_t len_alt_aliases;
 };
 
-MATRIX_STATE_STRUCTGEN(matrix_room_create) {
+struct matrix_room_create {
 	bool federate;
 	char *creator;
 	char *room_version;
+	struct matrix_state_base *base;
 	struct {
 		char *event_id;
 		char *room_id;
 	} predecessor;
 };
 
-MATRIX_STATE_STRUCTGEN(matrix_room_join_rules) {
-	enum matrix_join_rule {
-		MATRIX_JOIN_PUBLIC = 0,
-		MATRIX_JOIN_KNOCK,
-		MATRIX_JOIN_INVITE,
-		MATRIX_JOIN_PRIVATE
-	} join_rule;
+struct matrix_room_join_rules {
+	char *join_rule;
+	struct matrix_state_base *base;
 };
 
-MATRIX_STATE_STRUCTGEN(matrix_room_member) {
+struct matrix_room_member {
 	bool is_direct;
-	enum matrix_membership {
-		MATRIX_MEMBERSHIP_INVITE = 0,
-		MATRIX_MEMBERSHIP_JOIN,
-		MATRIX_MEMBERSHIP_KNOCK,
-		MATRIX_MEMBERSHIP_LEAVE,
-		MATRIX_MEMBERSHIP_BAN
-	} membership;
+	char *membership;
 	char *avatar_url;  /* nullable. */
 	char *displayname; /* nullable. */
+	struct matrix_state_base *base;
+	struct matrix_room_member *prev;
 };
 
-MATRIX_STATE_STRUCTGEN(matrix_room_power_levels) {
-	int ban;
-	int events_default;
-	int invite;
-	int kick;
-	int redact;
-	int state_default;
-	int users_default;
+struct matrix_room_power_levels {
+	unsigned ban;
+	unsigned events_default;
+	unsigned invite;
+	unsigned kick;
+	unsigned redact;
+	unsigned state_default;
+	unsigned users_default;
 	struct {
-		int room;
+		unsigned room;
 	} notifications;
 	struct {
 		// Hashmap of user: level
 	} users;
+	struct matrix_state_base *base;
 };
 
-MATRIX_STATE_STRUCTGEN(matrix_room_name) { char *name; };
+struct matrix_room_name {
+	char *name;
+	struct matrix_state_base *base;
+};
 
-MATRIX_STATE_STRUCTGEN(matrix_room_topic) { char *topic; };
+struct matrix_room_topic {
+	char *topic;
+	struct matrix_state_base *base;
+};
 
-MATRIX_STATE_STRUCTGEN(matrix_room_avatar) { char *url; };
+struct matrix_room_avatar {
+	char *url;
+	struct matrix_state_base *base;
+};
 
-MATRIX_STATE_STRUCTGEN(matrix_room_pinned_events) {
+struct matrix_room_pinned_events {
 	char **pinned;
+	struct matrix_state_base *base;
 	size_t len_pinned;
 };
 
-#define MATRIX_ROOM_BASEFIELDS                                                 \
-	unsigned origin_server_ts;                                                 \
-	char *event_id;                                                            \
-	char *sender;                                                              \
-	char *type
+struct matrix_unknown_state {};
 
-struct matrix_message_event {
-	MATRIX_ROOM_BASEFIELDS;
-	struct {
-		char *body;
-		char *msgtype;
-		char *format;
-		char *formatted_body;
-	} content;
+struct matrix_room_message {
+	struct matrix_room_base *base;
+	char *body;
+	char *msgtype;
+	char *format;		  /* nullable. */
+	char *formatted_body; /* nullable. */
 };
 
-struct matrix_redaction_event {
-	MATRIX_ROOM_BASEFIELDS;
+struct matrix_room_redaction {
+	struct matrix_room_base *base;
 	char *redacts;
-	struct {
-		char *reason;
-	} content;
+	char *reason; /* nullable. */
 };
 
-struct matrix_attachment_event {
-	MATRIX_ROOM_BASEFIELDS;
+struct matrix_room_attachment {
+	struct matrix_room_base *base;
+	char *body;
+	char *msgtype;
+	char *url;
+	char *filename;
 	struct {
-		char *body;
-		char *msgtype;
-		char *url;
-		char *filename;
-		struct {
-			size_t size;
-			char *mimetype;
-		} info;
-	} content;
+		unsigned size;
+		char *mimetype; /* nullable. */
+	} info;
 };
 
+struct matrix_unknown_room_message {};
 struct matrix_ephemeral_event {};
 
 struct matrix_dispatch_info {

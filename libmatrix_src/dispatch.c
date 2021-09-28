@@ -5,6 +5,20 @@
 #include <stdlib.h>
 /* TODO pass errors to callbacks. */
 
+/* Safely get an unsigned int from a cJSON object without overflows. */
+static unsigned
+safe_getnum(const cJSON *json, const char name[]) {
+	double tmp = cJSON_GetNumberValue(cJSON_GetObjectItem(json, name));
+
+	unsigned result = 0;
+
+	if (!(isnan(tmp))) {
+		memcpy(&result, &tmp, sizeof(result));
+	}
+
+	return result;
+}
+
 static void
 dispatch_login(struct matrix *matrix, const char *resp) {
 	cJSON *json = cJSON_Parse(resp);
@@ -23,10 +37,6 @@ dispatch_login(struct matrix *matrix, const char *resp) {
 
 static void
 dispatch_ephemeral(struct matrix *matrix, const cJSON *events) {
-	if (!matrix->cb.on_ephemeral_event) {
-		return;
-	}
-
 	cJSON *event = NULL;
 
 	cJSON_ArrayForEach(event, events) {}
@@ -34,45 +44,124 @@ dispatch_ephemeral(struct matrix *matrix, const cJSON *events) {
 
 static void
 dispatch_state(struct matrix *matrix, const cJSON *events) {
-	if (!matrix->cb.on_state_event) {
-		return;
-	}
-
 	cJSON *event = NULL;
 
 	cJSON_ArrayForEach(event, events) {
-		cJSON *content = cJSON_GetObjectItem(event, "content");
+		/* XXX: There's a bit of duplication of the common fields here. */
+		struct matrix_state_base base = {
+			.origin_server_ts = safe_getnum(event, "origin_server_ts"),
+			.event_id =
+				cJSON_GetStringValue(cJSON_GetObjectItem(event, "event_id")),
+			.sender =
+				cJSON_GetStringValue(cJSON_GetObjectItem(event, "sender")),
+			.type = cJSON_GetStringValue(cJSON_GetObjectItem(event, "type")),
+			.state_key =
+				cJSON_GetStringValue(cJSON_GetObjectItem(event, "state_key")),
+		};
 
-		// const struct matrix_state_event matrix_event = {};
+		if (!base.origin_server_ts || !base.event_id || !base.sender ||
+			!base.type || !base.state_key) {
+			continue;
+		}
+	}
+}
+
+static void
+dispatch_message(struct matrix *matrix, struct matrix_room_base *base,
+				 const cJSON *content) {
+	struct matrix_room_message message = {
+		.base = base,
+		.body = cJSON_GetStringValue(cJSON_GetObjectItem(content, "body")),
+		.msgtype =
+			cJSON_GetStringValue(cJSON_GetObjectItem(content, "msgtype")),
+		.format = cJSON_GetStringValue(cJSON_GetObjectItem(content, "format")),
+		.formatted_body = cJSON_GetStringValue(
+			cJSON_GetObjectItem(content, "formatted_body")),
+	};
+
+	if (message.body && message.msgtype) {
+		matrix->cb.message(matrix, &message, matrix->userp);
+	}
+}
+
+/* We must take in an extra argument for the redacts key as it's not present in
+ * the "content" of the event but at the base. */
+static void
+dispatch_redaction(struct matrix *matrix, struct matrix_room_base *base,
+				   char *redacts, const cJSON *content) {
+	struct matrix_room_redaction redaction = {
+		.base = base,
+		.redacts = redacts,
+		.reason = cJSON_GetStringValue(cJSON_GetObjectItem(content, "reason")),
+	};
+
+	if (redaction.redacts && redaction.reason) {
+		matrix->cb.redaction(matrix, &redaction, matrix->userp);
+	}
+}
+
+static void
+dispatch_attachment(struct matrix *matrix, struct matrix_room_base *base,
+					const cJSON *content) {
+	cJSON *info = cJSON_GetObjectItem(content, "info");
+
+	struct matrix_room_attachment attachment = {
+		.base = base,
+		.body = cJSON_GetStringValue(cJSON_GetObjectItem(content, "body")),
+		.msgtype =
+			cJSON_GetStringValue(cJSON_GetObjectItem(content, "msgtype")),
+		.url = cJSON_GetStringValue(cJSON_GetObjectItem(content, "url")),
+		.filename =
+			cJSON_GetStringValue(cJSON_GetObjectItem(content, "filename")),
+		.info =
+			{
+				.size = safe_getnum(info, "size"),
+				.mimetype =
+					cJSON_GetStringValue(cJSON_GetObjectItem(info, "mimetype")),
+			},
+	};
+
+	if (attachment.body && attachment.msgtype && attachment.url &&
+		attachment.filename) {
+		matrix->cb.attachment(matrix, &attachment, matrix->userp);
 	}
 }
 
 static void
 dispatch_timeline(struct matrix *matrix, const cJSON *events) {
-	if (!matrix->cb.on_timeline_event) {
-		return;
-	}
-
 	cJSON *event = NULL;
 
 	cJSON_ArrayForEach(event, events) {
-		cJSON *content = cJSON_GetObjectItem(event, "content");
-
-		struct matrix_timeline_event matrix_event = {
-			.content = {.body = cJSON_GetStringValue(
-							cJSON_GetObjectItem(content, "body")),
-						.formatted_body = cJSON_GetStringValue(
-							cJSON_GetObjectItem(content, "formatted_body"))},
+		struct matrix_room_base base = {
+			.origin_server_ts = safe_getnum(event, "origin_server_ts"),
+			.event_id =
+				cJSON_GetStringValue(cJSON_GetObjectItem(event, "event_id")),
 			.sender =
 				cJSON_GetStringValue(cJSON_GetObjectItem(event, "sender")),
 			.type = cJSON_GetStringValue(cJSON_GetObjectItem(event, "type")),
-			.event_id =
-				cJSON_GetStringValue(cJSON_GetObjectItem(event, "event_id"))};
-		/* TODO origin_server_ts, unsigned */
+		};
 
-		if (matrix_event.content.body && matrix_event.sender &&
-			matrix_event.type && matrix_event.event_id) {
-			matrix->cb.on_timeline_event(matrix, &matrix_event, matrix->userp);
+		if (!base.origin_server_ts || !base.event_id || !base.sender ||
+			!base.type) {
+			continue;
+		}
+
+		cJSON *content = cJSON_GetObjectItem(event, "content");
+
+		if (!content) {
+			continue;
+		}
+
+		if ((strcmp(base.type, "m.room.message")) == 0) {
+			dispatch_message(matrix, &base, content);
+		} else if ((strcmp(base.type, "m.room.redaction")) == 0) {
+			dispatch_redaction(
+				matrix, &base,
+				cJSON_GetStringValue(cJSON_GetObjectItem(event, "redacts")),
+				content);
+		} else if ((strcmp(base.type, "m.location") != 0)) {
+			/* Assume that the event is an attachment. */
+			dispatch_attachment(matrix, &base, content);
 		}
 	}
 }
@@ -83,11 +172,6 @@ room_init(struct matrix_room *matrix_room, const cJSON *room) {
 
 	cJSON *heroes = cJSON_GetObjectItem(summary, "m.heroes");
 
-	double double_joined = cJSON_GetNumberValue(
-		cJSON_GetObjectItem(summary, "m.joined_member_count"));
-	double double_invited = cJSON_GetNumberValue(
-		cJSON_GetObjectItem(summary, "m.invited_member_count"));
-
 	size_t len_heroes = (size_t) cJSON_GetArraySize(heroes);
 
 	*matrix_room = (struct matrix_room){
@@ -96,11 +180,10 @@ room_init(struct matrix_room *matrix_room, const cJSON *room) {
 			{
 				.heroes =
 					calloc(len_heroes, sizeof(*matrix_room->summary.heroes)),
-				/* We must ensure that we don't cast NaN to an int. */
 				.joined_member_count =
-					(!(isnan(double_joined)) ? (int) double_joined : 0),
+					safe_getnum(room, "m.joined_member_count"),
 				.invited_member_count =
-					(!(isnan(double_invited)) ? (int) double_invited : 0),
+					safe_getnum(room, "m.invited_member_count"),
 			},
 	};
 
@@ -182,13 +265,13 @@ dispatch_sync(struct matrix *matrix, const char *resp) {
 			room_finish(&info.room);
 		}
 
-		dispatch_ephemeral(
-			matrix, cJSON_GetObjectItem(cJSON_GetObjectItem(room, "ephemeral"),
-										"events"));
-
 		dispatch_state(
 			matrix,
 			cJSON_GetObjectItem(cJSON_GetObjectItem(room, "state"), "events"));
+
+		dispatch_ephemeral(
+			matrix, cJSON_GetObjectItem(cJSON_GetObjectItem(room, "ephemeral"),
+										"events"));
 
 		dispatch_timeline(
 			matrix, cJSON_GetObjectItem(cJSON_GetObjectItem(room, "timeline"),
