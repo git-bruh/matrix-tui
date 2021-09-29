@@ -51,36 +51,6 @@ dispatch_ephemeral(struct matrix *matrix, const cJSON *events) {
 }
 
 static void
-dispatch_pinned_events(struct matrix *matrix, struct matrix_state_base *base,
-					   const cJSON *content) {
-	cJSON *pinned = cJSON_GetObjectItem(content, "pinned");
-
-	struct matrix_room_pinned_events events = {
-		.base = base,
-		.pinned =
-			calloc((size_t) cJSON_GetArraySize(pinned), sizeof(*events.pinned)),
-	};
-
-	if (!events.pinned) {
-		return;
-	}
-
-	cJSON *pin = NULL;
-
-	cJSON_ArrayForEach(pin, pinned) {
-		char *str = NULL;
-
-		if ((str = cJSON_GetStringValue(pin))) {
-			events.pinned[events.len_pinned++] = str;
-		}
-	}
-
-	matrix->cb.pinned_events(matrix, &events, matrix->userp);
-
-	free(events.pinned);
-}
-
-static void
 dispatch_avatar(struct matrix *matrix, struct matrix_state_base *base,
 				const cJSON *content) {
 	cJSON *info = cJSON_GetObjectItem(content, "info");

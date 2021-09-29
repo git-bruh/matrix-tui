@@ -98,12 +98,6 @@ struct matrix_room_avatar {
 	struct matrix_file_info info;
 };
 
-struct matrix_room_pinned_events {
-	char **pinned;
-	struct matrix_state_base *base;
-	size_t len_pinned;
-};
-
 struct matrix_unknown_state {};
 
 struct matrix_room_message {
