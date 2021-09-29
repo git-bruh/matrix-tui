@@ -42,6 +42,10 @@ struct matrix_room_base {
 
 #undef MATRIX_EVENT_BASEFIELDS
 
+struct matrix_room_typing {
+	char *user_id;
+};
+
 struct matrix_room_canonical_alias {
 	struct matrix_state_base *base;
 	char *alias; /* nullable. */
@@ -126,9 +130,6 @@ struct matrix_room_attachment {
 	char *filename;
 	struct matrix_file_info info;
 };
-
-struct matrix_unknown_room_message {};
-struct matrix_ephemeral_event {};
 
 struct matrix_dispatch_info {
 	struct matrix_room room; /* The current room. */

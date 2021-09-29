@@ -44,10 +44,28 @@ dispatch_login(struct matrix *matrix, const char *resp) {
 }
 
 static void
+dispatch_typing(struct matrix *matrix, const cJSON *content) {
+	cJSON *user_ids = cJSON_GetObjectItem(content, "user_ids");
+	cJSON *user_id = NULL;
+
+	cJSON_ArrayForEach(user_id, user_ids) {
+		matrix->cb.typing(matrix,
+						  &(struct matrix_room_typing){.user_id = user_id});
+	}
+}
+
+static void
 dispatch_ephemeral(struct matrix *matrix, const cJSON *events) {
 	cJSON *event = NULL;
 
-	cJSON_ArrayForEach(event, events) {}
+	cJSON_ArrayForEach(event, events) {
+		cJSON *content = cJSON_GetObjectItem(event, "content");
+		char *type = GETSTR(content, "type");
+
+		if ((strcmp(type, "m.typing")) == 0) {
+			dispatch_typing(matrix, content);
+		}
+	}
 }
 
 static void
