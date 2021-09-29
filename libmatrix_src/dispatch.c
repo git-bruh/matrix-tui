@@ -172,6 +172,23 @@ dispatch_canonical_alias(struct matrix *matrix, struct matrix_state_base *base,
 }
 
 static void
+dispatch_unknown_state(struct matrix *matrix, struct matrix_state_base *base,
+					   const cJSON *content, const cJSON *prev_content) {
+	struct matrix_unknown_state unknown = {
+		.base = base,
+		.content = cJSON_PrintUnformatted(content),
+		.prev_content = cJSON_PrintUnformatted(prev_content),
+	};
+
+	if (unknown.content) {
+		matrix->cb.unknown_state(matrix, &unknown, matrix->userp);
+	}
+
+	free(unknown.content);
+	free(unknown.prev_content);
+}
+
+static void
 dispatch_state(struct matrix *matrix, const cJSON *events) {
 	cJSON *event = NULL;
 
@@ -188,6 +205,34 @@ dispatch_state(struct matrix *matrix, const cJSON *events) {
 		if (!base.origin_server_ts || !base.event_id || !base.sender ||
 			!base.type || !base.state_key) {
 			continue;
+		}
+
+		cJSON *content = cJSON_GetObjectItem(event, "content");
+
+		if (!content) {
+			continue;
+		}
+
+		if ((strcmp(base.type, "m.room.member")) == 0) {
+			dispatch_member(matrix, &base, content,
+							cJSON_GetObjectItem(event, "prev_content"));
+		} else if ((strcmp(base.type, "m.room.power_levels")) == 0) {
+			dispatch_power_levels(matrix, &base, content);
+		} else if ((strcmp(base.type, "m.room.canonical_alias")) == 0) {
+			dispatch_canonical_alias(matrix, &base, content);
+		} else if ((strcmp(base.type, "m.room.create")) == 0) {
+			dispatch_create(matrix, &base, content);
+		} else if ((strcmp(base.type, "m.room.join_rules")) == 0) {
+			dispatch_join_rules(matrix, &base, content);
+		} else if ((strcmp(base.type, "m.room.name")) == 0) {
+			dispatch_name(matrix, &base, content);
+		} else if ((strcmp(base.type, "m.room.topic")) == 0) {
+			dispatch_topic(matrix, &base, content);
+		} else if ((strcmp(base.type, "m.room.avatar")) == 0) {
+			dispatch_avatar(matrix, &base, content);
+		} else {
+			dispatch_unknown_state(matrix, &base, content,
+								   cJSON_GetObjectItem(event, "prev_content"));
 		}
 	}
 }

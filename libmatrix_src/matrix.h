@@ -98,7 +98,11 @@ struct matrix_room_avatar {
 	struct matrix_file_info info;
 };
 
-struct matrix_unknown_state {};
+struct matrix_unknown_state {
+	struct matrix_state_base *base;
+	char *content;		/* Raw JSON. */
+	char *prev_content; /* nullable, raw JSON. */
+};
 
 struct matrix_room_message {
 	struct matrix_room_base *base;
