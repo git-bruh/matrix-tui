@@ -5,7 +5,7 @@
 #include <stdlib.h>
 /* TODO pass errors to callbacks. */
 
-#define GETSTR(obj, name) (GETSTR(obj, name)))
+#define GETSTR(obj, name) (cJSON_GetStringValue(cJSON_GetObjectItem(obj, name)))
 
 /* Safely get an unsigned int from a cJSON object without overflows. */
 static unsigned
@@ -145,10 +145,8 @@ dispatch_timeline(struct matrix *matrix, const cJSON *events) {
 		if ((strcmp(base.type, "m.room.message")) == 0) {
 			dispatch_message(matrix, &base, content);
 		} else if ((strcmp(base.type, "m.room.redaction")) == 0) {
-			dispatch_redaction(
-				matrix, &base,
-				GETSTR(event, "redacts")),
-				content);
+			dispatch_redaction(matrix, &base, GETSTR(event, "redacts"),
+							   content);
 		} else if ((strcmp(base.type, "m.location") != 0)) {
 			/* Assume that the event is an attachment. */
 			dispatch_attachment(matrix, &base, content);
@@ -216,8 +214,7 @@ dispatch_sync(struct matrix *matrix, const char *resp) {
 		cJSON_GetObjectItem(cJSON_GetObjectItem(json, "rooms"), "join");
 	cJSON *room = NULL;
 
-	char *next_batch =
-		GETSTR(json, "next_batch"));
+	char *next_batch = GETSTR(json, "next_batch");
 
 	if (!next_batch) {
 		cJSON_Delete(json);
