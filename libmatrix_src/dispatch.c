@@ -5,7 +5,8 @@
 #include <stdlib.h>
 /* TODO pass errors to callbacks. */
 
-#define GETSTR(obj, name) (cJSON_GetStringValue(cJSON_GetObjectItem(obj, name)))
+/* Get the value of a key from an object. */
+#define GETSTR(obj, key) (cJSON_GetStringValue(cJSON_GetObjectItem(obj, key)))
 
 /* Safely get an unsigned int from a cJSON object without overflows. */
 static unsigned
@@ -31,6 +32,10 @@ get_timestamp(const cJSON *json, const char name[]) {
 
 static void
 dispatch_login(struct matrix *matrix, const char *resp) {
+	if (!matrix->cb.login) {
+		return;
+	}
+
 	cJSON *json = cJSON_Parse(resp);
 	char *access_token = GETSTR(json, "access_token");
 
@@ -38,19 +43,26 @@ dispatch_login(struct matrix *matrix, const char *resp) {
 		matrix_set_authorization(matrix, access_token);
 	}
 
-	matrix->cb.on_login(matrix, access_token, matrix->userp);
+	matrix->cb.login(matrix, access_token, matrix->userp);
 
 	cJSON_Delete(json);
 }
 
 static void
 dispatch_typing(struct matrix *matrix, const cJSON *content) {
+	if (!matrix->cb.typing) {
+		return;
+	}
+
 	cJSON *user_ids = cJSON_GetObjectItem(content, "user_ids");
 	cJSON *user_id = NULL;
 
 	cJSON_ArrayForEach(user_id, user_ids) {
-		matrix->cb.typing(matrix,
-						  &(struct matrix_room_typing){.user_id = user_id});
+		char *str = NULL;
+
+		if ((str = cJSON_GetStringValue(user_id))) {
+			matrix->cb.typing(matrix, &(struct matrix_room_typing){.user_id = str}, matrix->userp);
+		}
 	}
 }
 
@@ -71,6 +83,10 @@ dispatch_ephemeral(struct matrix *matrix, const cJSON *events) {
 static void
 dispatch_avatar(struct matrix *matrix, struct matrix_state_base *base,
 				const cJSON *content) {
+	if (!matrix->cb.avatar) {
+		return;
+	}
+
 	cJSON *info = cJSON_GetObjectItem(content, "info");
 
 	struct matrix_room_avatar avatar = {
@@ -89,6 +105,10 @@ dispatch_avatar(struct matrix *matrix, struct matrix_state_base *base,
 static void
 dispatch_topic(struct matrix *matrix, struct matrix_state_base *base,
 			   const cJSON *content) {
+	if (!matrix->cb.topic) {
+		return;
+	}
+
 	struct matrix_room_topic topic = {.base = base,
 									  .topic = GETSTR(content, "topic")};
 
@@ -98,6 +118,10 @@ dispatch_topic(struct matrix *matrix, struct matrix_state_base *base,
 static void
 dispatch_name(struct matrix *matrix, struct matrix_state_base *base,
 			  const cJSON *content) {
+	if (!matrix->cb.name) {
+		return;
+	}
+
 	struct matrix_room_name name = {.base = base,
 									.name = GETSTR(content, "name")};
 
@@ -107,6 +131,10 @@ dispatch_name(struct matrix *matrix, struct matrix_state_base *base,
 static void
 dispatch_power_levels(struct matrix *matrix, struct matrix_state_base *base,
 					  const cJSON *content) {
+	if (!matrix->cb.power_levels) {
+		return;
+	}
+
 	const unsigned default_power = 50;
 
 	struct matrix_room_power_levels power_levels = {
@@ -130,6 +158,10 @@ dispatch_power_levels(struct matrix *matrix, struct matrix_state_base *base,
 static void
 dispatch_member(struct matrix *matrix, struct matrix_state_base *base,
 				const cJSON *content, const cJSON *prev_content) {
+	if (!matrix->cb.member) {
+		return;
+	}
+
 	struct matrix_room_member member = {
 		.base = base,
 		.is_direct = cJSON_IsTrue(cJSON_GetObjectItem(content, "is_direct")),
@@ -147,6 +179,10 @@ dispatch_member(struct matrix *matrix, struct matrix_state_base *base,
 static void
 dispatch_join_rules(struct matrix *matrix, struct matrix_state_base *base,
 					const cJSON *content) {
+	if (!matrix->cb.join_rules) {
+		return;
+	}
+
 	struct matrix_room_join_rules join_rules = {
 		.base = base,
 		.join_rule = GETSTR(content, "join_rule"),
@@ -160,6 +196,10 @@ dispatch_join_rules(struct matrix *matrix, struct matrix_state_base *base,
 static void
 dispatch_create(struct matrix *matrix, struct matrix_state_base *base,
 				const cJSON *content) {
+	if (!matrix->cb.room_create) {
+		return;
+	}
+
 	cJSON *federate = cJSON_GetObjectItem(content, "federate");
 
 	char default_version[] = "1";
@@ -181,6 +221,10 @@ dispatch_create(struct matrix *matrix, struct matrix_state_base *base,
 static void
 dispatch_canonical_alias(struct matrix *matrix, struct matrix_state_base *base,
 						 const cJSON *content) {
+	if (!matrix->cb.canonical_alias) {
+		return;
+	}
+
 	struct matrix_room_canonical_alias alias = {
 		.base = base,
 		.alias = GETSTR(content, "alias"),
@@ -192,6 +236,10 @@ dispatch_canonical_alias(struct matrix *matrix, struct matrix_state_base *base,
 static void
 dispatch_unknown_state(struct matrix *matrix, struct matrix_state_base *base,
 					   const cJSON *content, const cJSON *prev_content) {
+	if (!matrix->cb.unknown_state) {
+		return;
+	}
+
 	struct matrix_unknown_state unknown = {
 		.base = base,
 		.content = cJSON_PrintUnformatted(content),
@@ -258,6 +306,10 @@ dispatch_state(struct matrix *matrix, const cJSON *events) {
 static void
 dispatch_message(struct matrix *matrix, struct matrix_room_base *base,
 				 const cJSON *content) {
+	if (!matrix->cb.message) {
+		return;
+	}
+
 	struct matrix_room_message message = {
 		.base = base,
 		.body = GETSTR(content, "body"),
@@ -276,6 +328,10 @@ dispatch_message(struct matrix *matrix, struct matrix_room_base *base,
 static void
 dispatch_redaction(struct matrix *matrix, struct matrix_room_base *base,
 				   char *redacts, const cJSON *content) {
+	if (!matrix->cb.redaction) {
+		return;
+	}
+
 	struct matrix_room_redaction redaction = {
 		.base = base,
 		.redacts = redacts,
@@ -290,6 +346,10 @@ dispatch_redaction(struct matrix *matrix, struct matrix_room_base *base,
 static void
 dispatch_attachment(struct matrix *matrix, struct matrix_room_base *base,
 					const cJSON *content) {
+	if (!matrix->cb.attachment) {
+		return;
+	}
+
 	cJSON *info = cJSON_GetObjectItem(content, "info");
 
 	struct matrix_room_attachment attachment = {
@@ -389,7 +449,7 @@ room_finish(struct matrix_room *matrix_room) {
 
 static void
 dispatch_sync(struct matrix *matrix, const char *resp) {
-	if (!matrix->cb.on_dispatch_start || !matrix->cb.on_dispatch_end) {
+	if (!matrix->cb.dispatch_start || !matrix->cb.dispatch_end) {
 		return;
 	}
 
@@ -436,7 +496,7 @@ dispatch_sync(struct matrix *matrix, const char *resp) {
 				continue;
 			}
 
-			matrix->cb.on_dispatch_start(matrix, &info, matrix->userp);
+			matrix->cb.dispatch_start(matrix, &info, matrix->userp);
 			room_finish(&info.room);
 		}
 
@@ -452,7 +512,7 @@ dispatch_sync(struct matrix *matrix, const char *resp) {
 			matrix, cJSON_GetObjectItem(cJSON_GetObjectItem(room, "timeline"),
 										"events"));
 
-		matrix->cb.on_dispatch_end(matrix, matrix->userp);
+		matrix->cb.dispatch_end(matrix, matrix->userp);
 	}
 
 	cJSON_Delete(json);

@@ -74,7 +74,7 @@ matrix_login(struct matrix *matrix, const char *password,
 
 	(void) device_id;
 
-	if (!password || !matrix->cb.on_login) {
+	if (!password || !matrix->cb.login) {
 		return -1;
 	}
 

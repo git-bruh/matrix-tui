@@ -144,16 +144,29 @@ struct matrix_dispatch_info {
  * read-only. Users should create a local copy of the data when required instead
  * of storing the returned pointers. */
 struct matrix_callbacks {
-	void (*on_login)(struct matrix *matrix, const char *access_token,
+	void (*login)(struct matrix *matrix, const char *access_token,
 					 void *userp);
 	/* Gives information about the sync response aswell as the room from which
 	 * the events are being dispatched from. */
-	void (*on_dispatch_start)(struct matrix *matrix,
+	void (*dispatch_start)(struct matrix *matrix,
 							  const struct matrix_dispatch_info *info,
 							  void *userp);
+	void (*typing)(struct matrix *matrix, struct matrix_room_typing *typing, void *userp);
+	void (*avatar)(struct matrix *matrix, struct matrix_room_avatar *avatar, void *userp);
+	void (*topic)(struct matrix *matrix, struct matrix_room_topic *topic, void *userp);
+	void (*name)(struct matrix *matrix, struct matrix_room_name *name, void *userp);
+	void (*power_levels)(struct matrix *matrix, struct matrix_room_power_levels *power_levels, void *userp);
+	void (*member)(struct matrix *matrix, struct matrix_room_member *member, void *userp);
+	void (*join_rules)(struct matrix *matrix, struct matrix_room_join_rules *join_rules, void *userp);
+	void (*room_create)(struct matrix *matrix, struct matrix_room_create *room_create, void *userp);
+	void (*canonical_alias)(struct matrix *matrix, struct matrix_room_canonical_alias *canonical_alias, void *userp);
+	void (*unknown_state)(struct matrix *matrix, struct matrix_unknown_state *unknown_state, void *userp);
+	void (*message)(struct matrix *matrix, struct matrix_room_message *message, void *userp);
+	void (*redaction)(struct matrix *matrix, struct matrix_room_redaction *redaction, void *userp);
+	void (*attachment)(struct matrix *matrix, struct matrix_room_attachment *attachment, void *userp);
 	/* Called once all events for a given room are consumed, does not indicate
 	 * end of sync parsing. */
-	void (*on_dispatch_end)(struct matrix *matrix, void *userp);
+	void (*dispatch_end)(struct matrix *matrix, void *userp);
 };
 
 /* Returns NULL on failure, must call matrix_global_init() before anything. */
