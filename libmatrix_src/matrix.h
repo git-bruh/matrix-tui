@@ -151,19 +151,19 @@ struct matrix_callbacks {
 	void (*dispatch_start)(struct matrix *matrix,
 							  const struct matrix_dispatch_info *info,
 							  void *userp);
-	void (*typing)(struct matrix *matrix, struct matrix_room_typing *typing, void *userp);
-	void (*avatar)(struct matrix *matrix, struct matrix_room_avatar *avatar, void *userp);
-	void (*topic)(struct matrix *matrix, struct matrix_room_topic *topic, void *userp);
-	void (*name)(struct matrix *matrix, struct matrix_room_name *name, void *userp);
-	void (*power_levels)(struct matrix *matrix, struct matrix_room_power_levels *power_levels, void *userp);
-	void (*member)(struct matrix *matrix, struct matrix_room_member *member, void *userp);
-	void (*join_rules)(struct matrix *matrix, struct matrix_room_join_rules *join_rules, void *userp);
-	void (*room_create)(struct matrix *matrix, struct matrix_room_create *room_create, void *userp);
-	void (*canonical_alias)(struct matrix *matrix, struct matrix_room_canonical_alias *canonical_alias, void *userp);
-	void (*unknown_state)(struct matrix *matrix, struct matrix_unknown_state *unknown_state, void *userp);
-	void (*message)(struct matrix *matrix, struct matrix_room_message *message, void *userp);
-	void (*redaction)(struct matrix *matrix, struct matrix_room_redaction *redaction, void *userp);
-	void (*attachment)(struct matrix *matrix, struct matrix_room_attachment *attachment, void *userp);
+	void (*typing)(struct matrix *matrix, const struct matrix_room_typing *typing, void *userp);
+	void (*avatar)(struct matrix *matrix, const struct matrix_room_avatar *avatar, void *userp);
+	void (*topic)(struct matrix *matrix, const struct matrix_room_topic *topic, void *userp);
+	void (*name)(struct matrix *matrix, const struct matrix_room_name *name, void *userp);
+	void (*power_levels)(struct matrix *matrix, const struct matrix_room_power_levels *power_levels, void *userp);
+	void (*member)(struct matrix *matrix, const struct matrix_room_member *member, void *userp);
+	void (*join_rules)(struct matrix *matrix, const struct matrix_room_join_rules *join_rules, void *userp);
+	void (*room_create)(struct matrix *matrix, const struct matrix_room_create *room_create, void *userp);
+	void (*canonical_alias)(struct matrix *matrix, const struct matrix_room_canonical_alias *canonical_alias, void *userp);
+	void (*unknown_state)(struct matrix *matrix, const struct matrix_unknown_state *unknown_state, void *userp);
+	void (*message)(struct matrix *matrix, const struct matrix_room_message *message, void *userp);
+	void (*redaction)(struct matrix *matrix, const struct matrix_room_redaction *redaction, void *userp);
+	void (*attachment)(struct matrix *matrix, const struct matrix_room_attachment *attachment, void *userp);
 	/* Called once all events for a given room are consumed, does not indicate
 	 * end of sync parsing. */
 	void (*dispatch_end)(struct matrix *matrix, void *userp);
@@ -171,7 +171,7 @@ struct matrix_callbacks {
 
 /* Returns NULL on failure, must call matrix_global_init() before anything. */
 struct matrix *
-matrix_alloc(struct ev_loop *loop, struct matrix_callbacks callbacks,
+matrix_alloc(struct ev_loop *loop, const struct matrix_callbacks callbacks,
 			 const char *mxid, const char *homeserver, void *userp);
 void
 matrix_destroy(struct matrix *matrix);
