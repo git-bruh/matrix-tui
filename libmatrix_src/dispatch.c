@@ -5,9 +5,11 @@
 #include <stdlib.h>
 /* TODO pass errors to callbacks. */
 
+#define GETSTR(obj, name) (GETSTR(obj, name)))
+
 /* Safely get an unsigned int from a cJSON object without overflows. */
 static unsigned
-safe_getnum(const cJSON *json, const char name[]) {
+get_uint(const cJSON *json, const char name[]) {
 	double tmp = cJSON_GetNumberValue(cJSON_GetObjectItem(json, name));
 
 	unsigned result = 0;
@@ -22,9 +24,7 @@ safe_getnum(const cJSON *json, const char name[]) {
 static void
 dispatch_login(struct matrix *matrix, const char *resp) {
 	cJSON *json = cJSON_Parse(resp);
-	cJSON *token = cJSON_GetObjectItem(json, "access_token");
-
-	char *access_token = cJSON_GetStringValue(token);
+	char *access_token = GETSTR(json, "access_token");
 
 	if (access_token) {
 		matrix_set_authorization(matrix, access_token);
@@ -49,14 +49,11 @@ dispatch_state(struct matrix *matrix, const cJSON *events) {
 	cJSON_ArrayForEach(event, events) {
 		/* XXX: There's a bit of duplication of the common fields here. */
 		struct matrix_state_base base = {
-			.origin_server_ts = safe_getnum(event, "origin_server_ts"),
-			.event_id =
-				cJSON_GetStringValue(cJSON_GetObjectItem(event, "event_id")),
-			.sender =
-				cJSON_GetStringValue(cJSON_GetObjectItem(event, "sender")),
-			.type = cJSON_GetStringValue(cJSON_GetObjectItem(event, "type")),
-			.state_key =
-				cJSON_GetStringValue(cJSON_GetObjectItem(event, "state_key")),
+			.origin_server_ts = get_uint(event, "origin_server_ts"),
+			.event_id = GETSTR(event, "event_id"),
+			.sender = GETSTR(event, "sender"),
+			.type = GETSTR(event, "type"),
+			.state_key = GETSTR(event, "state_key"),
 		};
 
 		if (!base.origin_server_ts || !base.event_id || !base.sender ||
@@ -71,12 +68,10 @@ dispatch_message(struct matrix *matrix, struct matrix_room_base *base,
 				 const cJSON *content) {
 	struct matrix_room_message message = {
 		.base = base,
-		.body = cJSON_GetStringValue(cJSON_GetObjectItem(content, "body")),
-		.msgtype =
-			cJSON_GetStringValue(cJSON_GetObjectItem(content, "msgtype")),
-		.format = cJSON_GetStringValue(cJSON_GetObjectItem(content, "format")),
-		.formatted_body = cJSON_GetStringValue(
-			cJSON_GetObjectItem(content, "formatted_body")),
+		.body = GETSTR(content, "body"),
+		.msgtype = GETSTR(content, "msgtype"),
+		.format = GETSTR(content, "format"),
+		.formatted_body = GETSTR(content, "formatted_body"),
 	};
 
 	if (message.body && message.msgtype) {
@@ -92,7 +87,7 @@ dispatch_redaction(struct matrix *matrix, struct matrix_room_base *base,
 	struct matrix_room_redaction redaction = {
 		.base = base,
 		.redacts = redacts,
-		.reason = cJSON_GetStringValue(cJSON_GetObjectItem(content, "reason")),
+		.reason = GETSTR(content, "reason"),
 	};
 
 	if (redaction.redacts && redaction.reason) {
@@ -107,17 +102,14 @@ dispatch_attachment(struct matrix *matrix, struct matrix_room_base *base,
 
 	struct matrix_room_attachment attachment = {
 		.base = base,
-		.body = cJSON_GetStringValue(cJSON_GetObjectItem(content, "body")),
-		.msgtype =
-			cJSON_GetStringValue(cJSON_GetObjectItem(content, "msgtype")),
-		.url = cJSON_GetStringValue(cJSON_GetObjectItem(content, "url")),
-		.filename =
-			cJSON_GetStringValue(cJSON_GetObjectItem(content, "filename")),
+		.body = GETSTR(content, "body"),
+		.msgtype = GETSTR(content, "msgtype"),
+		.url = GETSTR(content, "url"),
+		.filename = GETSTR(content, "filename"),
 		.info =
 			{
-				.size = safe_getnum(info, "size"),
-				.mimetype =
-					cJSON_GetStringValue(cJSON_GetObjectItem(info, "mimetype")),
+				.size = get_uint(info, "size"),
+				.mimetype = GETSTR(info, "mimetype"),
 			},
 	};
 
@@ -133,12 +125,10 @@ dispatch_timeline(struct matrix *matrix, const cJSON *events) {
 
 	cJSON_ArrayForEach(event, events) {
 		struct matrix_room_base base = {
-			.origin_server_ts = safe_getnum(event, "origin_server_ts"),
-			.event_id =
-				cJSON_GetStringValue(cJSON_GetObjectItem(event, "event_id")),
-			.sender =
-				cJSON_GetStringValue(cJSON_GetObjectItem(event, "sender")),
-			.type = cJSON_GetStringValue(cJSON_GetObjectItem(event, "type")),
+			.origin_server_ts = get_uint(event, "origin_server_ts"),
+			.event_id = GETSTR(event, "event_id"),
+			.sender = GETSTR(event, "sender"),
+			.type = GETSTR(event, "type"),
 		};
 
 		if (!base.origin_server_ts || !base.event_id || !base.sender ||
@@ -157,7 +147,7 @@ dispatch_timeline(struct matrix *matrix, const cJSON *events) {
 		} else if ((strcmp(base.type, "m.room.redaction")) == 0) {
 			dispatch_redaction(
 				matrix, &base,
-				cJSON_GetStringValue(cJSON_GetObjectItem(event, "redacts")),
+				GETSTR(event, "redacts")),
 				content);
 		} else if ((strcmp(base.type, "m.location") != 0)) {
 			/* Assume that the event is an attachment. */
@@ -180,10 +170,9 @@ room_init(struct matrix_room *matrix_room, const cJSON *room) {
 			{
 				.heroes =
 					calloc(len_heroes, sizeof(*matrix_room->summary.heroes)),
-				.joined_member_count =
-					safe_getnum(room, "m.joined_member_count"),
+				.joined_member_count = get_uint(room, "m.joined_member_count"),
 				.invited_member_count =
-					safe_getnum(room, "m.invited_member_count"),
+					get_uint(room, "m.invited_member_count"),
 			},
 	};
 
@@ -228,7 +217,7 @@ dispatch_sync(struct matrix *matrix, const char *resp) {
 	cJSON *room = NULL;
 
 	char *next_batch =
-		cJSON_GetStringValue(cJSON_GetObjectItem(json, "next_batch"));
+		GETSTR(json, "next_batch"));
 
 	if (!next_batch) {
 		cJSON_Delete(json);
@@ -251,8 +240,7 @@ dispatch_sync(struct matrix *matrix, const char *resp) {
 									   cJSON_GetObjectItem(timeline, "limited"))
 									   ? true
 									   : false,
-						.prev_batch = cJSON_GetStringValue(
-							cJSON_GetObjectItem(timeline, "prev_batch")),
+						.prev_batch = GETSTR(timeline, "prev_batch"),
 					},
 				.next_batch = next_batch,
 			};
