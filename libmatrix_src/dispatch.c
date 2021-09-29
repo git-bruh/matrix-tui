@@ -9,17 +9,25 @@
 
 /* Safely get an unsigned int from a cJSON object without overflows. */
 static unsigned
-get_uint(const cJSON *json, const char name[]) {
+get_uint(const cJSON *json, const char name[], unsigned uint_default) {
 	double tmp = cJSON_GetNumberValue(cJSON_GetObjectItem(json, name));
 
-	unsigned result = 0;
-
 	if (!(isnan(tmp))) {
+		unsigned result = 0;
 		memcpy(&result, &tmp, sizeof(result));
+
+		return result;
 	}
 
-	return result;
+	return uint_default;
 }
+
+#if 0
+static time_t
+get_timestamp(const cJSON *json, const char name[]) {
+	/* TODO */
+}
+#endif
 
 static void
 dispatch_login(struct matrix *matrix, const char *resp) {
@@ -43,13 +51,164 @@ dispatch_ephemeral(struct matrix *matrix, const cJSON *events) {
 }
 
 static void
+dispatch_pinned_events(struct matrix *matrix, struct matrix_state_base *base,
+					   const cJSON *content) {
+	cJSON *pinned = cJSON_GetObjectItem(content, "pinned");
+
+	struct matrix_room_pinned_events events = {
+		.base = base,
+		.pinned =
+			calloc((size_t) cJSON_GetArraySize(pinned), sizeof(*events.pinned)),
+	};
+
+	if (!events.pinned) {
+		return;
+	}
+
+	cJSON *pin = NULL;
+
+	cJSON_ArrayForEach(pin, pinned) {
+		char *str = NULL;
+
+		if ((str = cJSON_GetStringValue(pin))) {
+			events.pinned[events.len_pinned++] = str;
+		}
+	}
+
+	matrix->cb.pinned_events(matrix, &events, matrix->userp);
+
+	free(events.pinned);
+}
+
+static void
+dispatch_avatar(struct matrix *matrix, struct matrix_state_base *base,
+				const cJSON *content) {
+	cJSON *info = cJSON_GetObjectItem(content, "info");
+
+	struct matrix_room_avatar avatar = {
+		.base = base,
+		.url = GETSTR(content, "url"),
+		.info =
+			{
+				.size = get_uint(info, "size", 0),
+				.mimetype = GETSTR(info, "mimetype"),
+			},
+	};
+
+	matrix->cb.avatar(matrix, &avatar, matrix->userp);
+}
+
+static void
+dispatch_topic(struct matrix *matrix, struct matrix_state_base *base,
+			   const cJSON *content) {
+	struct matrix_room_topic topic = {.base = base,
+									  .topic = GETSTR(content, "topic")};
+
+	matrix->cb.topic(matrix, &topic, matrix->userp);
+}
+
+static void
+dispatch_name(struct matrix *matrix, struct matrix_state_base *base,
+			  const cJSON *content) {
+	struct matrix_room_name name = {.base = base,
+									.name = GETSTR(content, "name")};
+
+	matrix->cb.name(matrix, &name, matrix->userp);
+}
+
+static void
+dispatch_power_levels(struct matrix *matrix, struct matrix_state_base *base,
+					  const cJSON *content) {
+	const unsigned default_power = 50;
+
+	struct matrix_room_power_levels power_levels = {
+		.base = base,
+		.ban = get_uint(content, "ban", default_power),
+		.events_default =
+			get_uint(content, "events_default", 0), /* Exception. */
+		.invite = get_uint(content, "invite", default_power),
+		.kick = get_uint(content, "kick", default_power),
+		.redact = get_uint(content, "redact", default_power),
+		.state_default = get_uint(content, "state_default", default_power),
+		.users_default = get_uint(content, "users_default", 0), /* Exception. */
+		.events = NULL,
+		.users = NULL,
+		.notifications = NULL,
+	};
+
+	matrix->cb.power_levels(matrix, &power_levels, matrix->userp);
+}
+
+static void
+dispatch_member(struct matrix *matrix, struct matrix_state_base *base,
+				const cJSON *content, const cJSON *prev_content) {
+	struct matrix_room_member member = {
+		.base = base,
+		.is_direct = cJSON_IsTrue(cJSON_GetObjectItem(content, "is_direct")),
+		.membership = GETSTR(content, "membership"),
+		.prev_membership = GETSTR(prev_content, "membership"),
+		.avatar_url = GETSTR(content, "avatar_url"),
+		.displayname = GETSTR(content, "displayname"),
+	};
+
+	if (member.membership) {
+		matrix->cb.member(matrix, &member, matrix->userp);
+	}
+}
+
+static void
+dispatch_join_rules(struct matrix *matrix, struct matrix_state_base *base,
+					const cJSON *content) {
+	struct matrix_room_join_rules join_rules = {
+		.base = base,
+		.join_rule = GETSTR(content, "join_rule"),
+	};
+
+	if (join_rules.join_rule) {
+		matrix->cb.join_rules(matrix, &join_rules, matrix->userp);
+	}
+}
+
+static void
+dispatch_create(struct matrix *matrix, struct matrix_state_base *base,
+				const cJSON *content) {
+	cJSON *federate = cJSON_GetObjectItem(content, "federate");
+
+	char default_version[] = "1";
+
+	struct matrix_room_create room_create = {
+		.base = base,
+		.federate = federate ? cJSON_IsTrue(federate) : true,
+		.creator = GETSTR(content, "creator"),
+		.room_version = GETSTR(content, "room_version"),
+	};
+
+	if (!room_create.room_version) {
+		room_create.room_version = default_version;
+	}
+
+	matrix->cb.room_create(matrix, &room_create, matrix->userp);
+}
+
+static void
+dispatch_canonical_alias(struct matrix *matrix, struct matrix_state_base *base,
+						 const cJSON *content) {
+	struct matrix_room_canonical_alias alias = {
+		.base = base,
+		.alias = GETSTR(content, "alias"),
+	};
+
+	matrix->cb.canonical_alias(matrix, &alias, matrix->userp);
+}
+
+static void
 dispatch_state(struct matrix *matrix, const cJSON *events) {
 	cJSON *event = NULL;
 
 	cJSON_ArrayForEach(event, events) {
 		/* XXX: There's a bit of duplication of the common fields here. */
 		struct matrix_state_base base = {
-			.origin_server_ts = get_uint(event, "origin_server_ts"),
+			.origin_server_ts = get_uint(event, "origin_server_ts", 0),
 			.event_id = GETSTR(event, "event_id"),
 			.sender = GETSTR(event, "sender"),
 			.type = GETSTR(event, "type"),
@@ -79,8 +238,8 @@ dispatch_message(struct matrix *matrix, struct matrix_room_base *base,
 	}
 }
 
-/* We must take in an extra argument for the redacts key as it's not present in
- * the "content" of the event but at the base. */
+/* XXX: We must take in an extra argument for the redacts key as it's not
+ * present in the "content" of the event but at the base. */
 static void
 dispatch_redaction(struct matrix *matrix, struct matrix_room_base *base,
 				   char *redacts, const cJSON *content) {
@@ -90,7 +249,7 @@ dispatch_redaction(struct matrix *matrix, struct matrix_room_base *base,
 		.reason = GETSTR(content, "reason"),
 	};
 
-	if (redaction.redacts && redaction.reason) {
+	if (redaction.redacts) {
 		matrix->cb.redaction(matrix, &redaction, matrix->userp);
 	}
 }
@@ -108,7 +267,7 @@ dispatch_attachment(struct matrix *matrix, struct matrix_room_base *base,
 		.filename = GETSTR(content, "filename"),
 		.info =
 			{
-				.size = get_uint(info, "size"),
+				.size = get_uint(info, "size", 0),
 				.mimetype = GETSTR(info, "mimetype"),
 			},
 	};
@@ -125,7 +284,7 @@ dispatch_timeline(struct matrix *matrix, const cJSON *events) {
 
 	cJSON_ArrayForEach(event, events) {
 		struct matrix_room_base base = {
-			.origin_server_ts = get_uint(event, "origin_server_ts"),
+			.origin_server_ts = get_uint(event, "origin_server_ts", 0),
 			.event_id = GETSTR(event, "event_id"),
 			.sender = GETSTR(event, "sender"),
 			.type = GETSTR(event, "type"),
@@ -157,20 +316,18 @@ dispatch_timeline(struct matrix *matrix, const cJSON *events) {
 static int
 room_init(struct matrix_room *matrix_room, const cJSON *room) {
 	cJSON *summary = cJSON_GetObjectItem(room, "summary");
-
 	cJSON *heroes = cJSON_GetObjectItem(summary, "m.heroes");
-
-	size_t len_heroes = (size_t) cJSON_GetArraySize(heroes);
 
 	*matrix_room = (struct matrix_room){
 		.id = room->string,
 		.summary =
 			{
-				.heroes =
-					calloc(len_heroes, sizeof(*matrix_room->summary.heroes)),
-				.joined_member_count = get_uint(room, "m.joined_member_count"),
+				.heroes = calloc((size_t) cJSON_GetArraySize(heroes),
+								 sizeof(*matrix_room->summary.heroes)),
+				.joined_member_count =
+					get_uint(room, "m.joined_member_count", 0),
 				.invited_member_count =
-					get_uint(room, "m.invited_member_count"),
+					get_uint(room, "m.invited_member_count", 0),
 			},
 	};
 

@@ -20,6 +20,11 @@ struct matrix_room {
 	} summary;
 };
 
+struct matrix_file_info {
+	unsigned size;
+	char *mimetype; /* nullable. */
+};
+
 #define MATRIX_EVENT_BASEFIELDS                                                \
 	unsigned origin_server_ts;                                                 \
 	char *event_id;                                                            \
@@ -39,9 +44,7 @@ struct matrix_room_base {
 
 struct matrix_room_canonical_alias {
 	struct matrix_state_base *base;
-	char *alias;
-	char **alt_aliases;
-	size_t len_alt_aliases;
+	char *alias; /* nullable. */
 };
 
 struct matrix_room_create {
@@ -49,10 +52,6 @@ struct matrix_room_create {
 	char *creator;
 	char *room_version;
 	struct matrix_state_base *base;
-	struct {
-		char *event_id;
-		char *room_id;
-	} predecessor;
 };
 
 struct matrix_room_join_rules {
@@ -63,10 +62,10 @@ struct matrix_room_join_rules {
 struct matrix_room_member {
 	bool is_direct;
 	char *membership;
-	char *avatar_url;  /* nullable. */
-	char *displayname; /* nullable. */
+	char *prev_membership; /* nullable. */
+	char *avatar_url;	   /* nullable. */
+	char *displayname;	   /* nullable. */
 	struct matrix_state_base *base;
-	struct matrix_room_member *prev;
 };
 
 struct matrix_room_power_levels {
@@ -77,12 +76,9 @@ struct matrix_room_power_levels {
 	unsigned redact;
 	unsigned state_default;
 	unsigned users_default;
-	struct {
-		unsigned room;
-	} notifications;
-	struct {
-		// Hashmap of user: level
-	} users;
+	void *events; /* TODO Hashtables. */
+	void *users;
+	void *notifications;
 	struct matrix_state_base *base;
 };
 
@@ -99,6 +95,7 @@ struct matrix_room_topic {
 struct matrix_room_avatar {
 	char *url;
 	struct matrix_state_base *base;
+	struct matrix_file_info info;
 };
 
 struct matrix_room_pinned_events {
@@ -129,10 +126,7 @@ struct matrix_room_attachment {
 	char *msgtype;
 	char *url;
 	char *filename;
-	struct {
-		unsigned size;
-		char *mimetype; /* nullable. */
-	} info;
+	struct matrix_file_info info;
 };
 
 struct matrix_unknown_room_message {};
@@ -144,8 +138,6 @@ struct matrix_dispatch_info {
 		bool limited;
 		char *prev_batch; /* nullable. */
 	} timeline;			  /* The current room's timeline. */
-	/* These fields correspond to the whole sync response and not the current
-	 * room's timeline. */
 	char *next_batch;
 };
 
@@ -171,16 +163,13 @@ matrix_alloc(struct ev_loop *loop, struct matrix_callbacks callbacks,
 			 const char *mxid, const char *homeserver, void *userp);
 void
 matrix_destroy(struct matrix *matrix);
-
 void
 matrix_global_cleanup(void);
 
 /* These functions return -1 on failure due to allocation failure / invalid
  * arguments and 0 on success. */
-
 int
 matrix_global_init(void);
-
 /* nullable: device_id */
 int
 matrix_login(struct matrix *matrix, const char *password,
