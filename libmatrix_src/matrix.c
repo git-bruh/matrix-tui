@@ -358,6 +358,16 @@ matrix_set_authorization(struct matrix *matrix, const char *token) {
 	return 0;
 }
 
+int
+matrix_global_init(void) {
+	return curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK ? 0 : -1;
+}
+
+void
+matrix_global_cleanup(void) {
+	curl_global_cleanup();
+}
+
 struct matrix *
 matrix_alloc(struct ev_loop *loop, struct matrix_callbacks callbacks,
 			 const char *mxid, const char *homeserver, void *userp) {

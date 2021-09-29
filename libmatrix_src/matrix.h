@@ -165,15 +165,21 @@ struct matrix_callbacks {
 	void (*on_dispatch_end)(struct matrix *matrix, void *userp);
 };
 
-/* Returns NULL on failure. */
+/* Returns NULL on failure, must call matrix_global_init() before anything. */
 struct matrix *
 matrix_alloc(struct ev_loop *loop, struct matrix_callbacks callbacks,
 			 const char *mxid, const char *homeserver, void *userp);
 void
 matrix_destroy(struct matrix *matrix);
 
+void
+matrix_global_cleanup(void);
+
 /* These functions return -1 on failure due to allocation failure / invalid
  * arguments and 0 on success. */
+
+int
+matrix_global_init(void);
 
 /* nullable: device_id */
 int
