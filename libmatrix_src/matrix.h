@@ -44,7 +44,7 @@ struct matrix_room_base {
 #undef MATRIX_EVENT_BASEFIELDS
 
 struct matrix_room_typing {
-	char *user_id;
+	matrix_iterator_t *users;
 };
 
 struct matrix_room_canonical_alias {

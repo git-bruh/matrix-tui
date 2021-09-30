@@ -55,14 +55,9 @@ dispatch_typing(struct matrix *matrix, const cJSON *content) {
 	}
 
 	cJSON *user_ids = cJSON_GetObjectItem(content, "user_ids");
-	cJSON *user_id = NULL;
 
-	cJSON_ArrayForEach(user_id, user_ids) {
-		char *str = NULL;
-
-		if ((str = cJSON_GetStringValue(user_id))) {
-			matrix->cb.typing(matrix, &(struct matrix_room_typing){.user_id = str}, matrix->userp);
-		}
+	if (user_ids) {
+		matrix->cb.typing(matrix, (void *) user_ids, matrix->userp);
 	}
 }
 
