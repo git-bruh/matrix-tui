@@ -142,9 +142,9 @@ dispatch_power_levels(struct matrix *matrix, struct matrix_state_base *base,
 		.redact = get_uint(content, "redact", default_power),
 		.state_default = get_uint(content, "state_default", default_power),
 		.users_default = get_uint(content, "users_default", 0), /* Exception. */
-		.events = NULL,
-		.users = NULL,
-		.notifications = NULL,
+		.events = cJSON_GetObjectItem(content, "events"),
+		.notifications = cJSON_GetObjectItem(content, "notifications"),
+		.users = cJSON_GetObjectItem(content, "users"),
 	};
 
 	matrix->cb.power_levels(matrix, &power_levels, matrix->userp);

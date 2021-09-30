@@ -81,9 +81,9 @@ struct matrix_room_power_levels {
 	unsigned redact;
 	unsigned state_default;
 	unsigned users_default;
-	void *events; /* TODO Hashtables. */
-	void *users;
-	void *notifications;
+	matrix_iterator_t *events;		  /* nullable. */
+	matrix_iterator_t *users;		  /* nullable. */
+	matrix_iterator_t *notifications; /* nullable. */
 	struct matrix_state_base *base;
 };
 
