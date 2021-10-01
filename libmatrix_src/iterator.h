@@ -6,6 +6,7 @@ typedef void matrix_iterator_t;
 
 enum matrix_iterator_error {
 	MATRIX_ITERATOR_SUCCESS = 0,
+	MATRIX_ITERATOR_NOT_FOUND,
 	MATRIX_ITERATOR_FINISH,
 	MATRIX_ITERATOR_INVALID
 };
@@ -27,7 +28,7 @@ matrix_iterator_next_impl(
 #define MATRIX_TYPENUM(x)                                                      \
 	_Generic((x), \
 	char **: MATRIX_ITERATOR_STRING, \
-	unsigned *: MATRIX_ITERATOR_UINT, \
+	int *: MATRIX_ITERATOR_INT, \
 	struct matrix_iterator *: MATRIX_ITERATOR_ITERATOR, \
 	default: MATRIX_ITERATOR_UNKNOWN)
 

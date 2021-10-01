@@ -43,3 +43,6 @@ int
 matrix_set_authorization(struct matrix *matrix, const char *token);
 void
 matrix_dispatch_response(struct matrix *matrix, struct transfer *transfer);
+
+int
+double_to_int(double x);

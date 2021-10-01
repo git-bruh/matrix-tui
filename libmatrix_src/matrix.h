@@ -14,15 +14,15 @@ struct matrix;
 struct matrix_room {
 	char *id;
 	struct {
-		unsigned joined_member_count;
-		unsigned invited_member_count;
+		int joined_member_count;
+		int invited_member_count;
 		size_t len_heroes;
 		char **heroes;
 	} summary;
 };
 
 struct matrix_file_info {
-	unsigned size;
+	int size;
 	char *mimetype; /* nullable. */
 };
 
@@ -74,13 +74,13 @@ struct matrix_room_member {
 };
 
 struct matrix_room_power_levels {
-	unsigned ban;
-	unsigned events_default;
-	unsigned invite;
-	unsigned kick;
-	unsigned redact;
-	unsigned state_default;
-	unsigned users_default;
+	int ban;
+	int events_default;
+	int invite;
+	int kick;
+	int redact;
+	int state_default;
+	int users_default;
 	matrix_iterator_t *events;		  /* nullable. */
 	matrix_iterator_t *users;		  /* nullable. */
 	matrix_iterator_t *notifications; /* nullable. */

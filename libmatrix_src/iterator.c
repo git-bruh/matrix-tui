@@ -12,7 +12,8 @@ matrix_iterator_next_impl(matrix_iterator_t **iterator,
 		return MATRIX_ITERATOR_FINISH;
 	}
 
-	cJSON *data = (cJSON *) *iterator;
+	cJSON *data = *iterator;
+	*iterator = data->next;
 
 	/* Only string keys are supported. */
 	if (key) {
@@ -25,25 +26,27 @@ matrix_iterator_next_impl(matrix_iterator_t **iterator,
 
 	if (value) {
 		switch (type_value) {
-		case MATRIX_ITERATOR_STRING:
-			*(char **) value = cJSON_GetStringValue(data);
-			break;
-		case MATRIX_ITERATOR_UINT: {
-			double tmp = cJSON_GetNumberValue(data);
-			if ((isnan(tmp))) {
-				/* Not a number. */
-				*(unsigned *) value = -1;
-			} else {
-				memcpy(value, &tmp, sizeof(unsigned));
+		case MATRIX_ITERATOR_STRING: {
+			char *tmp = cJSON_GetStringValue(data);
+
+			if (tmp) {
+				*(char **) value = tmp;
+				return MATRIX_ITERATOR_SUCCESS;
 			}
-			break;
+
+			return MATRIX_ITERATOR_NOT_FOUND;
 		}
-		default:
+		case MATRIX_ITERATOR_INT: {
+			double tmp = cJSON_GetNumberValue(data);
+
+			if (!(isnan(tmp))) {
+				*(int *) value = double_to_int(tmp);
+				return MATRIX_ITERATOR_SUCCESS;
+			}
+
+			return MATRIX_ITERATOR_NOT_FOUND;
+		}
+
 			return MATRIX_ITERATOR_INVALID;
 		}
 	}
-
-	*iterator = data->next;
-
-	return MATRIX_ITERATOR_SUCCESS;
-}

@@ -1,6 +1,7 @@
 #include "cJSON.h"
 #include "matrix-priv.h"
 #include <assert.h>
+#include <limits.h>
 #include <math.h>
 #include <stdlib.h>
 /* TODO pass errors to callbacks. */
@@ -8,19 +9,16 @@
 /* Get the value of a key from an object. */
 #define GETSTR(obj, key) (cJSON_GetStringValue(cJSON_GetObjectItem(obj, key)))
 
-/* Safely get an unsigned int from a cJSON object without overflows. */
-static unsigned
-get_uint(const cJSON *json, const char name[], unsigned uint_default) {
+/* Safely get an int from a cJSON object without overflows. */
+static int
+get_int(const cJSON *json, const char name[], int int_default) {
 	double tmp = cJSON_GetNumberValue(cJSON_GetObjectItem(json, name));
 
 	if (!(isnan(tmp))) {
-		unsigned result = 0;
-		memcpy(&result, &tmp, sizeof(result));
-
-		return result;
+		return double_to_int(tmp);
 	}
 
-	return uint_default;
+	return int_default;
 }
 
 #if 0
@@ -89,7 +87,7 @@ dispatch_avatar(struct matrix *matrix, struct matrix_state_base *base,
 		.url = GETSTR(content, "url"),
 		.info =
 			{
-				.size = get_uint(info, "size", 0),
+				.size = get_int(info, "size", 0),
 				.mimetype = GETSTR(info, "mimetype"),
 			},
 	};
@@ -134,14 +132,14 @@ dispatch_power_levels(struct matrix *matrix, struct matrix_state_base *base,
 
 	struct matrix_room_power_levels power_levels = {
 		.base = base,
-		.ban = get_uint(content, "ban", default_power),
+		.ban = get_int(content, "ban", default_power),
 		.events_default =
-			get_uint(content, "events_default", 0), /* Exception. */
-		.invite = get_uint(content, "invite", default_power),
-		.kick = get_uint(content, "kick", default_power),
-		.redact = get_uint(content, "redact", default_power),
-		.state_default = get_uint(content, "state_default", default_power),
-		.users_default = get_uint(content, "users_default", 0), /* Exception. */
+			get_int(content, "events_default", 0), /* Exception. */
+		.invite = get_int(content, "invite", default_power),
+		.kick = get_int(content, "kick", default_power),
+		.redact = get_int(content, "redact", default_power),
+		.state_default = get_int(content, "state_default", default_power),
+		.users_default = get_int(content, "users_default", 0), /* Exception. */
 		.events = cJSON_GetObjectItem(content, "events"),
 		.notifications = cJSON_GetObjectItem(content, "notifications"),
 		.users = cJSON_GetObjectItem(content, "users"),
@@ -256,7 +254,7 @@ dispatch_state(struct matrix *matrix, const cJSON *events) {
 	cJSON_ArrayForEach(event, events) {
 		/* XXX: There's a bit of duplication of the common fields here. */
 		struct matrix_state_base base = {
-			.origin_server_ts = get_uint(event, "origin_server_ts", 0),
+			.origin_server_ts = get_int(event, "origin_server_ts", 0),
 			.event_id = GETSTR(event, "event_id"),
 			.sender = GETSTR(event, "sender"),
 			.type = GETSTR(event, "type"),
@@ -355,7 +353,7 @@ dispatch_attachment(struct matrix *matrix, struct matrix_room_base *base,
 		.filename = GETSTR(content, "filename"),
 		.info =
 			{
-				.size = get_uint(info, "size", 0),
+				.size = get_int(info, "size", 0),
 				.mimetype = GETSTR(info, "mimetype"),
 			},
 	};
@@ -372,7 +370,7 @@ dispatch_timeline(struct matrix *matrix, const cJSON *events) {
 
 	cJSON_ArrayForEach(event, events) {
 		struct matrix_room_base base = {
-			.origin_server_ts = get_uint(event, "origin_server_ts", 0),
+			.origin_server_ts = get_int(event, "origin_server_ts", 0),
 			.event_id = GETSTR(event, "event_id"),
 			.sender = GETSTR(event, "sender"),
 			.type = GETSTR(event, "type"),
@@ -413,9 +411,9 @@ room_init(struct matrix_room *matrix_room, const cJSON *room) {
 				.heroes = calloc((size_t) cJSON_GetArraySize(heroes),
 								 sizeof(*matrix_room->summary.heroes)),
 				.joined_member_count =
-					get_uint(room, "m.joined_member_count", 0),
+					get_int(room, "m.joined_member_count", 0),
 				.invited_member_count =
-					get_uint(room, "m.invited_member_count", 0),
+					get_int(room, "m.invited_member_count", 0),
 			},
 	};
 
