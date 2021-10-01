@@ -16,8 +16,7 @@ struct matrix_room {
 	struct {
 		int joined_member_count;
 		int invited_member_count;
-		size_t len_heroes;
-		char **heroes;
+		matrix_iterator_t *heroes;
 	} summary;
 };
 

@@ -399,47 +399,6 @@ dispatch_timeline(struct matrix *matrix, const cJSON *events) {
 	}
 }
 
-static int
-room_init(struct matrix_room *matrix_room, const cJSON *room) {
-	cJSON *summary = cJSON_GetObjectItem(room, "summary");
-	cJSON *heroes = cJSON_GetObjectItem(summary, "m.heroes");
-
-	*matrix_room = (struct matrix_room){
-		.id = room->string,
-		.summary =
-			{
-				.heroes = calloc((size_t) cJSON_GetArraySize(heroes),
-								 sizeof(*matrix_room->summary.heroes)),
-				.joined_member_count =
-					get_int(room, "m.joined_member_count", 0),
-				.invited_member_count =
-					get_int(room, "m.invited_member_count", 0),
-			},
-	};
-
-	if (!matrix_room->summary.heroes) {
-		return -1;
-	}
-
-	cJSON *hero = NULL;
-
-	cJSON_ArrayForEach(hero, heroes) {
-		char *str = NULL;
-
-		if ((str = cJSON_GetStringValue(hero))) {
-			matrix_room->summary.heroes[matrix_room->summary.len_heroes++] =
-				str;
-		}
-	}
-
-	return 0;
-}
-
-static void
-room_finish(struct matrix_room *matrix_room) {
-	free(matrix_room->summary.heroes);
-}
-
 static void
 dispatch_sync(struct matrix *matrix, const char *resp) {
 	if (!matrix->cb.dispatch_start || !matrix->cb.dispatch_end) {
@@ -474,6 +433,20 @@ dispatch_sync(struct matrix *matrix, const char *resp) {
 			cJSON *timeline = cJSON_GetObjectItem(room, "timeline");
 
 			struct matrix_dispatch_info info = {
+				.room =
+					{
+						.id = room->string,
+						.summary =
+							{
+								.heroes = cJSON_GetObjectItem(
+									cJSON_GetObjectItem(room, "summary"),
+									"m.heroes"),
+								.joined_member_count =
+									get_int(room, "m.joined_member_count", 0),
+								.invited_member_count =
+									get_int(room, "m.invited_member_count", 0),
+							},
+					},
 				.timeline =
 					{
 						.limited = cJSON_IsTrue(
@@ -485,12 +458,7 @@ dispatch_sync(struct matrix *matrix, const char *resp) {
 				.next_batch = next_batch,
 			};
 
-			if ((room_init(&info.room, room)) == -1) {
-				continue;
-			}
-
 			matrix->cb.dispatch_start(matrix, &info, matrix->userp);
-			room_finish(&info.room);
 		}
 
 		dispatch_state(
