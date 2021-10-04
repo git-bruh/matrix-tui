@@ -4,10 +4,10 @@
 #include <string.h>
 
 enum matrix_iterator_error
-matrix_iterator_next_impl(matrix_iterator_t **iterator,
-						  enum matrix_iterator_type type_key,
-						  enum matrix_iterator_type type_value, void *key,
-						  void *value) {
+matrix_iterator_next(matrix_iterator_t **iterator,
+					 enum matrix_iterator_type type_key,
+					 enum matrix_iterator_type type_value, void *key,
+					 void *value) {
 	if (!*iterator) {
 		return MATRIX_ITERATOR_FINISH;
 	}

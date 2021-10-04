@@ -18,12 +18,11 @@ enum matrix_iterator_type {
 	MATRIX_ITERATOR_UNKNOWN
 };
 
-/* Must be called via the matrix_iterator_next() macro. */
 enum matrix_iterator_error
-matrix_iterator_next_impl(
-	matrix_iterator_t **iterator, // struct matrix_iterator *iterator,
-	enum matrix_iterator_type type_key, enum matrix_iterator_type type_value,
-	void *key, void *value);
+matrix_iterator_next(matrix_iterator_t **iterator,
+					 enum matrix_iterator_type type_key,
+					 enum matrix_iterator_type type_value, void *key,
+					 void *value);
 
 #define MATRIX_TYPENUM(x)                                                      \
 	_Generic((x), \
@@ -33,5 +32,5 @@ matrix_iterator_next_impl(
 	default: MATRIX_ITERATOR_UNKNOWN)
 
 #define matrix_iterator_next(iterator, key, value)                             \
-	matrix_iterator_next_impl(iterator, MATRIX_TYPENUM(key),                   \
-							  MATRIX_TYPENUM(value), key, value)
+	matrix_iterator_next(iterator, MATRIX_TYPENUM(key), MATRIX_TYPENUM(value), \
+						 key, value)
