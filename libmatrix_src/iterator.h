@@ -1,6 +1,13 @@
 #pragma once
 /* A terrible attempt at making a generic iterator to abstract away the
- * underlying JSON library from the user. */
+ * underlying JSON library from the user.
+ * TODO investigate a better method:
+ *   1. Switch to C++ and pass around `std::unordered_map` objects. (bruh)
+ *   2. Expose cJSON objects in the API, will allow more flexiblity in what
+ *      can be done with the data but requires the user to be familiar with the
+ *      cJSON API.
+ *   3. Dump raw JSON as char * (Even more hacky)
+ *   4. ??? */
 
 typedef void matrix_iterator_t;
 
