@@ -4,10 +4,6 @@
 #include <limits.h>
 #include <math.h>
 #include <stdlib.h>
-/* TODO pass errors to callbacks. */
-
-/* Get the value of a key from an object. */
-#define GETSTR(obj, key) (cJSON_GetStringValue(cJSON_GetObjectItem(obj, key)))
 
 /* Safely get an int from a cJSON object without overflows. */
 static int

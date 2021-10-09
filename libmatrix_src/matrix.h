@@ -1,10 +1,17 @@
 #pragma once
 #include "iterator.h"
-#include <ev.h>
 #include <stdbool.h>
 /* Must allocate enum + 1. */
 enum matrix_limits {
 	MATRIX_MXID_MAX = 255,
+};
+
+enum matrix_code {
+	MATRIX_SUCCESS = 0,
+	MATRIX_CURL_FAILURE,
+	MATRIX_NOMEM,
+	MATRIX_INVALID_ARGUMENT,
+	MATRIX_NOT_LOGGED_IN,
 };
 
 struct matrix;
@@ -190,7 +197,7 @@ struct matrix_callbacks {
 
 /* Returns NULL on failure, must call matrix_global_init() before anything. */
 struct matrix *
-matrix_alloc(struct ev_loop *loop, const struct matrix_callbacks callbacks,
+matrix_alloc(const struct matrix_callbacks callbacks,
 			 const char *mxid, const char *homeserver, void *userp);
 void
 matrix_destroy(struct matrix *matrix);
@@ -202,10 +209,9 @@ matrix_global_cleanup(void);
 int
 matrix_global_init(void);
 /* nullable: device_id */
-int
+enum matrix_code
 matrix_login(struct matrix *matrix, const char *password,
 			 const char *device_id);
 /* timeout specifies the number of seconds to wait for before syncing again.
  * timeout >= 1 && timeout <= 60 */
-int
-matrix_sync(struct matrix *matrix, int timeout);
+/* matrix_sync(); */
