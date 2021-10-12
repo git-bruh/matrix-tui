@@ -1,7 +1,6 @@
 #include "iterator.h"
 #include "cJSON.h"
-#include <math.h>
-#include <string.h>
+#include "matrix-priv.h"
 
 enum matrix_iterator_error
 matrix_iterator_next(matrix_iterator_t **iterator,

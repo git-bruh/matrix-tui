@@ -11,7 +11,7 @@ XCFLAGS = \
 	-Wunused-macros -Wredundant-decls \
 	-DCLIENT_NAME=\"matrix-client\"
 
-LDLIBS = `curl-config --libs` -lev
+LDLIBS = `curl-config --libs` -lpthread
 
 INCLUDES = \
 	-I libmatrix_src \

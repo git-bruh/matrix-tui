@@ -1,9 +1,5 @@
 #include "cJSON.h"
 #include "matrix-priv.h"
-#include <assert.h>
-#include <limits.h>
-#include <math.h>
-#include <stdlib.h>
 
 /* Safely get an int from a cJSON object without overflows. */
 static int
@@ -23,24 +19,6 @@ get_timestamp(const cJSON *json, const char name[]) {
 	/* TODO */
 }
 #endif
-
-static void
-dispatch_login(struct matrix *matrix, const char *resp) {
-	if (!matrix->cb.login) {
-		return;
-	}
-
-	cJSON *json = cJSON_Parse(resp);
-	char *access_token = GETSTR(json, "access_token");
-
-	if (access_token) {
-		matrix_set_authorization(matrix, access_token);
-	}
-
-	matrix->cb.login(matrix, access_token, matrix->userp);
-
-	cJSON_Delete(json);
-}
 
 static void
 dispatch_typing(struct matrix *matrix, const cJSON *content) {
@@ -473,24 +451,4 @@ dispatch_sync(struct matrix *matrix, const char *resp) {
 	}
 
 	cJSON_Delete(json);
-}
-
-void
-matrix_dispatch_response(struct matrix *matrix, struct transfer *transfer) {
-	const char *resp = transfer->mem.buf;
-
-	if (!resp) {
-		return;
-	}
-
-	switch (transfer->type) {
-	case MATRIX_SYNC:
-		dispatch_sync(matrix, resp);
-		break;
-	case MATRIX_LOGIN:
-		dispatch_login(matrix, resp);
-		break;
-	default:
-		assert(0);
-	}
 }

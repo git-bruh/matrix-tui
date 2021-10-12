@@ -1,5 +1,4 @@
 #include "matrix-priv.h"
-#include <stdlib.h>
 
 int
 matrix_global_init(void) {
@@ -18,18 +17,19 @@ matrix_alloc(const struct matrix_callbacks callbacks, const char *mxid,
 
 	struct matrix *matrix = calloc(1, sizeof(*matrix));
 
-	if (!matrix) {
-		return NULL;
-	}
-
-	*matrix = (struct matrix){.cb = callbacks,
+	if (matrix) {
+		*matrix = (struct matrix){.cb = callbacks,
 							  .homeserver = strdup(homeserver),
 							  .mxid = strdup(mxid),
 							  .userp = userp};
 
-	if (!matrix->homeserver || !matrix->mxid)
-		P matrix_destroy(matrix);
-}
+		if (matrix->homeserver && matrix->mxid) {
+			return matrix;
+		}
+	}
+
+	matrix_destroy(matrix);
+	return NULL;
 }
 
 void
@@ -39,7 +39,9 @@ matrix_destroy(struct matrix *matrix) {
 	}
 
 	free(matrix->homeserver);
+	matrix->homeserver = NULL;
 	free(matrix->mxid);
+	matrix->mxid = NULL;
 	free(matrix);
 }
 

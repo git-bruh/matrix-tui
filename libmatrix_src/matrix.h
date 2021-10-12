@@ -33,7 +33,7 @@ struct matrix_file_info {
 };
 
 #define MATRIX_EVENT_BASEFIELDS                                                \
-	unsigned origin_server_ts;                                                 \
+	int origin_server_ts;                                                 \
 	char *event_id;                                                            \
 	char *sender;                                                              \
 	char *type

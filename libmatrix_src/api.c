@@ -1,7 +1,5 @@
 #include "cJSON.h"
 #include "matrix-priv.h"
-#include <assert.h>
-#include <stdlib.h>
 
 enum method { GET = 0, POST, PUT };
 
@@ -41,15 +39,15 @@ get_headers(struct matrix *matrix) {
 	struct curl_slist *tmp =
 		curl_slist_append(headers, "Content-Type: application/json");
 
-	if (!tmp) {
-		curl_slist_free_all(headers);
-
-		return NULL;
+	if (tmp) {
+		free(auth);
+		return tmp;
 	}
 
+	curl_slist_free_all(headers);
 	free(auth);
 
-	return headers;
+	return NULL;
 }
 
 static char *
@@ -67,6 +65,25 @@ endpoint_create(const char *homeserver, const char *endpoint,
 	}
 
 	return final;
+}
+
+static size_t
+write_cb(void *contents, size_t size, size_t nmemb, void *userp) {
+	size_t realsize = size * nmemb;
+
+	struct response *response = userp;
+
+	char *ptr = realloc(response->data, response->len + realsize + 1);
+
+	if (!ptr) {
+		return 0;
+	}
+
+	response->data = ptr;
+	memcpy(&(response->data[response->len]), contents, realsize);
+	response->data[response->len += realsize] = '\0';
+
+	return realsize;
 }
 
 static enum matrix_code
