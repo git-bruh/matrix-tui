@@ -2,6 +2,8 @@
 #include "cJSON.h"
 #include "matrix-priv.h"
 
+#undef matrix_iterator_next
+
 enum matrix_iterator_error
 matrix_iterator_next(matrix_iterator_t **iterator,
 					 enum matrix_iterator_type type_key,
@@ -45,7 +47,10 @@ matrix_iterator_next(matrix_iterator_t **iterator,
 
 			return MATRIX_ITERATOR_NOT_FOUND;
 		}
-
-			return MATRIX_ITERATOR_INVALID;
+		default:
+			return MATRIX_ITERATOR_NOT_FOUND;
 		}
 	}
+
+	return MATRIX_ITERATOR_INVALID;
+}

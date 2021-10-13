@@ -20,8 +20,7 @@ enum matrix_iterator_error {
 
 enum matrix_iterator_type {
 	MATRIX_ITERATOR_STRING = 0,
-	MATRIX_ITERATOR_UINT,
-	MATRIX_ITERATOR_ITERATOR,
+	MATRIX_ITERATOR_INT,
 	MATRIX_ITERATOR_UNKNOWN
 };
 
@@ -35,7 +34,6 @@ matrix_iterator_next(matrix_iterator_t **iterator,
 	_Generic((x), \
 	char **: MATRIX_ITERATOR_STRING, \
 	int *: MATRIX_ITERATOR_INT, \
-	struct matrix_iterator *: MATRIX_ITERATOR_ITERATOR, \
 	default: MATRIX_ITERATOR_UNKNOWN)
 
 #define matrix_iterator_next(iterator, key, value)                             \

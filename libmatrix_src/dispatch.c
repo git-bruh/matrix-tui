@@ -102,7 +102,7 @@ dispatch_power_levels(struct matrix *matrix, struct matrix_state_base *base,
 		return;
 	}
 
-	const unsigned default_power = 50;
+	const int default_power = 50;
 
 	struct matrix_room_power_levels power_levels = {
 		.base = base,

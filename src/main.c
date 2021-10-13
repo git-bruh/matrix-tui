@@ -6,22 +6,13 @@
 #include "matrix.h"
 #include <assert.h>
 #include <curl/curl.h>
-#include <ev.h>
 #include <langinfo.h>
 #include <locale.h>
-#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-/* Silence unused parameter warnings. */
-#if EV_MULTIPLICITY
-#define CAST_LOOP (void) EV_A
-#else
-#define CAST_LOOP (void) 0
-#endif
 
 #if 1
 #define MXID "@testuser:localhost"
@@ -38,7 +29,6 @@
 struct state {
 	char *current_room;
 	FILE *log_fp;
-	struct ev_loop *loop;
 	struct matrix *matrix;
 	struct input input;
 };
@@ -57,8 +47,7 @@ cleanup(struct state *state) {
 	matrix_destroy(state->matrix);
 
 	tb_shutdown();
-	curl_global_cleanup();
-	ev_loop_destroy(state->loop);
+	matrix_global_cleanup();
 
 	fclose(state->log_fp);
 }
@@ -67,78 +56,13 @@ static bool
 log_if_err(bool condition, const char *error) {
 	if (!condition) {
 		log_fatal("%s", error);
-		return true;
 	}
 
-	return false;
+	return !condition;
 }
 
-static void
-login_cb(struct matrix *matrix, const char *access_token, void *userp) {
-	(void) matrix;
-	(void) userp;
-
-	tb_string(0, 0, TB_DEFAULT, TB_DEFAULT,
-			  access_token ? access_token : "Failed to login!");
-
-	if ((matrix_sync(matrix, 0)) == -1) {
-		tb_string(0, 1, TB_DEFAULT, TB_DEFAULT, "Failed to start sync!");
-	}
-
-	tb_render();
-}
-
-static void
-dispatch_start_cb(struct matrix *matrix,
-				  const struct matrix_dispatch_info *info, void *userp) {
-	(void) matrix;
-
-	struct state *state = userp;
-
-	if (!(state->current_room = strdup(info->room.id))) {
-		return;
-	}
-
-	fprintf(stderr,
-			"(%s) Timeline -> (limited = %d, prev_batch = %s)\n"
-			"Global -> next_batch = %s\n--\n",
-			state->current_room, info->timeline.limited,
-			info->timeline.prev_batch, info->next_batch);
-}
-
-static void
-timeline_cb(struct matrix *matrix, const struct matrix_timeline_event *event,
-			void *userp) {
-	(void) matrix;
-
-	struct state *state = userp;
-
-	if (!state->current_room) {
-		return;
-	}
-
-	fprintf(stderr,
-			"%s:\nBody: '%s'\nSender: '%s'\nType: '%s'\nEvent_id: '%s'\n",
-			state->current_room, event->content.body, event->sender,
-			event->type, event->event_id);
-}
-
-static void
-dispatch_end_cb(struct matrix *matrix, void *userp) {
-	(void) matrix;
-
-	struct state *state = userp;
-
-	free(state->current_room);
-	state->current_room = NULL;
-}
-
-static void
-input_cb(EV_P_ ev_io *w, int revents) {
-	(void) revents;
-
-	struct state *state = w->data;
-
+static bool
+input(struct state *state) {
 	struct tb_event event = {0};
 
 	if ((tb_peek_event(&event, 0)) != -1) {
@@ -148,10 +72,7 @@ input_cb(EV_P_ ev_io *w, int revents) {
 			case INPUT_NOOP:
 				break;
 			case INPUT_GOT_SHUTDOWN:
-				ev_io_stop(EV_A_ w);
-				ev_break(EV_A_ EVBREAK_ALL);
-
-				break;
+				return false;
 			case INPUT_NEED_REDRAW:
 				redraw(state);
 				break;
@@ -167,21 +88,8 @@ input_cb(EV_P_ ev_io *w, int revents) {
 			break;
 		}
 	}
-}
 
-/* We catch SIGWINCH and resize + redraw ourselves since termbox sends the
- * TB_EVENT_RESIZE event only on the next input peek after getting SIGWINCH.
- * This is not feasible in our case since we poll stdin ourselves. This function
- * does NOT need to be async-signal safe as the signals are caught
- * by libev and sent to us synchronously. */
-static void
-sig_cb(EV_P_ ev_signal *w, int revents) {
-	CAST_LOOP;
-	(void) revents;
-
-	tb_resize();
-
-	redraw((struct state *) w->data);
+	return true;
 }
 
 int
@@ -228,37 +136,25 @@ main() {
 		state.log_fp = log_fp;
 	}
 
-	struct matrix_callbacks callbacks = {.on_login = login_cb,
-										 .on_dispatch_start = dispatch_start_cb,
-										 .on_timeline_event = timeline_cb,
-										 .on_dispatch_end = dispatch_end_cb};
+	struct matrix_callbacks callbacks = {0};
 
 	if (!(log_if_err(((log_add_fp(state.log_fp, LOG_TRACE)) == 0),
 					 "Failed to initialize logging callbacks.")) &&
-		!(log_if_err((state.loop = EV_DEFAULT),
-					 "Failed to initialize event loop.")) &&
-		!(log_if_err(((curl_global_init(CURL_GLOBAL_ALL)) == CURLE_OK),
-					 "Failed to initialize curl.")) &&
+		!(log_if_err(((matrix_global_init()) == 0),
+					 "Failed to initialize matrix globals.")) &&
 		!(log_if_err(((input_init(&state.input, input_height)) == 0),
 					 "Failed to initialize input layer.")) &&
-		!(log_if_err((state.matrix = matrix_alloc(state.loop, callbacks, MXID,
-												  HOMESERVER, &state)),
-					 "Failed to initialize libmatrix."))) {
+		!(log_if_err(
+			(state.matrix = matrix_alloc(callbacks, MXID, HOMESERVER, &state)),
+			"Failed to initialize libmatrix."))) {
 		input_set_initial_cursor(&state.input);
 		redraw(&state);
 
-		struct ev_io stdin_event = {.data = &state};
-		struct ev_signal sig_event = {.data = &state};
-
-		ev_io_init(&stdin_event, input_cb, STDIN_FILENO, EV_READ);
-		ev_signal_init(&sig_event, sig_cb, SIGWINCH);
-
-		ev_io_start(state.loop, &stdin_event);
-		ev_signal_start(state.loop, &sig_event);
-
-		if (!(log_if_err(((matrix_login(state.matrix, PASS, NULL)) == 0),
-						 "Failed to login."))) {
-			ev_run(state.loop, 0); /* Blocks until completion. */
+		if (!(log_if_err(
+				((matrix_login(state.matrix, PASS, NULL)) != MATRIX_SUCCESS),
+				"Failed to login."))) {
+			while ((input(&state))) {
+			} /* Loop until Ctrl+C */
 
 			cleanup(&state);
 			return EXIT_SUCCESS;

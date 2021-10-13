@@ -6,7 +6,7 @@ matrix_global_init(void) {
 }
 
 struct matrix *
-matrix_alloc(const struct matrix_callbacks callbacks, const char *mxid,
+matrix_alloc(struct matrix_callbacks callbacks, const char *mxid,
 			 const char *homeserver, void *userp) {
 	size_t len_mxid = strlen(mxid);
 	size_t len_homeserver = strlen(homeserver);

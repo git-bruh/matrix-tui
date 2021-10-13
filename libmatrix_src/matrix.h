@@ -152,7 +152,6 @@ struct matrix_dispatch_info {
  * of storing the returned pointers. */
 /* TODO deliver the sync response as a large struct instead ? */
 struct matrix_callbacks {
-	void (*login)(struct matrix *matrix, const char *access_token, void *userp);
 	/* Gives information about the sync response aswell as the room from which
 	 * the events are being dispatched from. */
 	void (*dispatch_start)(struct matrix *matrix,
@@ -189,7 +188,7 @@ struct matrix_callbacks {
 
 /* Returns NULL on failure, must call matrix_global_init() before anything. */
 struct matrix *
-matrix_alloc(const struct matrix_callbacks callbacks, const char *mxid,
+matrix_alloc(struct matrix_callbacks callbacks, const char *mxid,
 			 const char *homeserver, void *userp);
 void
 matrix_destroy(struct matrix *matrix);
