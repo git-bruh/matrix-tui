@@ -26,16 +26,15 @@ http_code_is_success(long code, enum method method) {
 /* TODO get rid of this and just allocate the headers once. */
 static struct curl_slist *
 get_headers(struct matrix *matrix) {
-	assert(matrix->access_token); /* assert as this is only used internally. */
-
 	char *auth = NULL;
 
-	if ((asprintf(&auth, "%s%s", "Authorization: Bearer ",
+	if (matrix->access_token &&
+		(asprintf(&auth, "%s%s", "Authorization: Bearer ",
 				  matrix->access_token)) == -1) {
 		return NULL;
 	}
 
-	struct curl_slist *headers = curl_slist_append(NULL, auth);
+	struct curl_slist *headers = auth ? curl_slist_append(NULL, auth) : NULL;
 	struct curl_slist *tmp =
 		curl_slist_append(headers, "Content-Type: application/json");
 
@@ -89,6 +88,8 @@ write_cb(void *contents, size_t size, size_t nmemb, void *userp) {
 static enum matrix_code
 perform(struct matrix *matrix, const cJSON *json, enum method method,
 		const char endpoint[], const char params[], struct response *response) {
+	assert(response);
+
 	char *url = endpoint_create(matrix->homeserver, endpoint, params);
 	char *data = json ? cJSON_Print(json) : NULL;
 	CURL *easy = NULL; /* TODO pool curl handles ? */
@@ -103,8 +104,7 @@ perform(struct matrix *matrix, const cJSON *json, enum method method,
 		(curl_easy_setopt(easy, CURLOPT_ERRORBUFFER, response->error)) ==
 			CURLE_OK &&
 		(curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, write_cb)) == CURLE_OK &&
-		(curl_easy_setopt(easy, CURLOPT_WRITEDATA, response->data)) ==
-			CURLE_OK) {
+		(curl_easy_setopt(easy, CURLOPT_WRITEDATA, response)) == CURLE_OK) {
 		bool opts_set = false;
 
 		switch (method) {
@@ -158,11 +158,12 @@ matrix_login(struct matrix *matrix, const char *password,
 						 are possible. */
 
 	cJSON *json = NULL;
-	cJSON *identifier = NULL;
+	cJSON *identifier = NULL; /* Free'd when free-ing the above json. */
 
 	struct response response = {0};
 
 	if ((json = cJSON_CreateObject()) &&
+		(identifier = cJSON_AddObjectToObject(json, "identifier")) &&
 		(cJSON_AddStringToObject(json, "type", "m.login.password")) &&
 		(cJSON_AddStringToObject(json, "password", password)) &&
 		(cJSON_AddStringToObject(identifier, "type", "m.id.user")) &&
@@ -180,10 +181,11 @@ matrix_login(struct matrix *matrix, const char *password,
 		}
 
 		cJSON_Delete(parsed);
-		response_finish(&response);
 	}
 
 	cJSON_Delete(json);
+
+	response_finish(&response);
 
 	return code;
 }

@@ -151,10 +151,11 @@ main() {
 		redraw(&state);
 
 		if (!(log_if_err(
-				((matrix_login(state.matrix, PASS, NULL)) != MATRIX_SUCCESS),
+				((matrix_login(state.matrix, PASS, NULL)) == MATRIX_SUCCESS),
 				"Failed to login."))) {
 			while ((input(&state))) {
-			} /* Loop until Ctrl+C */
+				/* Loop until Ctrl+C */
+			}
 
 			cleanup(&state);
 			return EXIT_SUCCESS;

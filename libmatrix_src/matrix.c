@@ -8,11 +8,13 @@ matrix_global_init(void) {
 struct matrix *
 matrix_alloc(struct matrix_callbacks callbacks, const char *mxid,
 			 const char *homeserver, void *userp) {
-	size_t len_mxid = strlen(mxid);
-	size_t len_homeserver = strlen(homeserver);
+	{
+		size_t len_mxid = 0;
 
-	if (len_mxid < 1 || len_mxid > MATRIX_MXID_MAX || len_homeserver < 1) {
-		return NULL;
+		if (!mxid || !homeserver || (len_mxid = strlen(mxid)) < 1 ||
+			len_mxid > MATRIX_MXID_MAX || (strlen(homeserver)) < 1) {
+			return NULL;
+		}
 	}
 
 	struct matrix *matrix = calloc(1, sizeof(*matrix));
@@ -38,10 +40,9 @@ matrix_destroy(struct matrix *matrix) {
 		return;
 	}
 
+	free(matrix->access_token);
 	free(matrix->homeserver);
-	matrix->homeserver = NULL;
 	free(matrix->mxid);
-	matrix->mxid = NULL;
 	free(matrix);
 }
 
