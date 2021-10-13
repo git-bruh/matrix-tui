@@ -1,9 +1,9 @@
 #pragma once
 #include "matrix.h"
-#include <curl/curl.h>
-#include <stddef.h>
-#include <math.h>
 #include <assert.h>
+#include <curl/curl.h>
+#include <math.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 

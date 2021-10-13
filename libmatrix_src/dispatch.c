@@ -29,7 +29,7 @@ dispatch_typing(struct matrix *matrix, const cJSON *content) {
 	cJSON *user_ids = cJSON_GetObjectItem(content, "user_ids");
 
 	if (user_ids) {
-		matrix->cb.typing(matrix, (void *) user_ids, matrix->userp);
+		matrix->cb.typing(matrix, (void *) user_ids);
 	}
 }
 
@@ -66,7 +66,7 @@ dispatch_avatar(struct matrix *matrix, struct matrix_state_base *base,
 			},
 	};
 
-	matrix->cb.avatar(matrix, &avatar, matrix->userp);
+	matrix->cb.avatar(matrix, &avatar);
 }
 
 static void
@@ -79,7 +79,7 @@ dispatch_topic(struct matrix *matrix, struct matrix_state_base *base,
 	struct matrix_room_topic topic = {.base = base,
 									  .topic = GETSTR(content, "topic")};
 
-	matrix->cb.topic(matrix, &topic, matrix->userp);
+	matrix->cb.topic(matrix, &topic);
 }
 
 static void
@@ -92,7 +92,7 @@ dispatch_name(struct matrix *matrix, struct matrix_state_base *base,
 	struct matrix_room_name name = {.base = base,
 									.name = GETSTR(content, "name")};
 
-	matrix->cb.name(matrix, &name, matrix->userp);
+	matrix->cb.name(matrix, &name);
 }
 
 static void
@@ -119,7 +119,7 @@ dispatch_power_levels(struct matrix *matrix, struct matrix_state_base *base,
 		.users = cJSON_GetObjectItem(content, "users"),
 	};
 
-	matrix->cb.power_levels(matrix, &power_levels, matrix->userp);
+	matrix->cb.power_levels(matrix, &power_levels);
 }
 
 static void
@@ -139,7 +139,7 @@ dispatch_member(struct matrix *matrix, struct matrix_state_base *base,
 	};
 
 	if (member.membership) {
-		matrix->cb.member(matrix, &member, matrix->userp);
+		matrix->cb.member(matrix, &member);
 	}
 }
 
@@ -156,7 +156,7 @@ dispatch_join_rules(struct matrix *matrix, struct matrix_state_base *base,
 	};
 
 	if (join_rules.join_rule) {
-		matrix->cb.join_rules(matrix, &join_rules, matrix->userp);
+		matrix->cb.join_rules(matrix, &join_rules);
 	}
 }
 
@@ -182,7 +182,7 @@ dispatch_create(struct matrix *matrix, struct matrix_state_base *base,
 		room_create.room_version = default_version;
 	}
 
-	matrix->cb.room_create(matrix, &room_create, matrix->userp);
+	matrix->cb.room_create(matrix, &room_create);
 }
 
 static void
@@ -197,7 +197,7 @@ dispatch_canonical_alias(struct matrix *matrix, struct matrix_state_base *base,
 		.alias = GETSTR(content, "alias"),
 	};
 
-	matrix->cb.canonical_alias(matrix, &alias, matrix->userp);
+	matrix->cb.canonical_alias(matrix, &alias);
 }
 
 static void
@@ -214,7 +214,7 @@ dispatch_unknown_state(struct matrix *matrix, struct matrix_state_base *base,
 	};
 
 	if (unknown.content) {
-		matrix->cb.unknown_state(matrix, &unknown, matrix->userp);
+		matrix->cb.unknown_state(matrix, &unknown);
 	}
 
 	free(unknown.content);
@@ -286,7 +286,7 @@ dispatch_message(struct matrix *matrix, struct matrix_room_base *base,
 	};
 
 	if (message.body && message.msgtype) {
-		matrix->cb.message(matrix, &message, matrix->userp);
+		matrix->cb.message(matrix, &message);
 	}
 }
 
@@ -306,7 +306,7 @@ dispatch_redaction(struct matrix *matrix, struct matrix_room_base *base,
 	};
 
 	if (redaction.redacts) {
-		matrix->cb.redaction(matrix, &redaction, matrix->userp);
+		matrix->cb.redaction(matrix, &redaction);
 	}
 }
 
@@ -334,7 +334,7 @@ dispatch_attachment(struct matrix *matrix, struct matrix_room_base *base,
 
 	if (attachment.body && attachment.msgtype && attachment.url &&
 		attachment.filename) {
-		matrix->cb.attachment(matrix, &attachment, matrix->userp);
+		matrix->cb.attachment(matrix, &attachment);
 	}
 }
 
@@ -432,7 +432,7 @@ dispatch_sync(struct matrix *matrix, const char *resp) {
 				.next_batch = next_batch,
 			};
 
-			matrix->cb.dispatch_start(matrix, &info, matrix->userp);
+			matrix->cb.dispatch_start(matrix, &info);
 		}
 
 		dispatch_state(
@@ -447,7 +447,7 @@ dispatch_sync(struct matrix *matrix, const char *resp) {
 			matrix, cJSON_GetObjectItem(cJSON_GetObjectItem(room, "timeline"),
 										"events"));
 
-		matrix->cb.dispatch_end(matrix, matrix->userp);
+		matrix->cb.dispatch_end(matrix);
 	}
 
 	cJSON_Delete(json);

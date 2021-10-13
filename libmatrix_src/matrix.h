@@ -33,7 +33,7 @@ struct matrix_file_info {
 };
 
 #define MATRIX_EVENT_BASEFIELDS                                                \
-	int origin_server_ts;                                                 \
+	int origin_server_ts;                                                      \
 	char *event_id;                                                            \
 	char *sender;                                                              \
 	char *type
@@ -150,55 +150,47 @@ struct matrix_dispatch_info {
 /* Any data received from these callbacks (except userp) _SHOULD_ be treated as
  * read-only. Users should create a local copy of the data when required instead
  * of storing the returned pointers. */
+/* TODO deliver the sync response as a large struct instead ? */
 struct matrix_callbacks {
 	void (*login)(struct matrix *matrix, const char *access_token, void *userp);
 	/* Gives information about the sync response aswell as the room from which
 	 * the events are being dispatched from. */
 	void (*dispatch_start)(struct matrix *matrix,
-						   const struct matrix_dispatch_info *info,
-						   void *userp);
+						   const struct matrix_dispatch_info *info);
 	void (*typing)(struct matrix *matrix,
-				   const struct matrix_room_typing *typing, void *userp);
+				   const struct matrix_room_typing *typing);
 	void (*avatar)(struct matrix *matrix,
-				   const struct matrix_room_avatar *avatar, void *userp);
-	void (*topic)(struct matrix *matrix, const struct matrix_room_topic *topic,
-				  void *userp);
-	void (*name)(struct matrix *matrix, const struct matrix_room_name *name,
-				 void *userp);
+				   const struct matrix_room_avatar *avatar);
+	void (*topic)(struct matrix *matrix, const struct matrix_room_topic *topic);
+	void (*name)(struct matrix *matrix, const struct matrix_room_name *name);
 	void (*power_levels)(struct matrix *matrix,
-						 const struct matrix_room_power_levels *power_levels,
-						 void *userp);
+						 const struct matrix_room_power_levels *power_levels);
 	void (*member)(struct matrix *matrix,
-				   const struct matrix_room_member *member, void *userp);
+				   const struct matrix_room_member *member);
 	void (*join_rules)(struct matrix *matrix,
-					   const struct matrix_room_join_rules *join_rules,
-					   void *userp);
+					   const struct matrix_room_join_rules *join_rules);
 	void (*room_create)(struct matrix *matrix,
-						const struct matrix_room_create *room_create,
-						void *userp);
+						const struct matrix_room_create *room_create);
 	void (*canonical_alias)(
 		struct matrix *matrix,
-		const struct matrix_room_canonical_alias *canonical_alias, void *userp);
+		const struct matrix_room_canonical_alias *canonical_alias);
 	void (*unknown_state)(struct matrix *matrix,
-						  const struct matrix_unknown_state *unknown_state,
-						  void *userp);
+						  const struct matrix_unknown_state *unknown_state);
 	void (*message)(struct matrix *matrix,
-					const struct matrix_room_message *message, void *userp);
+					const struct matrix_room_message *message);
 	void (*redaction)(struct matrix *matrix,
-					  const struct matrix_room_redaction *redaction,
-					  void *userp);
+					  const struct matrix_room_redaction *redaction);
 	void (*attachment)(struct matrix *matrix,
-					   const struct matrix_room_attachment *attachment,
-					   void *userp);
+					   const struct matrix_room_attachment *attachment);
 	/* Called once all events for a given room are consumed, does not indicate
 	 * end of sync parsing. */
-	void (*dispatch_end)(struct matrix *matrix, void *userp);
+	void (*dispatch_end)(struct matrix *matrix);
 };
 
 /* Returns NULL on failure, must call matrix_global_init() before anything. */
 struct matrix *
-matrix_alloc(const struct matrix_callbacks callbacks,
-			 const char *mxid, const char *homeserver, void *userp);
+matrix_alloc(const struct matrix_callbacks callbacks, const char *mxid,
+			 const char *homeserver, void *userp);
 void
 matrix_destroy(struct matrix *matrix);
 void

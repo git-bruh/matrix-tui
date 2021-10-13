@@ -19,9 +19,9 @@ matrix_alloc(const struct matrix_callbacks callbacks, const char *mxid,
 
 	if (matrix) {
 		*matrix = (struct matrix){.cb = callbacks,
-							  .homeserver = strdup(homeserver),
-							  .mxid = strdup(mxid),
-							  .userp = userp};
+								  .homeserver = strdup(homeserver),
+								  .mxid = strdup(mxid),
+								  .userp = userp};
 
 		if (matrix->homeserver && matrix->mxid) {
 			return matrix;
