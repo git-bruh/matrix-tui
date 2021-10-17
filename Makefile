@@ -25,8 +25,9 @@ OBJ = \
 	src/input.o \
 	src/main.o \
 	libmatrix_src/api.o \
-	libmatrix_src/dispatch.o \
-	libmatrix_src/matrix.o
+	libmatrix_src/matrix.o \
+	libmatrix_src/sync.o \
+	libmatrix_src/utils.o
 
 all: release
 

@@ -1,3 +1,3 @@
 # matrix-client
 
-A terminal based Matrix client. WIP.
+A terminal based Matrix client. WIP, not usable yet.

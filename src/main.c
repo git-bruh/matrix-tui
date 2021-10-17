@@ -136,17 +136,14 @@ main() {
 		state.log_fp = log_fp;
 	}
 
-	struct matrix_callbacks callbacks = {0};
-
 	if (!(log_if_err(((log_add_fp(state.log_fp, LOG_TRACE)) == 0),
 					 "Failed to initialize logging callbacks.")) &&
 		!(log_if_err(((matrix_global_init()) == 0),
 					 "Failed to initialize matrix globals.")) &&
 		!(log_if_err(((input_init(&state.input, input_height)) == 0),
 					 "Failed to initialize input layer.")) &&
-		!(log_if_err(
-			(state.matrix = matrix_alloc(callbacks, MXID, HOMESERVER, &state)),
-			"Failed to initialize libmatrix."))) {
+		!(log_if_err((state.matrix = matrix_alloc(MXID, HOMESERVER, &state)),
+					 "Failed to initialize libmatrix."))) {
 		input_set_initial_cursor(&state.input);
 		redraw(&state);
 

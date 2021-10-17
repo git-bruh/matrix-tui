@@ -1,4 +1,3 @@
-#include "cJSON.h"
 #include "matrix-priv.h"
 
 enum method { GET = 0, POST, PUT };
@@ -7,19 +6,32 @@ struct response {
 	long http_code;
 	size_t len;
 	char *data;
+	CURL *easy;
 	char error[CURL_ERROR_SIZE];
 };
 
-static void
-response_finish(struct response *response) {
-	free(response->data);
+static size_t
+write_cb(void *contents, size_t size, size_t nmemb, void *userp) {
+	size_t realsize = size * nmemb;
+
+	struct response *response = userp;
+
+	char *ptr = realloc(response->data, response->len + realsize + 1);
+
+	if (!ptr) {
+		return 0;
+	}
+
+	response->data = ptr;
+	memcpy(&(response->data[response->len]), contents, realsize);
+	response->data[response->len += realsize] = '\0';
+
+	return realsize;
 }
 
 static bool
-http_code_is_success(long code, enum method method) {
+http_code_is_success(long code) {
 	const long success = 200;
-	(void) method; /* TODO check if a specific method has a different success
-					  code. */
 	return code == success;
 }
 
@@ -52,60 +64,37 @@ get_headers(struct matrix *matrix) {
 static char *
 endpoint_create(const char *homeserver, const char *endpoint,
 				const char *params) {
-	params = params ? params : "";
+	assert(homeserver);
+	assert(endpoint);
 
 	const char base[] = "/_matrix/client/r0";
 
 	char *final = NULL;
 
-	if ((asprintf(&final, "%s%s%s%s", homeserver, base, endpoint, params)) ==
-		-1) {
+	if ((asprintf(&final, "%s%s%s%s", homeserver, base, endpoint,
+				  (params ? params : ""))) == -1) {
 		return NULL;
 	}
 
 	return final;
 }
 
-static size_t
-write_cb(void *contents, size_t size, size_t nmemb, void *userp) {
-	size_t realsize = size * nmemb;
-
-	struct response *response = userp;
-
-	char *ptr = realloc(response->data, response->len + realsize + 1);
-
-	if (!ptr) {
-		return 0;
-	}
-
-	response->data = ptr;
-	memcpy(&(response->data[response->len]), contents, realsize);
-	response->data[response->len += realsize] = '\0';
-
-	return realsize;
-}
-
 static enum matrix_code
-perform(struct matrix *matrix, const cJSON *json, enum method method,
-		const char endpoint[], const char params[], struct response *response) {
+response_init(enum method method, const char *data, const char *url,
+			  const struct curl_slist *headers, struct response *response) {
+	assert(headers);
 	assert(response);
+	assert(url);
 
-	char *url = endpoint_create(matrix->homeserver, endpoint, params);
-	char *data = json ? cJSON_Print(json) : NULL;
-	CURL *easy = NULL; /* TODO pool curl handles ? */
+	CURL *easy = curl_easy_init();
 
-	struct curl_slist *headers = get_headers(matrix);
-
-	enum matrix_code code = MATRIX_CURL_FAILURE;
-
-	if (url && (easy = curl_easy_init()) &&
-		(curl_easy_setopt(easy, CURLOPT_URL, url)) == CURLE_OK &&
+	if (easy && (curl_easy_setopt(easy, CURLOPT_URL, url)) == CURLE_OK &&
 		(curl_easy_setopt(easy, CURLOPT_HTTPHEADER, headers)) == CURLE_OK &&
 		(curl_easy_setopt(easy, CURLOPT_ERRORBUFFER, response->error)) ==
 			CURLE_OK &&
 		(curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, write_cb)) == CURLE_OK &&
 		(curl_easy_setopt(easy, CURLOPT_WRITEDATA, response)) == CURLE_OK) {
-		bool opts_set = false;
+		response->easy = easy;
 
 		switch (method) {
 		case GET:
@@ -116,32 +105,87 @@ perform(struct matrix *matrix, const cJSON *json, enum method method,
 
 			if ((curl_easy_setopt(easy, CURLOPT_POSTFIELDS, data)) ==
 				CURLE_OK) {
-				opts_set = true;
+				return MATRIX_SUCCESS;
 			}
 			break;
 		case PUT:
+			break;
 		default:
 			assert(0);
-		}
-
-		if (opts_set) {
-			if ((curl_easy_perform(easy)) == CURLE_OK) {
-				curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE,
-								  &response->http_code);
-
-				code = http_code_is_success(response->http_code, method)
-						   ? MATRIX_SUCCESS
-						   : code;
-			} else {
-				code = MATRIX_CURL_FAILURE;
-			}
 		}
 	}
 
 	curl_easy_cleanup(easy);
+
+	return MATRIX_CURL_FAILURE;
+}
+
+static enum matrix_code
+response_perform(struct response *response) {
+	if ((curl_easy_perform(response->easy)) == CURLE_OK) {
+		curl_easy_getinfo(response->easy, CURLINFO_RESPONSE_CODE,
+						  &response->http_code);
+
+		if ((http_code_is_success(response->http_code))) {
+			return MATRIX_SUCCESS;
+		}
+	}
+
+	return MATRIX_CURL_FAILURE;
+}
+
+static void
+response_finish(struct response *response) {
+	curl_easy_cleanup(response->easy);
+	free(response->data);
+}
+
+/* The caller must response_finish() the response. */
+static enum matrix_code
+perform(struct matrix *matrix, const cJSON *json, enum method method,
+		const char endpoint[], const char params[], struct response *response) {
+	char *url = endpoint_create(matrix->homeserver, endpoint, params);
+	char *data = json ? cJSON_Print(json) : NULL;
+
+	struct curl_slist *headers = get_headers(matrix);
+
+	enum matrix_code code = MATRIX_CURL_FAILURE;
+
+	if (url && headers) {
+		code = response_perform(
+			((response_init(method, data, url, headers, response)), response));
+	}
+
 	curl_slist_free_all(headers);
 	free(data);
 	free(url);
+
+	return code;
+}
+
+enum matrix_code
+matrix_sync_forever(struct matrix *matrix) {
+	if (!matrix->access_token) {
+		return MATRIX_NOT_LOGGED_IN;
+	}
+
+	enum matrix_code code = MATRIX_CURL_FAILURE;
+
+	char *url = endpoint_create(matrix->homeserver, "/sync", NULL);
+	struct curl_slist *headers = get_headers(matrix);
+	struct response response = {0};
+
+	if ((response_init(GET, NULL, url, headers, &response)) == MATRIX_SUCCESS) {
+		for (;;) {
+			if ((response_perform(&response)) != MATRIX_SUCCESS) {
+				break;
+			}
+
+			cJSON *parsed = cJSON_Parse(response.data);
+			matrix_dispatch_sync(parsed);
+			cJSON_Delete(parsed);
+		}
+	}
 
 	return code;
 }
@@ -176,7 +220,7 @@ matrix_login(struct matrix *matrix, const char *password,
 		 * malformed JSON. Implement some checking without adding a ton of if
 		 * statements. */
 		if ((matrix->access_token =
-				 strdup_nullsafe(GETSTR(parsed, "access_token")))) {
+				 matrix_strdup(GETSTR(parsed, "access_token")))) {
 			code = MATRIX_SUCCESS;
 		}
 
@@ -188,13 +232,4 @@ matrix_login(struct matrix *matrix, const char *password,
 	response_finish(&response);
 
 	return code;
-}
-
-enum matrix_code
-matrix_sync_forever(struct matrix *matrix) {
-	if (!matrix->access_token) {
-		return MATRIX_NOT_LOGGED_IN;
-	}
-
-	return MATRIX_SUCCESS;
 }
