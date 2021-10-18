@@ -1,6 +1,4 @@
 #include "matrix-priv.h"
-#define STB_DS_IMPLEMENTATION
-#include "stb_ds.h"
 
 #define CALL(callback_name, data)                                              \
 	do {                                                                       \
@@ -292,80 +290,76 @@ dispatch_ephemeral(struct matrix *matrix, const cJSON *data) {
 	}
 }
 
-static void
-dispatch_left_room(struct matrix *matrix, struct matrix_left_room *room) {
-	if (!room) {
+void
+dispatch_room(struct matrix *matrix, struct matrix_room *room) {
+	if (!matrix || !room) {
 		return;
 	}
 
 	cJSON *events = room->events;
 
-	dispatch_timeline(matrix, cJSON_GetObjectItem(events, "timeline"));
+	switch (room->type) {
+	case MATRIX_ROOM_LEAVE:
+		dispatch_state(matrix, cJSON_GetObjectItem(events, "state"));
+		dispatch_timeline(matrix, cJSON_GetObjectItem(events, "timeline"));
+		break;
+	case MATRIX_ROOM_JOIN:
+		/* TODO account_data */
+		dispatch_state(matrix, cJSON_GetObjectItem(events, "state"));
+		dispatch_timeline(matrix, cJSON_GetObjectItem(events, "timeline"));
+		dispatch_ephemeral(matrix, cJSON_GetObjectItem(events, "ephemeral"));
+		break;
+	case MATRIX_ROOM_INVITE:
+		dispatch_state(matrix, cJSON_GetObjectItem(events, "invite_state"));
+		break;
+	default:
+		assert(0);
+	}
 }
 
-static void
-dispatch_joined_room(struct matrix *matrix, struct matrix_joined_room *room) {
-	if (!room) {
-		return;
+int
+matrix_sync_room_next(struct matrix_sync_response *response,
+					  struct matrix_room *room) {
+	for (size_t i = 0; i < MATRIX_ROOM_MAX; i++) {
+		while (response->rooms[i]) {
+			bool success = false;
+
+			*room = (struct matrix_room){
+				.id = ((cJSON *) response->rooms[i])->string,
+				.events = response->rooms[i],
+			};
+
+			switch (i) {
+			case MATRIX_ROOM_LEAVE:
+			case MATRIX_ROOM_JOIN:
+				success =
+					((parse_summary(&room->summary,
+									cJSON_GetObjectItem(response->rooms[i],
+														"summary"))) == 0 &&
+					 (parse_timeline(&room->timeline,
+									 cJSON_GetObjectItem(response->rooms[i],
+														 "timeline"))) == 0);
+				break;
+			case MATRIX_ROOM_INVITE:
+				success =
+					((parse_summary(&room->summary,
+									cJSON_GetObjectItem(response->rooms[i],
+														"summary"))) == 0);
+				break;
+			default:
+				assert(0);
+			};
+
+			response->rooms[i] = ((cJSON *) response->rooms[i])->next;
+
+			if (success) {
+				return 0;
+			}
+		}
 	}
 
-	cJSON *events = room->events;
-
-	/* TODO account_data */
-	dispatch_state(matrix, cJSON_GetObjectItem(events, "state"));
-	dispatch_timeline(matrix, cJSON_GetObjectItem(events, "timeline"));
-	dispatch_ephemeral(matrix, cJSON_GetObjectItem(events, "ephemeral"));
+	return -1;
 }
-
-static void
-dispatch_invited_room(struct matrix *matrix, struct matrix_invited_room *room) {
-	if (!room) {
-		return;
-	}
-
-	cJSON *events = room->events;
-
-	dispatch_state(matrix, cJSON_GetObjectItem(events, "invite_state"));
-}
-
-/* This is messy but all the functions just do the same thing so... */
-#define GEN_ITERATOR(fn_name, type_arg, name_member, dispatcher, extra_cond)   \
-	int matrix_sync_##fn_name(struct matrix_sync_response *response,           \
-							  type_arg *room) {                                \
-		if (!response || !room) {                                              \
-			return -1;                                                         \
-		}                                                                      \
-		while (response->rooms->name_member) {                                 \
-			/* Common fields for all types. */                                 \
-			*room = (type_arg){                                                \
-				.id = response->rooms->name_member->string,                    \
-				.events = response->rooms->name_member,                        \
-				.dispatch = dispatcher,                                        \
-			};                                                                 \
-			/* Summary is common, extra_cond is for unique fields. */          \
-			if ((parse_summary(                                                \
-					&room->summary,                                            \
-					cJSON_GetObjectItem(response->rooms->name_member,          \
-										"summary"))) == 0 &&                   \
-				(extra_cond)) {                                                \
-				response->rooms->name_member =                                 \
-					response->rooms->name_member->next;                        \
-				return 0;                                                      \
-			}                                                                  \
-			response->rooms->name_member =                                     \
-				response->rooms->name_member                                   \
-					->next; /* Iterate to next array item. */                  \
-		}                                                                      \
-		return -1;                                                             \
-	}
-
-GEN_ITERATOR(next_left, struct matrix_left_room, leave, dispatch_left_room,
-			 (cJSON_GetObjectItem(response->rooms->leave, "timeline")) == 0)
-GEN_ITERATOR(next_joined, struct matrix_joined_room, join, dispatch_joined_room,
-			 (cJSON_GetObjectItem(response->rooms->join, "timeline")) == 0)
-GEN_ITERATOR(next_invited, struct matrix_invited_room, invite,
-			 dispatch_invited_room, 1)
-#undef GEN_ITERATOR
 
 int
 matrix_dispatch_sync(const cJSON *sync) {
@@ -375,15 +369,14 @@ matrix_dispatch_sync(const cJSON *sync) {
 
 	cJSON *rooms = cJSON_GetObjectItem(sync, "rooms");
 
-	struct matrix_rooms matrix_rooms = {
-		.leave = cJSON_GetObjectItem(rooms, "leave"),
-		.join = cJSON_GetObjectItem(rooms, "join"),
-		.invite = cJSON_GetObjectItem(rooms, "invite"),
-	};
-
 	struct matrix_sync_response response = {
 		.next_batch = GETSTR(sync, "next_batch"),
-		.rooms = &matrix_rooms,
+		.rooms =
+			{
+				[MATRIX_ROOM_LEAVE] = cJSON_GetObjectItem(rooms, "leave"),
+				[MATRIX_ROOM_JOIN] = cJSON_GetObjectItem(rooms, "join"),
+				[MATRIX_ROOM_INVITE] = cJSON_GetObjectItem(rooms, "invite"),
+			},
 	};
 
 	return 0;
