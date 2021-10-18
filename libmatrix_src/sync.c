@@ -9,6 +9,12 @@
 		}                                                                      \
 	} while (0)
 
+struct matrix_rooms {
+	cJSON *leave;
+	cJSON *join;
+	cJSON *invite;
+};
+
 /* Safely get an int from a cJSON object without overflows. */
 static int
 get_int(const cJSON *json, const char name[], int int_default) {
@@ -286,7 +292,7 @@ dispatch_ephemeral(struct matrix *matrix, const cJSON *data) {
 	}
 }
 
-void
+static void
 dispatch_left_room(struct matrix *matrix, struct matrix_left_room *room) {
 	if (!room) {
 		return;
@@ -297,7 +303,7 @@ dispatch_left_room(struct matrix *matrix, struct matrix_left_room *room) {
 	dispatch_timeline(matrix, cJSON_GetObjectItem(events, "timeline"));
 }
 
-void
+static void
 dispatch_joined_room(struct matrix *matrix, struct matrix_joined_room *room) {
 	if (!room) {
 		return;
@@ -311,8 +317,8 @@ dispatch_joined_room(struct matrix *matrix, struct matrix_joined_room *room) {
 	dispatch_ephemeral(matrix, cJSON_GetObjectItem(events, "ephemeral"));
 }
 
-void
-dispatch_invited_room(struct matrix *matrix, struct matrix_left_room *room) {
+static void
+dispatch_invited_room(struct matrix *matrix, struct matrix_invited_room *room) {
 	if (!room) {
 		return;
 	}
@@ -322,6 +328,45 @@ dispatch_invited_room(struct matrix *matrix, struct matrix_left_room *room) {
 	dispatch_state(matrix, cJSON_GetObjectItem(events, "invite_state"));
 }
 
+/* This is messy but all the functions just do the same thing so... */
+#define GEN_ITERATOR(fn_name, type_arg, name_member, dispatcher, extra_cond)   \
+	int matrix_sync_##fn_name(struct matrix_sync_response *response,           \
+							  type_arg *room) {                                \
+		if (!response || !room) {                                              \
+			return -1;                                                         \
+		}                                                                      \
+		while (response->rooms->name_member) {                                 \
+			/* Common fields for all types. */                                 \
+			*room = (type_arg){                                                \
+				.id = response->rooms->name_member->string,                    \
+				.events = response->rooms->name_member,                        \
+				.dispatch = dispatcher,                                        \
+			};                                                                 \
+			/* Summary is common, extra_cond is for unique fields. */          \
+			if ((parse_summary(                                                \
+					&room->summary,                                            \
+					cJSON_GetObjectItem(response->rooms->name_member,          \
+										"summary"))) == 0 &&                   \
+				(extra_cond)) {                                                \
+				response->rooms->name_member =                                 \
+					response->rooms->name_member->next;                        \
+				return 0;                                                      \
+			}                                                                  \
+			response->rooms->name_member =                                     \
+				response->rooms->name_member                                   \
+					->next; /* Iterate to next array item. */                  \
+		}                                                                      \
+		return -1;                                                             \
+	}
+
+GEN_ITERATOR(next_left, struct matrix_left_room, leave, dispatch_left_room,
+			 (cJSON_GetObjectItem(response->rooms->leave, "timeline")) == 0)
+GEN_ITERATOR(next_joined, struct matrix_joined_room, join, dispatch_joined_room,
+			 (cJSON_GetObjectItem(response->rooms->join, "timeline")) == 0)
+GEN_ITERATOR(next_invited, struct matrix_invited_room, invite,
+			 dispatch_invited_room, 1)
+#undef GEN_ITERATOR
+
 int
 matrix_dispatch_sync(const cJSON *sync) {
 	if (!sync) {
@@ -330,74 +375,16 @@ matrix_dispatch_sync(const cJSON *sync) {
 
 	cJSON *rooms = cJSON_GetObjectItem(sync, "rooms");
 
-	struct matrix_sync_response response = {
-		.next_batch = GETSTR(sync, "next_batch"),
+	struct matrix_rooms matrix_rooms = {
+		.leave = cJSON_GetObjectItem(rooms, "leave"),
+		.join = cJSON_GetObjectItem(rooms, "join"),
+		.invite = cJSON_GetObjectItem(rooms, "invite"),
 	};
 
-	cJSON *leave = cJSON_GetObjectItem(rooms, "leave");
-	cJSON *join = cJSON_GetObjectItem(rooms, "join");
-	cJSON *invite = cJSON_GetObjectItem(rooms, "invite");
-
-	if ((cJSON_IsArray(leave))) {
-		arrsetcap(response.rooms.leave, (size_t) cJSON_GetArraySize(leave));
-
-		cJSON *room = NULL;
-		size_t index = 0;
-
-		cJSON_ArrayForEach(room, leave) {
-			response.rooms.leave[index] = (struct matrix_left_room){
-				.id = room->string,
-				.events = room,
-			};
-			parse_summary(&response.rooms.leave[index].summary,
-						  cJSON_GetObjectItem(room, "summary"));
-			parse_timeline(&response.rooms.leave[index].timeline,
-						   cJSON_GetObjectItem(room, "timeline"));
-			index++;
-		}
-
-		arrsetlen(response.rooms.leave, index);
-	}
-
-	if ((cJSON_IsArray(join))) {
-		arrsetcap(response.rooms.join, (size_t) cJSON_GetArraySize(join));
-
-		cJSON *room = NULL;
-		size_t index = 0;
-
-		cJSON_ArrayForEach(room, join) {
-			response.rooms.join[index] = (struct matrix_joined_room){
-				.id = room->string,
-				.events = room,
-			};
-			parse_summary(&response.rooms.join[index].summary,
-						  cJSON_GetObjectItem(room, "summary"));
-			parse_timeline(&response.rooms.join[index].timeline,
-						   cJSON_GetObjectItem(room, "timeline"));
-			index++;
-		}
-
-		arrsetlen(response.rooms.join, index);
-	}
-
-	if ((cJSON_IsArray(invite))) {
-		arrsetcap(response.rooms.invite, (size_t) cJSON_GetArraySize(invite));
-
-		cJSON *room = NULL;
-		size_t index = 0;
-
-		cJSON_ArrayForEach(room, invite) {
-			response.rooms.invite[index] = (struct matrix_invited_room){
-				.id = room->string,
-				.events = room,
-			};
-			parse_summary(&response.rooms.invite[index].summary,
-						  cJSON_GetObjectItem(room, "summary"));
-			index++;
-		}
-
-		arrsetlen(response.rooms.invite, index);
-	}
+	struct matrix_sync_response response = {
+		.next_batch = GETSTR(sync, "next_batch"),
+		.rooms = &matrix_rooms,
+	};
 
 	return 0;
 }

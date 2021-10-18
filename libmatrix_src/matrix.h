@@ -151,35 +151,39 @@ struct matrix_room_timeline {
 
 struct matrix_left_room {
 	char *id;
-	void *events;
+	void *events; /* Internal */
+	void (*dispatch)(struct matrix *matrix, struct matrix_left_room *room);
 	struct matrix_room_summary summary;
 	struct matrix_room_timeline timeline;
 };
 
 struct matrix_joined_room {
 	char *id;
-	void *events;
+	void *events; /* Internal */
+	void (*dispatch)(struct matrix *matrix, struct matrix_joined_room *room);
 	struct matrix_room_summary summary;
 	struct matrix_room_timeline timeline;
 };
 
 struct matrix_invited_room {
 	char *id;
-	void *events;
+	void *events; /* Internal */
+	void (*dispatch)(struct matrix *matrix, struct matrix_invited_room *room);
 	struct matrix_room_summary summary;
 };
 
 struct matrix_sync_response {
 	char *next_batch;
-	struct {
-		struct matrix_left_room *leave;
-		struct matrix_joined_room *join;
-		struct matrix_invited_room *invite;
-	} rooms;
+	struct matrix_rooms *rooms;
 	/* struct matrix_account_data_events account_data; */
 };
 
+/* We deliver the response via callbacks to avoid packing it up in a single
+ * struct as that requires us to allocate a lot more than we need (or want) to.
+ * This method is a bit clunk but much easier to maintain, TODO any better
+ * alternatives ? */
 struct matrix_callbacks {
+	void (*on_sync)(struct matrix *, const struct matrix_sync_response *);
 	/* Timeline */
 	void (*message)(struct matrix *, const struct matrix_room_message *);
 	void (*redaction)(struct matrix *, const struct matrix_room_redaction *);
@@ -220,10 +224,13 @@ matrix_login(struct matrix *matrix, const char *password,
 /* timeout specifies the number of seconds to wait for before syncing again.
  * timeout >= 1 && timeout <= 60 */
 /* matrix_sync(); */
-void
-dispatch_left_room(struct matrix *matrix, struct matrix_left_room *room);
-void
-dispatch_joined_room(struct matrix *matrix, struct matrix_joined_room *room);
-void
-dispatch_invited_room(struct matrix *matrix, struct matrix_left_room *room);
+int
+matrix_sync_next_left(struct matrix_sync_response *response,
+					  struct matrix_left_room *room);
+int
+matrix_sync_next_joined(struct matrix_sync_response *response,
+						struct matrix_joined_room *room);
+int
+matrix_sync_next_invited(struct matrix_sync_response *response,
+						 struct matrix_invited_room *room);
 #endif /* !MATRIX_MATRIX_H */
