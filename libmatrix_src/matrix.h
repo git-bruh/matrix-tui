@@ -134,34 +134,6 @@ struct matrix_room_attachment {
 	struct matrix_file_info info;
 };
 
-/* We could turn these into unions but it would be even less intuitive to use.
- */
-struct matrix_room_events {
-	struct matrix_room_message *message;
-	struct matrix_room_redaction *redaction;
-	struct matrix_room_attachment *attachment;
-};
-
-struct matrix_state_events {
-	struct matrix_room_member *member;
-	struct matrix_room_power_levels *power_levels;
-	struct matrix_room_canonical_alias *canonical_alias;
-	struct matrix_room_create *create;
-	struct matrix_room_join_rules *join_rules;
-	struct matrix_room_name *name;
-	struct matrix_room_topic *topic;
-	struct matrix_room_avatar *avatar;
-	struct matrix_unknown_state *unknown;
-};
-
-struct matrix_ephemeral_events {
-	struct matrix_room_typing *typing;
-};
-
-struct matrix_account_data_events {
-	/* TODO */
-};
-
 /* All members in these structs are non-nullable unless explicitly mentioned. */
 struct matrix_room_summary {
 	int joined_member_count;
@@ -173,30 +145,28 @@ struct matrix_room_summary {
 };
 
 struct matrix_room_timeline {
-	struct matrix_room_events events;
 	char *prev_batch;
 	bool limited;
 };
 
 struct matrix_left_room {
 	char *id;
+	void *events;
 	struct matrix_room_summary summary;
 	struct matrix_room_timeline timeline;
 };
 
 struct matrix_joined_room {
 	char *id;
+	void *events;
 	struct matrix_room_summary summary;
 	struct matrix_room_timeline timeline;
-	struct matrix_account_data_events account_data;
-	struct matrix_ephemeral_events ephemeral;
-	struct matrix_state_events state;
 };
 
 struct matrix_invited_room {
 	char *id;
+	void *events;
 	struct matrix_room_summary summary;
-	struct matrix_state_events invite_state;
 };
 
 struct matrix_sync_response {
@@ -206,12 +176,34 @@ struct matrix_sync_response {
 		struct matrix_joined_room *join;
 		struct matrix_invited_room *invite;
 	} rooms;
-	struct matrix_account_data_events account_data;
+	/* struct matrix_account_data_events account_data; */
+};
+
+struct matrix_callbacks {
+	/* Timeline */
+	void (*message)(struct matrix *, const struct matrix_room_message *);
+	void (*redaction)(struct matrix *, const struct matrix_room_redaction *);
+	void (*attachment)(struct matrix *, const struct matrix_room_attachment *);
+	/* State */
+	void (*member)(struct matrix *, const struct matrix_room_member *);
+	void (*power_levels)(struct matrix *,
+						 const struct matrix_room_power_levels *);
+	void (*canonical_alias)(struct matrix *,
+							const struct matrix_room_canonical_alias *);
+	void (*create)(struct matrix *, const struct matrix_room_create *);
+	void (*join_rules)(struct matrix *, const struct matrix_room_join_rules *);
+	void (*name)(struct matrix *, const struct matrix_room_name *);
+	void (*topic)(struct matrix *, const struct matrix_room_topic *);
+	void (*avatar)(struct matrix *, const struct matrix_room_avatar *);
+	void (*unknown_state)(struct matrix *, const struct matrix_unknown_state *);
+	/* Ephemeral */
+	void (*typing)(struct matrix *, const struct matrix_room_typing *);
 };
 
 /* Returns NULL on failure, must call matrix_global_init() before anything. */
 struct matrix *
-matrix_alloc(const char *mxid, const char *homeserver, void *userp);
+matrix_alloc(struct matrix_callbacks callbacks, const char *mxid,
+			 const char *homeserver, void *userp);
 void
 matrix_destroy(struct matrix *matrix);
 void
@@ -228,4 +220,10 @@ matrix_login(struct matrix *matrix, const char *password,
 /* timeout specifies the number of seconds to wait for before syncing again.
  * timeout >= 1 && timeout <= 60 */
 /* matrix_sync(); */
+void
+dispatch_left_room(struct matrix *matrix, struct matrix_left_room *room);
+void
+dispatch_joined_room(struct matrix *matrix, struct matrix_joined_room *room);
+void
+dispatch_invited_room(struct matrix *matrix, struct matrix_left_room *room);
 #endif /* !MATRIX_MATRIX_H */

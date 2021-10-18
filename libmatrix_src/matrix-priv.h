@@ -17,6 +17,7 @@ struct matrix {
 	char *homeserver;
 	char *mxid;
 	void *userp;
+	struct matrix_callbacks cb;
 };
 
 int

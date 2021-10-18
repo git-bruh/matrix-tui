@@ -2,12 +2,12 @@
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
 
-/* arrsetcap reassigns the array so arrlenu returns the new size. */
-#define ENSURE(arr)                                                            \
-	(((void) (arrsetcap(arr, arrlenu(arr) + 1)), arrlenu(arr) - 1))
-#define ENSURELEN(arr, index) (arrsetlen(arr, index + 1))
-
-const size_t evsize_initial = 10;
+#define CALL(callback_name, data)                                              \
+	do {                                                                       \
+		if (matrix->cb.callback_name) {                                        \
+			matrix->cb.callback_name(matrix, data);                            \
+		}                                                                      \
+	} while (0)
 
 /* Safely get an int from a cJSON object without overflows. */
 static int
@@ -47,12 +47,17 @@ parse_timeline(struct matrix_room_timeline *timeline, const cJSON *data) {
 		.limited = cJSON_IsTrue(cJSON_GetObjectItem(data, "limited")),
 	};
 
+	return 0;
+}
+
+static void
+dispatch_timeline(struct matrix *matrix, const cJSON *data) {
+	if (!matrix || !data) {
+		return;
+	}
+
 	cJSON *event = NULL;
 	cJSON *events = cJSON_GetObjectItem(data, "events");
-
-	arrsetcap(timeline->events.message, evsize_initial);
-	arrsetcap(timeline->events.redaction, evsize_initial);
-	arrsetcap(timeline->events.attachment, evsize_initial);
 
 	cJSON_ArrayForEach(event, events) {
 		struct matrix_room_base base = {
@@ -71,12 +76,7 @@ parse_timeline(struct matrix_room_timeline *timeline, const cJSON *data) {
 		cJSON *content = cJSON_GetObjectItem(event, "content");
 
 		if (STRSAME(base.type, "m.room.message")) {
-			size_t index = ENSURE(timeline->events.message);
-
-			struct matrix_room_message *message =
-				&timeline->events.message[index];
-
-			*message = (struct matrix_room_message){
+			struct matrix_room_message message = {
 				.base = base,
 				.body = GETSTR(content, "body"),
 				.msgtype = GETSTR(content, "msgtype"),
@@ -84,35 +84,24 @@ parse_timeline(struct matrix_room_timeline *timeline, const cJSON *data) {
 				.formatted_body = GETSTR(content, "formatted_body"),
 			};
 
-			/* Next iterations will fill the bad struct with new info. */
-			if (message->body && message->msgtype) {
-				ENSURELEN(timeline->events.message, index);
+			if (message.body && message.msgtype) {
+				CALL(message, &message);
 			}
 		} else if (STRSAME(base.type, "m.room.redaction")) {
-			size_t index = ENSURE(timeline->events.redaction);
-
-			struct matrix_room_redaction *redaction =
-				&timeline->events.redaction[index];
-
-			*redaction = (struct matrix_room_redaction){
+			struct matrix_room_redaction redaction = {
 				.base = base,
 				.redacts = GETSTR(event, "redacts"),
 				.reason = GETSTR(content, "reason"),
 			};
 
-			if (redaction->redacts) {
-				ENSURELEN(timeline->events.redaction, index);
+			if (redaction.redacts) {
+				CALL(redaction, &redaction);
 			}
 		} else if (STRSAME(base.type, "m.location")) {
 			/* Assume that the event is an attachment. */
-			size_t index = ENSURE(timeline->events.attachment);
-
-			struct matrix_room_attachment *attachment =
-				&timeline->events.attachment[index];
-
 			cJSON *info = cJSON_GetObjectItem(content, "info");
 
-			*attachment = (struct matrix_room_attachment){
+			struct matrix_room_attachment attachment = {
 				.base = base,
 				.body = GETSTR(content, "body"),
 				.msgtype = GETSTR(content, "msgtype"),
@@ -122,79 +111,19 @@ parse_timeline(struct matrix_room_timeline *timeline, const cJSON *data) {
 						 .mimetype = GETSTR(info, "mimetype")},
 			};
 
-			if (attachment->body && attachment->msgtype && attachment->url &&
-				attachment->filename) {
-				ENSURELEN(timeline->events.attachment, index);
+			if (attachment.body && attachment.msgtype && attachment.url &&
+				attachment.filename) {
+				CALL(attachment, &attachment);
 			}
 		}
 	}
-
-	return 0;
 }
 
-static int
-parse_account_data(struct matrix_account_data_events *account_data,
-				   const cJSON *data) {
-	return -1;
-}
-
-static int
-parse_ephemeral(struct matrix_ephemeral_events *ephemeral, const cJSON *data) {
-	if (!data) {
-		return -1;
+static void
+dispatch_state(struct matrix *matrix, const cJSON *data) {
+	if (!matrix || !data) {
+		return;
 	}
-
-	cJSON *event = NULL;
-	cJSON *events = cJSON_GetObjectItem(data, "events");
-
-	arrsetcap(ephemeral->typing, evsize_initial);
-
-	cJSON_ArrayForEach(event, events) {
-		struct matrix_ephemeral_base base = {
-			.type = GETSTR(event, "type"),
-			.room_id = GETSTR(event, "room_id"),
-		};
-
-		cJSON *content = cJSON_GetObjectItem(event, "content");
-
-		if (!content) {
-			continue;
-		}
-
-		if (STRSAME(base.type, "m.typing")) {
-			size_t index = ENSURE(ephemeral->typing);
-
-			struct matrix_room_typing *typing = &ephemeral->typing[index];
-
-			*typing = (struct matrix_room_typing){
-				.base = base,
-				.user_ids = cJSON_GetObjectItem(content, "user_ids"),
-			};
-
-			if (typing->user_ids) {
-				ENSURELEN(ephemeral->typing, index);
-			}
-		}
-	}
-
-	return 0;
-}
-
-static int
-parse_state(struct matrix_state_events *state, const cJSON *data) {
-	if (!data) {
-		return -1;
-	}
-
-	arrsetcap(state->member, evsize_initial);
-	arrsetcap(state->power_levels, evsize_initial);
-	arrsetcap(state->canonical_alias, evsize_initial);
-	arrsetcap(state->create, evsize_initial);
-	arrsetcap(state->join_rules, evsize_initial);
-	arrsetcap(state->name, evsize_initial);
-	arrsetcap(state->topic, evsize_initial);
-	arrsetcap(state->avatar, evsize_initial);
-	arrsetcap(state->unknown, evsize_initial);
 
 	cJSON *event = NULL;
 	cJSON *events = cJSON_GetObjectItem(data, "events");
@@ -220,9 +149,7 @@ parse_state(struct matrix_state_events *state, const cJSON *data) {
 		}
 
 		if (STRSAME(base.type, "m.room.member")) {
-			size_t index = ENSURE(state->member);
-
-			state->member[index] = (struct matrix_room_member){
+			struct matrix_room_member member = {
 				.base = base,
 				.is_direct =
 					cJSON_IsTrue(cJSON_GetObjectItem(content, "is_direct")),
@@ -233,15 +160,13 @@ parse_state(struct matrix_state_events *state, const cJSON *data) {
 				.displayname = GETSTR(content, "displayname"),
 			};
 
-			if (state->member[index].membership) {
-				ENSURELEN(state->member, index);
+			if (member.membership) {
+				CALL(member, &member);
 			}
 		} else if (STRSAME(base.type, "m.room.power_levels")) {
-			size_t index = ENSURE(state->power_levels);
-
 			const int default_power = 50;
 
-			state->power_levels[index] = (struct matrix_room_power_levels){
+			struct matrix_room_power_levels levels = {
 				.base = base,
 				.ban = get_int(content, "ban", default_power),
 				.events_default =
@@ -258,20 +183,15 @@ parse_state(struct matrix_state_events *state, const cJSON *data) {
 				.users = cJSON_GetObjectItem(content, "users"),
 			};
 
-			ENSURELEN(state->power_levels, index);
+			CALL(power_levels, &levels);
 		} else if (STRSAME(base.type, "m.room.canonical_alias")) {
-			size_t index = ENSURE(state->canonical_alias);
+			struct matrix_room_canonical_alias alias = {
+				.base = base,
+				.alias = GETSTR(content, "alias"),
+			};
 
-			state->canonical_alias[index] =
-				(struct matrix_room_canonical_alias){
-					.base = base,
-					.alias = GETSTR(content, "alias"),
-				};
-
-			ENSURELEN(state->canonical_alias, index);
+			CALL(canonical_alias, &alias);
 		} else if (STRSAME(base.type, "m.room.create")) {
-			size_t index = ENSURE(state->create);
-
 			cJSON *federate = cJSON_GetObjectItem(content, "federate");
 			char *version = GETSTR(content, "room_version");
 
@@ -279,7 +199,7 @@ parse_state(struct matrix_state_events *state, const cJSON *data) {
 				version = "1";
 			}
 
-			state->create[index] = (struct matrix_room_create){
+			struct matrix_room_create create = {
 				.base = base,
 				.federate = federate ? cJSON_IsTrue(federate)
 									 : true, /* Federation is enabled if the key
@@ -288,42 +208,34 @@ parse_state(struct matrix_state_events *state, const cJSON *data) {
 				.room_version = version,
 			};
 
-			ENSURELEN(state->create, index);
+			CALL(create, &create);
 		} else if (STRSAME(base.type, "m.room.join_rules")) {
-			size_t index = ENSURE(state->join_rules);
-
-			state->join_rules[index] = (struct matrix_room_join_rules){
+			struct matrix_room_join_rules join_rules = {
 				.base = base,
 				.join_rule = GETSTR(content, "join_rule"),
 			};
 
-			if (state->join_rules[index].join_rule) {
-				ENSURELEN(state->join_rules, index);
+			if (join_rules.join_rule) {
+				CALL(join_rules, &join_rules);
 			}
 		} else if (STRSAME(base.type, "m.room.name")) {
-			size_t index = ENSURE(state->name);
-
-			state->name[index] = (struct matrix_room_name){
+			struct matrix_room_name name = {
 				.base = base,
 				.name = GETSTR(content, "name"),
 			};
 
-			ENSURELEN(state->name, index);
+			CALL(name, &name);
 		} else if (STRSAME(base.type, "m.room.topic")) {
-			size_t index = ENSURE(state->topic);
-
-			state->topic[index] = (struct matrix_room_topic){
+			struct matrix_room_topic topic = {
 				.base = base,
 				.topic = GETSTR(content, "topic"),
 			};
 
-			ENSURELEN(state->topic, index);
+			CALL(topic, &topic);
 		} else if (STRSAME(base.type, "m.room.avatar")) {
-			size_t index = ENSURE(state->avatar);
-
 			cJSON *info = cJSON_GetObjectItem(content, "info");
 
-			state->avatar[index] = (struct matrix_room_avatar){
+			struct matrix_room_avatar avatar = {
 				.base = base,
 				.url = GETSTR(content, "url"),
 				.info =
@@ -333,13 +245,81 @@ parse_state(struct matrix_state_events *state, const cJSON *data) {
 					},
 			};
 
-			ENSURELEN(state->avatar, index);
+			CALL(avatar, &avatar);
 		} else {
-			/* TODO unknown. */
+			/* TODO unknown. CALL(unknown_state, &unknown); */
 		}
 	}
+}
 
-	return 0;
+static void
+dispatch_ephemeral(struct matrix *matrix, const cJSON *data) {
+	if (!matrix || !data) {
+		return;
+	}
+
+	cJSON *event = NULL;
+	cJSON *events = cJSON_GetObjectItem(data, "events");
+
+	cJSON_ArrayForEach(event, events) {
+		struct matrix_ephemeral_base base = {
+			.type = GETSTR(event, "type"),
+			.room_id = GETSTR(event, "room_id"),
+		};
+
+		cJSON *content = cJSON_GetObjectItem(event, "content");
+
+		if (!content) {
+			continue;
+		}
+
+		if (STRSAME(base.type, "m.typing")) {
+			struct matrix_room_typing typing = {
+				.base = base,
+				.user_ids = cJSON_GetObjectItem(content, "user_ids"),
+			};
+
+			if (typing.user_ids) {
+				CALL(typing, &typing);
+			}
+		}
+	}
+}
+
+void
+dispatch_left_room(struct matrix *matrix, struct matrix_left_room *room) {
+	if (!room) {
+		return;
+	}
+
+	cJSON *events = room->events;
+
+	dispatch_timeline(matrix, cJSON_GetObjectItem(events, "timeline"));
+}
+
+void
+dispatch_joined_room(struct matrix *matrix, struct matrix_joined_room *room) {
+	if (!room) {
+		return;
+	}
+
+	cJSON *events = room->events;
+
+	/* TODO account_data */
+	dispatch_state(matrix, cJSON_GetObjectItem(events, "state"));
+	dispatch_timeline(matrix, cJSON_GetObjectItem(events, "timeline"));
+	dispatch_ephemeral(matrix, cJSON_GetObjectItem(events, "ephemeral"));
+}
+
+void
+dispatch_invited_room(struct matrix *matrix, struct matrix_left_room *room) {
+	if (!room) {
+		return;
+	}
+
+	cJSON *events = room->events;
+
+	dispatch_state(matrix, cJSON_GetObjectItem(events, "invite_state"));
 }
 
 int
@@ -365,7 +345,10 @@ matrix_dispatch_sync(const cJSON *sync) {
 		size_t index = 0;
 
 		cJSON_ArrayForEach(room, leave) {
-			response.rooms.leave[index].id = room->string;
+			response.rooms.leave[index] = (struct matrix_left_room){
+				.id = room->string,
+				.events = room,
+			};
 			parse_summary(&response.rooms.leave[index].summary,
 						  cJSON_GetObjectItem(room, "summary"));
 			parse_timeline(&response.rooms.leave[index].timeline,
@@ -383,17 +366,14 @@ matrix_dispatch_sync(const cJSON *sync) {
 		size_t index = 0;
 
 		cJSON_ArrayForEach(room, join) {
-			response.rooms.join[index].id = room->string;
+			response.rooms.join[index] = (struct matrix_joined_room){
+				.id = room->string,
+				.events = room,
+			};
 			parse_summary(&response.rooms.join[index].summary,
 						  cJSON_GetObjectItem(room, "summary"));
 			parse_timeline(&response.rooms.join[index].timeline,
 						   cJSON_GetObjectItem(room, "timeline"));
-			parse_account_data(&response.rooms.join[index].account_data,
-							   cJSON_GetObjectItem(room, "account_data"));
-			parse_ephemeral(&response.rooms.join[index].ephemeral,
-							cJSON_GetObjectItem(room, "ephemeral"));
-			parse_state(&response.rooms.join[index].state,
-						cJSON_GetObjectItem(room, "state"));
 			index++;
 		}
 
@@ -407,11 +387,12 @@ matrix_dispatch_sync(const cJSON *sync) {
 		size_t index = 0;
 
 		cJSON_ArrayForEach(room, invite) {
-			response.rooms.invite[index].id = room->string;
+			response.rooms.invite[index] = (struct matrix_invited_room){
+				.id = room->string,
+				.events = room,
+			};
 			parse_summary(&response.rooms.invite[index].summary,
 						  cJSON_GetObjectItem(room, "summary"));
-			parse_state(&response.rooms.invite[index].invite_state,
-						cJSON_GetObjectItem(room, "invite_state"));
 			index++;
 		}
 
