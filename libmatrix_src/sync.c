@@ -3,12 +3,6 @@
 /* For boolean evaluation */
 #define STREQ(s1, s2) ((strcmp(s1, s2)) == 0)
 
-struct matrix_rooms {
-	cJSON *leave;
-	cJSON *join;
-	cJSON *invite;
-};
-
 /* Safely get an int from a cJSON object without overflows. */
 static int
 get_int(const cJSON *json, const char name[], int int_default) {
@@ -177,7 +171,7 @@ matrix_sync_state_next(struct matrix_room *room,
 			};
 		} else if (TYPE(MATRIX_ROOM_CREATE, "m.room.create")) {
 			cJSON *federate = cJSON_GetObjectItem(content, "federate");
-			char *version = GETSTR(content, "room_version");
+			const char *version = GETSTR(content, "room_version");
 
 			if (!version) {
 				version = "1";

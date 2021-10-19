@@ -58,7 +58,9 @@ struct matrix_room_canonical_alias {
 struct matrix_room_create {
 	bool federate;
 	char *creator;
-	char *room_version;
+	const char
+		*room_version; /* This is marked const as we assign a string literal to
+						  it if the room_version key is not present. */
 	struct matrix_state_base base;
 };
 
