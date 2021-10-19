@@ -9,15 +9,13 @@
 
 /* Get the value of a key from an object. */
 #define GETSTR(obj, key) (cJSON_GetStringValue(cJSON_GetObjectItem(obj, key)))
-/* For boolean evaluation */
-#define STRSAME(s1, s2) ((strcmp(s1, s2)) == 0)
 
 struct matrix {
 	char *access_token;
 	char *homeserver;
 	char *mxid;
 	void *userp;
-	struct matrix_callbacks cb;
+	matrix_sync_cb sync_cb;
 };
 
 int

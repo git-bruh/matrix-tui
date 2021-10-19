@@ -164,7 +164,14 @@ perform(struct matrix *matrix, const cJSON *json, enum method method,
 }
 
 enum matrix_code
-matrix_sync_forever(struct matrix *matrix) {
+matrix_sync_forever(struct matrix *matrix, int timeout) {
+	const int timeout_min = 1;
+	const int timeout_max = 60; // TODO
+
+	if (timeout < timeout_min || timeout > timeout_max) {
+		return MATRIX_INVALID_ARGUMENT;
+	}
+
 	if (!matrix->access_token) {
 		return MATRIX_NOT_LOGGED_IN;
 	}

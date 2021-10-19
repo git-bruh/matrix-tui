@@ -17,7 +17,7 @@ enum matrix_code {
 
 struct matrix;
 
-typedef void matrix_private_t; /* Shh */
+typedef void matrix_private_t; /* Shh TODO cjson */
 
 #define MATRIX_EVENT_BASEFIELDS                                                \
 	int origin_server_ts;                                                      \
@@ -151,9 +151,17 @@ struct matrix_room_timeline {
 	bool limited;
 };
 
+enum matrix_event_type {
+	/* TODO account_data */
+	MATRIX_EVENT_STATE = 0,
+	MATRIX_EVENT_TIMELINE,
+	MATRIX_EVENT_EPHEMERAL,
+	MATRIX_EVENT_MAX,
+};
+
 struct matrix_room {
 	char *id;
-	matrix_private_t *events;
+	matrix_private_t *events[MATRIX_EVENT_MAX];
 	struct matrix_room_summary summary;
 	struct matrix_room_timeline
 		timeline; /* Irrelevant if type == MATRIX_ROOM_INVITE. */
@@ -171,56 +179,108 @@ struct matrix_sync_response {
 	/* struct matrix_account_data_events account_data; */
 };
 
-/* We deliver the response via callbacks to avoid packing it up in a single
- * struct as that requires us to allocate a lot more than we need (or want) to.
- * This method is a bit clunk but much easier to maintain, TODO any better
- * alternatives ? */
-struct matrix_callbacks {
-	void (*on_sync)(struct matrix *, const struct matrix_sync_response *);
-	/* Timeline */
-	void (*message)(struct matrix *, const struct matrix_room_message *);
-	void (*redaction)(struct matrix *, const struct matrix_room_redaction *);
-	void (*attachment)(struct matrix *, const struct matrix_room_attachment *);
-	/* State */
-	void (*member)(struct matrix *, const struct matrix_room_member *);
-	void (*power_levels)(struct matrix *,
-						 const struct matrix_room_power_levels *);
-	void (*canonical_alias)(struct matrix *,
-							const struct matrix_room_canonical_alias *);
-	void (*create)(struct matrix *, const struct matrix_room_create *);
-	void (*join_rules)(struct matrix *, const struct matrix_room_join_rules *);
-	void (*name)(struct matrix *, const struct matrix_room_name *);
-	void (*topic)(struct matrix *, const struct matrix_room_topic *);
-	void (*avatar)(struct matrix *, const struct matrix_room_avatar *);
-	void (*unknown_state)(struct matrix *, const struct matrix_unknown_state *);
-	/* Ephemeral */
-	void (*typing)(struct matrix *, const struct matrix_room_typing *);
+struct matrix_state_event {
+	enum matrix_state_type {
+		MATRIX_ROOM_MEMBER = 0,
+		MATRIX_ROOM_POWER_LEVELS,
+		MATRIX_ROOM_CANONICAL_ALIAS,
+		MATRIX_ROOM_CREATE,
+		MATRIX_ROOM_JOIN_RULES,
+		MATRIX_ROOM_NAME,
+		MATRIX_ROOM_TOPIC,
+		MATRIX_ROOM_AVATAR,
+		MATRIX_ROOM_UNKNOWN_STATE,
+	} type;
+	union {
+		struct matrix_room_member member;
+		struct matrix_room_power_levels power_levels;
+		struct matrix_room_canonical_alias canonical_alias;
+		struct matrix_room_create create;
+		struct matrix_room_join_rules join_rules;
+		struct matrix_room_name name;
+		struct matrix_room_topic topic;
+		struct matrix_room_avatar avatar;
+		struct matrix_unknown_state unknown_state;
+	};
 };
 
-/* Returns NULL on failure, must call matrix_global_init() before anything. */
+struct matrix_timeline_event {
+	enum matrix_timeline_type {
+		MATRIX_ROOM_MESSAGE = 0,
+		MATRIX_ROOM_REDACTION,
+		MATRIX_ROOM_ATTACHMENT,
+	} type;
+	union {
+		struct matrix_room_message message;
+		struct matrix_room_redaction redaction;
+		struct matrix_room_attachment attachment;
+	};
+};
+
+struct matrix_ephemeral_event {
+	enum matrix_ephemeral_type {
+		MATRIX_ROOM_TYPING = 0,
+	} type;
+	union {
+		struct matrix_room_typing typing;
+	};
+};
+
+typedef void (*matrix_sync_cb)(struct matrix *, struct matrix_sync_response *);
+
+/* Functions returning int (Except enums) return -1 on failure and 0 on success.
+ * Functions returning pointers return NULL on failure. */
+
+/* ALLOC/DESTROY */
+
+/* Must be the first function called only a single time. */
+int
+matrix_global_init(void);
 struct matrix *
-matrix_alloc(struct matrix_callbacks callbacks, const char *mxid,
-			 const char *homeserver, void *userp);
+matrix_alloc(matrix_sync_cb sync_cb, const char *mxid, const char *homeserver,
+			 void *userp);
 void
 matrix_destroy(struct matrix *matrix);
+/* Must be the last function called only a single time. */
 void
 matrix_global_cleanup(void);
 
-/* These functions return -1 on failure due to allocation failure / invalid
- * arguments and 0 on success. */
-int
-matrix_global_init(void);
+/* SYNC */
+
 /* nullable: device_id */
 enum matrix_code
 matrix_login(struct matrix *matrix, const char *password,
 			 const char *device_id);
+
 /* timeout specifies the number of seconds to wait for before syncing again.
  * timeout >= 1 && timeout <= 60 */
-/* matrix_sync(); */
-/* Fill the room struct with the next room. */
+enum matrix_code
+matrix_sync_forever(struct matrix *matrix, int timeout);
+
+/* These functions fill in the passed struct with the corresponding JSON item's
+ * representation at the current index. */
 int
 matrix_sync_room_next(struct matrix_sync_response *response,
 					  struct matrix_room *room);
-void
-dispatch_room(struct matrix *matrix, struct matrix_room *room);
+int
+matrix_sync_state_next(struct matrix_room *room,
+					   struct matrix_state_event *event);
+int
+matrix_sync_timeline_next(struct matrix_room *room,
+						  struct matrix_timeline_event *event);
+int
+matrix_sync_ephemeral_next(struct matrix_room *room,
+						   struct matrix_ephemeral_event *event);
+
+/* Magic macro to call one of the above functions depending on the argument
+ * type. */
+#define matrix_sync_next(response_or_room, result)                             \
+	_Generic((result), struct matrix_room *                                    \
+			 : matrix_sync_room_next, struct matrix_state_event *              \
+			 : matrix_sync_state_next, struct matrix_timeline_event *          \
+			 : matrix_sync_timeline_next, struct matrix_ephemeral_event *      \
+			 : matrix_sync_ephemeral_next)(response_or_room, result)
+
+/* API */
+
 #endif /* !MATRIX_MATRIX_H */

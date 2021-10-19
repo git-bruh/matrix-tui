@@ -1,7 +1,7 @@
 .POSIX:
 
 CFLAGS_COMMON = \
-	$(CFLAGS) -O3 -std=c99 \
+	$(CFLAGS) -O3 -std=c11 \
 	-flto -fstack-protector-strong --param=ssp-buffer-size=4 \
 	-D_GNU_SOURCE -D_XOPEN_SOURCE -D_FORTIFY_SOURCE=2 \
 	-Wall -Wextra -Wpedantic -Wwrite-strings \

@@ -6,8 +6,8 @@ matrix_global_init(void) {
 }
 
 struct matrix *
-matrix_alloc(struct matrix_callbacks callbacks, const char *mxid,
-			 const char *homeserver, void *userp) {
+matrix_alloc(matrix_sync_cb sync_cb, const char *mxid, const char *homeserver,
+			 void *userp) {
 	{
 		size_t len_mxid = 0;
 
@@ -23,7 +23,7 @@ matrix_alloc(struct matrix_callbacks callbacks, const char *mxid,
 		*matrix = (struct matrix){.homeserver = strdup(homeserver),
 								  .mxid = strdup(mxid),
 								  .userp = userp,
-								  .cb = callbacks};
+								  .sync_cb = sync_cb};
 
 		if (matrix->homeserver && matrix->mxid) {
 			return matrix;
