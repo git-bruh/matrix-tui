@@ -1,6 +1,5 @@
 #ifndef MATRIX_MATRIX_H
 #define MATRIX_MATRIX_H
-#include "cJSON.h"
 #include <stdbool.h>
 /* Must allocate enum + 1. */
 enum matrix_limits {
@@ -17,7 +16,7 @@ enum matrix_code {
 
 struct matrix;
 
-typedef void matrix_private_t; /* Shh TODO cjson */
+typedef struct cJSON matrix_json_t;
 
 #define MATRIX_EVENT_BASEFIELDS                                                \
 	int origin_server_ts;                                                      \
@@ -48,7 +47,7 @@ struct matrix_file_info {
 
 struct matrix_room_typing {
 	struct matrix_ephemeral_base base;
-	cJSON *user_ids;
+	matrix_json_t *user_ids;
 };
 
 struct matrix_room_canonical_alias {
@@ -85,9 +84,9 @@ struct matrix_room_power_levels {
 	int redact;
 	int state_default;
 	int users_default;
-	cJSON *events;		  /* nullable. */
-	cJSON *users;		  /* nullable. */
-	cJSON *notifications; /* nullable. */
+	matrix_json_t *events;		  /* nullable. */
+	matrix_json_t *users;		  /* nullable. */
+	matrix_json_t *notifications; /* nullable. */
 	struct matrix_state_base base;
 };
 
@@ -140,7 +139,7 @@ struct matrix_room_attachment {
 struct matrix_room_summary {
 	int joined_member_count;
 	int invited_member_count;
-	cJSON *heroes; /* TODO somehow abstract the cJSON object away:
+	matrix_json_t *heroes; /* TODO somehow abstract the cJSON object away:
 					  1. Make an iterator with (void *)
 					  2. Dump raw JSON as (char *)
 					  3. Maybe just don't */
@@ -161,7 +160,7 @@ enum matrix_event_type {
 
 struct matrix_room {
 	char *id;
-	matrix_private_t *events[MATRIX_EVENT_MAX];
+	matrix_json_t *events[MATRIX_EVENT_MAX];
 	struct matrix_room_summary summary;
 	struct matrix_room_timeline
 		timeline; /* Irrelevant if type == MATRIX_ROOM_INVITE. */
@@ -175,7 +174,7 @@ struct matrix_room {
 
 struct matrix_sync_response {
 	char *next_batch;
-	matrix_private_t *rooms[MATRIX_ROOM_MAX];
+	matrix_json_t *rooms[MATRIX_ROOM_MAX];
 	/* struct matrix_account_data_events account_data; */
 };
 

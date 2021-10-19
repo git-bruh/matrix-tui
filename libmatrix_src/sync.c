@@ -60,7 +60,7 @@ matrix_sync_room_next(struct matrix_sync_response *response,
 			bool is_valid = false;
 
 			*room = (struct matrix_room){
-				.id = ((cJSON *) room_json)->string,
+				.id = room_json->string,
 				.events = {[MATRIX_EVENT_STATE] =
 							   type != MATRIX_ROOM_INVITE
 								   ? cJSON_GetObjectItem(room_json, "state")
