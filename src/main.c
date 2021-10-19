@@ -92,6 +92,12 @@ input(struct state *state) {
 	return true;
 }
 
+static void
+sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
+	(void) matrix;
+	(void) response;
+}
+
 int
 main() {
 	if ((log_if_err((setlocale(LC_ALL, "")), "Failed to set locale.")) ||
@@ -142,7 +148,7 @@ main() {
 					 "Failed to initialize matrix globals.")) &&
 		!(log_if_err(((input_init(&state.input, input_height)) == 0),
 					 "Failed to initialize input layer.")) &&
-		!(log_if_err((state.matrix = matrix_alloc(MXID, HOMESERVER, &state)),
+		!(log_if_err((state.matrix = matrix_alloc(sync_cb, MXID, HOMESERVER, &state)),
 					 "Failed to initialize libmatrix."))) {
 		input_set_initial_cursor(&state.input);
 		redraw(&state);
