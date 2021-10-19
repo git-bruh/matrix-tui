@@ -34,6 +34,7 @@ struct state {
 };
 
 static const int input_height = 5;
+static const unsigned sync_timeout = 1000;
 
 static void
 redraw(struct state *state) {
@@ -43,10 +44,14 @@ redraw(struct state *state) {
 
 static void
 cleanup(struct state *state) {
+#if 0
 	input_finish(&state->input);
+#endif
 	matrix_destroy(state->matrix);
 
+#if 0
 	tb_shutdown();
+#endif
 	matrix_global_cleanup();
 
 	fclose(state->log_fp);
@@ -94,8 +99,7 @@ input(struct state *state) {
 
 static void
 sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
-	(void) matrix;
-	(void) response;
+	printf("%p: %p\n", matrix, response);
 }
 
 int
@@ -115,6 +119,7 @@ main() {
 			return EXIT_FAILURE;
 		}
 
+#if 0
 		bool success = false;
 
 		switch ((tb_init())) {
@@ -138,6 +143,7 @@ main() {
 			fclose(log_fp);
 			return EXIT_FAILURE;
 		}
+#endif
 
 		state.log_fp = log_fp;
 	}
@@ -146,19 +152,35 @@ main() {
 					 "Failed to initialize logging callbacks.")) &&
 		!(log_if_err(((matrix_global_init()) == 0),
 					 "Failed to initialize matrix globals.")) &&
+#if 0
 		!(log_if_err(((input_init(&state.input, input_height)) == 0),
 					 "Failed to initialize input layer.")) &&
+#endif
 		!(log_if_err(
 			(state.matrix = matrix_alloc(sync_cb, MXID, HOMESERVER, &state)),
 			"Failed to initialize libmatrix."))) {
+#if 0
 		input_set_initial_cursor(&state.input);
 		redraw(&state);
+#endif
 
 		if (!(log_if_err(
 				((matrix_login(state.matrix, PASS, NULL)) == MATRIX_SUCCESS),
 				"Failed to login."))) {
+#if 0
 			while ((input(&state))) {
 				/* Loop until Ctrl+C */
+			}
+#endif
+			switch ((matrix_sync_forever(state.matrix, sync_timeout))) {
+			case MATRIX_NOMEM:
+				log_fatal("Out of memory!");
+				break;
+			case MATRIX_CURL_FAILURE:
+				log_fatal("Lost connection to homeserver.");
+				break;
+			default:
+				break;
 			}
 
 			cleanup(&state);

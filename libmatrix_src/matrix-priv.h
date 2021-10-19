@@ -20,7 +20,7 @@ struct matrix {
 };
 
 int
-matrix_dispatch_sync(const cJSON *sync);
+matrix_dispatch_sync(struct matrix *matrix, const cJSON *sync);
 int
 matrix_double_to_int(double x);
 char *

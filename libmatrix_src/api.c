@@ -66,6 +66,7 @@ endpoint_create(const char *homeserver, const char *endpoint,
 				const char *params) {
 	assert(homeserver);
 	assert(endpoint);
+	assert(endpoint[0] == '/'); /* base[] doesn't have a trailing slash. */
 
 	const char base[] = "/_matrix/client/r0";
 
@@ -94,12 +95,14 @@ response_init(enum method method, const char *data, const char *url,
 			CURLE_OK &&
 		(curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, write_cb)) == CURLE_OK &&
 		(curl_easy_setopt(easy, CURLOPT_WRITEDATA, response)) == CURLE_OK) {
-		response->easy = easy;
+		*response = (struct response){
+			.easy = easy,
+		};
 
 		switch (method) {
 		case GET:
 			assert(!data);
-			break;
+			return MATRIX_SUCCESS;
 		case POST:
 			assert(data);
 
@@ -164,35 +167,47 @@ perform(struct matrix *matrix, const cJSON *json, enum method method,
 }
 
 enum matrix_code
-matrix_sync_forever(struct matrix *matrix, int timeout) {
-	const int timeout_min = 1;
-	const int timeout_max = 60; // TODO
-
-	if (timeout < timeout_min || timeout > timeout_max) {
-		return MATRIX_INVALID_ARGUMENT;
-	}
-
+matrix_sync_forever(struct matrix *matrix, unsigned timeout) {
 	if (!matrix->access_token) {
 		return MATRIX_NOT_LOGGED_IN;
 	}
 
+	char *params = NULL;
+
+	if ((asprintf(&params, "?timeout=%u", timeout)) == -1) {
+		return MATRIX_NOMEM;
+	}
+
 	enum matrix_code code = MATRIX_CURL_FAILURE;
 
-	char *url = endpoint_create(matrix->homeserver, "/sync", NULL);
+	char *url = endpoint_create(matrix->homeserver, "/sync", params);
+	free(params);
+
+	if (!url) {
+		return MATRIX_NOMEM;
+	}
+
 	struct curl_slist *headers = get_headers(matrix);
 	struct response response = {0};
 
 	if ((response_init(GET, NULL, url, headers, &response)) == MATRIX_SUCCESS) {
 		for (;;) {
-			if ((response_perform(&response)) != MATRIX_SUCCESS) {
+			/* TODO add some sleep here ? */
+			if ((code = response_perform(&response)) != MATRIX_SUCCESS) {
 				break;
 			}
 
 			cJSON *parsed = cJSON_Parse(response.data);
-			matrix_dispatch_sync(parsed);
+			matrix_dispatch_sync(matrix, parsed);
 			cJSON_Delete(parsed);
+
+			break; /* TODO */
 		}
 	}
+
+	curl_slist_free_all(headers);
+	response_finish(&response);
+	free(url);
 
 	return code;
 }

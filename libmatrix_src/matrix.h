@@ -253,10 +253,10 @@ enum matrix_code
 matrix_login(struct matrix *matrix, const char *password,
 			 const char *device_id);
 
-/* timeout specifies the number of seconds to wait for before syncing again.
- * timeout >= 1 && timeout <= 60 */
+/* timeout specifies the time to wait in milliseconds to wait for before syncing
+ * again. */
 enum matrix_code
-matrix_sync_forever(struct matrix *matrix, int timeout);
+matrix_sync_forever(struct matrix *matrix, unsigned timeout);
 
 /* These functions fill in the passed struct with the corresponding JSON item's
  * representation at the current index. */
