@@ -148,8 +148,9 @@ main() {
 					 "Failed to initialize matrix globals.")) &&
 		!(log_if_err(((input_init(&state.input, input_height)) == 0),
 					 "Failed to initialize input layer.")) &&
-		!(log_if_err((state.matrix = matrix_alloc(sync_cb, MXID, HOMESERVER, &state)),
-					 "Failed to initialize libmatrix."))) {
+		!(log_if_err(
+			(state.matrix = matrix_alloc(sync_cb, MXID, HOMESERVER, &state)),
+			"Failed to initialize libmatrix."))) {
 		input_set_initial_cursor(&state.input);
 		redraw(&state);
 

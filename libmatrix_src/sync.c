@@ -64,7 +64,7 @@ matrix_sync_room_next(struct matrix_sync_response *response,
 							   cJSON_GetObjectItem(room_json, "timeline"),
 						   [MATRIX_EVENT_EPHEMERAL] =
 							   cJSON_GetObjectItem(room_json, "ephemeral")},
-				.type = type,
+				.type = (enum matrix_room_type) type,
 			};
 
 			switch (type) {
@@ -101,7 +101,7 @@ matrix_sync_room_next(struct matrix_sync_response *response,
 /* Assign the event type and compare in the same statement to reduce chance of
  * typos. */
 #define TYPE(enumeration, string)                                              \
-	(revent->type = enumeration, (STREQ(base.type, string)))
+	(revent->type = (enumeration), (STREQ(base.type, string)))
 
 int
 matrix_sync_state_next(struct matrix_room *room,
