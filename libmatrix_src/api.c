@@ -222,7 +222,8 @@ matrix_sync_forever(struct matrix *matrix, unsigned timeout) {
 
 				const char *param_since = "&since=";
 
-				size_t new_len_tmp = strlen(url) + + strlen(param_since) + len_batch + 1;
+				size_t new_len_tmp =
+					strlen(url) + +strlen(param_since) + len_batch + 1;
 
 				/* Avoid repeated malloc calls if the token length remains the
 				 * same. */

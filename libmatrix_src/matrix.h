@@ -257,7 +257,8 @@ matrix_login(struct matrix *matrix, const char *password,
 			 const char *device_id);
 
 /* timeout specifies the maximum time in milliseconds that the server will wait
- * for events to be received. */
+ * for events to be received. The recommended minimum is 1000 == 1 second to
+ * avoid burning CPU cycles. */
 enum matrix_code
 matrix_sync_forever(struct matrix *matrix, unsigned timeout);
 
