@@ -181,6 +181,7 @@ matrix_sync_forever(struct matrix *matrix, unsigned timeout) {
 	enum matrix_code code = MATRIX_CURL_FAILURE;
 
 	char *url = endpoint_create(matrix->homeserver, "/sync", params);
+
 	free(params);
 
 	if (!url) {
@@ -190,26 +191,77 @@ matrix_sync_forever(struct matrix *matrix, unsigned timeout) {
 	struct curl_slist *headers = get_headers(matrix);
 	struct response response = {0};
 
+	size_t new_len = 0;
+	char *new_buf = NULL; /* We fill in this buf with the new batch token on
+							 every successful response. */
+
 	if ((response_init(GET, NULL, url, headers, &response)) == MATRIX_SUCCESS) {
 		for (;;) {
-			/* TODO add some sleep here ? */
+			if (new_buf && (curl_easy_setopt(response.easy, CURLOPT_URL,
+											 new_buf)) != CURLE_OK) {
+				code = MATRIX_CURL_FAILURE;
+				break;
+			}
+
+			/* TODO add error callback to allow implementing backoff */
 			if ((code = response_perform(&response)) != MATRIX_SUCCESS) {
 				break;
 			}
 
 			cJSON *parsed = cJSON_Parse(response.data);
+
+			char *next_batch = GETSTR(parsed, "next_batch");
+
+			{
+				size_t len_batch = 0;
+
+				if (!next_batch || !(len_batch = strlen(next_batch))) {
+					code = MATRIX_MALFORMED_JSON;
+					break;
+				}
+
+				const char *param_since = "&since=";
+
+				size_t new_len_tmp = strlen(url) + + strlen(param_since) + len_batch + 1;
+
+				/* Avoid repeated malloc calls if the token length remains the
+				 * same. */
+				if (new_len != new_len_tmp) {
+					free(new_buf);
+					if (!(new_buf = malloc((new_len = new_len_tmp)))) {
+						code = MATRIX_NOMEM;
+						break;
+					}
+				}
+
+				snprintf(new_buf, new_len, "%s%s%s", url, param_since,
+						 next_batch);
+			}
+
 			matrix_dispatch_sync(matrix, parsed);
 			cJSON_Delete(parsed);
-
-			break; /* TODO */
 		}
 	}
 
 	curl_slist_free_all(headers);
 	response_finish(&response);
 	free(url);
+	free(new_buf);
 
 	return code;
+}
+
+enum matrix_code
+matrix_login_with_token(struct matrix *matrix, const char *access_token) {
+	if (!access_token) {
+		return MATRIX_INVALID_ARGUMENT;
+	}
+
+	if ((matrix->access_token = matrix_strdup(access_token))) {
+		return MATRIX_SUCCESS;
+	}
+
+	return MATRIX_NOMEM;
 }
 
 enum matrix_code
@@ -238,12 +290,10 @@ matrix_login(struct matrix *matrix, const char *password,
 			MATRIX_SUCCESS) {
 		cJSON *parsed = cJSON_Parse(response.data);
 
-		/* FIXME the code would be MATRIX_NOMEM even if we just received a
-		 * malformed JSON. Implement some checking without adding a ton of if
-		 * statements. */
-		if ((matrix->access_token =
-				 matrix_strdup(GETSTR(parsed, "access_token")))) {
-			code = MATRIX_SUCCESS;
+		if ((code = matrix_login_with_token(matrix,
+											GETSTR(parsed, "access_token"))) ==
+			MATRIX_INVALID_ARGUMENT) {
+			code = MATRIX_MALFORMED_JSON; /* token was NULL */
 		}
 
 		cJSON_Delete(parsed);

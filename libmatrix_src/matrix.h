@@ -8,8 +8,9 @@ enum matrix_limits {
 
 enum matrix_code {
 	MATRIX_SUCCESS = 0,
-	MATRIX_CURL_FAILURE,
 	MATRIX_NOMEM,
+	MATRIX_CURL_FAILURE,
+	MATRIX_MALFORMED_JSON,
 	MATRIX_INVALID_ARGUMENT,
 	MATRIX_NOT_LOGGED_IN,
 };
@@ -248,13 +249,15 @@ matrix_global_cleanup(void);
 
 /* SYNC */
 
+enum matrix_code
+matrix_login_with_token(struct matrix *matrix, const char *access_token);
 /* nullable: device_id */
 enum matrix_code
 matrix_login(struct matrix *matrix, const char *password,
 			 const char *device_id);
 
-/* timeout specifies the time to wait in milliseconds to wait for before syncing
- * again. */
+/* timeout specifies the maximum time in milliseconds that the server will wait
+ * for events to be received. */
 enum matrix_code
 matrix_sync_forever(struct matrix *matrix, unsigned timeout);
 
