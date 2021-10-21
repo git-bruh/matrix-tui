@@ -7,6 +7,7 @@
 static int
 get_int(const cJSON *json, const char name[], int int_default) {
 	double tmp = cJSON_GetNumberValue(cJSON_GetObjectItem(json, name));
+
 	if (!(isnan(tmp))) {
 		return matrix_double_to_int(tmp);
 	}

@@ -239,6 +239,10 @@ matrix_sync_forever(struct matrix *matrix, unsigned timeout) {
 						 next_batch);
 			}
 
+			response.len = 0; /* Ensures that we don't realloc extra bytes but
+			write the new contents after the old NUL terminator, making us read
+			the old data. See "&(response->data[response->len])" in write_cb. */
+
 			matrix_dispatch_sync(matrix, parsed);
 			cJSON_Delete(parsed);
 		}
