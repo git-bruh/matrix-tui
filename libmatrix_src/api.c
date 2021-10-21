@@ -166,8 +166,35 @@ perform(struct matrix *matrix, const cJSON *json, enum method method,
 	return code;
 }
 
+/* Copy the original url to a new url, adding the batch parameter. */
+static enum matrix_code
+set_batch(char *url, char **new_url, size_t *new_len, const char *next_batch) {
+	if (!next_batch) {
+		return MATRIX_MALFORMED_JSON;
+	}
+
+	const char *param_since = "&since=";
+
+	size_t new_len_tmp =
+		strlen(url) + strlen(param_since) + strlen(next_batch) + 1;
+
+	/* Avoid repeated malloc calls if the token length remains the
+	 * same. */
+	if (*new_len != new_len_tmp) {
+		free(*new_url);
+		if (!(*new_url = malloc((*new_len = new_len_tmp)))) {
+			return MATRIX_NOMEM;
+		}
+	}
+
+	snprintf(*new_url, *new_len, "%s%s%s", url, param_since, next_batch);
+
+	return MATRIX_SUCCESS;
+}
+
 enum matrix_code
-matrix_sync_forever(struct matrix *matrix, unsigned timeout) {
+matrix_sync_forever(struct matrix *matrix, const char *next_batch,
+					unsigned timeout) {
 	if (!matrix->access_token) {
 		return MATRIX_NOT_LOGGED_IN;
 	}
@@ -195,7 +222,10 @@ matrix_sync_forever(struct matrix *matrix, unsigned timeout) {
 	char *new_buf = NULL; /* We fill in this buf with the new batch token on
 							 every successful response. */
 
-	if ((response_init(GET, NULL, url, headers, &response)) == MATRIX_SUCCESS) {
+	if ((next_batch ? ((code = set_batch(url, &new_buf, &new_len,
+										 next_batch)) == MATRIX_SUCCESS)
+					: true) &&
+		(response_init(GET, NULL, url, headers, &response)) == MATRIX_SUCCESS) {
 		for (;;) {
 			if (new_buf && (curl_easy_setopt(response.easy, CURLOPT_URL,
 											 new_buf)) != CURLE_OK) {
@@ -210,33 +240,10 @@ matrix_sync_forever(struct matrix *matrix, unsigned timeout) {
 
 			cJSON *parsed = cJSON_Parse(response.data);
 
-			char *next_batch = GETSTR(parsed, "next_batch");
-
-			{
-				size_t len_batch = 0;
-
-				if (!next_batch || !(len_batch = strlen(next_batch))) {
-					code = MATRIX_MALFORMED_JSON;
-					break;
-				}
-
-				const char *param_since = "&since=";
-
-				size_t new_len_tmp =
-					strlen(url) + +strlen(param_since) + len_batch + 1;
-
-				/* Avoid repeated malloc calls if the token length remains the
-				 * same. */
-				if (new_len != new_len_tmp) {
-					free(new_buf);
-					if (!(new_buf = malloc((new_len = new_len_tmp)))) {
-						code = MATRIX_NOMEM;
-						break;
-					}
-				}
-
-				snprintf(new_buf, new_len, "%s%s%s", url, param_since,
-						 next_batch);
+			if ((code = set_batch(url, &new_buf, &new_len,
+								  GETSTR(parsed, "next_batch"))) !=
+				MATRIX_SUCCESS) {
+				break;
 			}
 
 			response.len = 0; /* Ensures that we don't realloc extra bytes but
