@@ -7,12 +7,19 @@
 static int
 get_int(const cJSON *json, const char name[], int int_default) {
 	double tmp = cJSON_GetNumberValue(cJSON_GetObjectItem(json, name));
-
 	if (!(isnan(tmp))) {
 		return matrix_double_to_int(tmp);
 	}
 
 	return int_default;
+}
+
+static cJSON *
+get_array(const cJSON *const object, const char *const string) {
+	cJSON *tmp = cJSON_GetObjectItem(object, string);
+
+	/* Elements are located in the child member. */
+	return tmp ? tmp->child : NULL;
 }
 
 static int
@@ -51,45 +58,44 @@ matrix_sync_room_next(struct matrix_sync_response *response,
 		cJSON *room_json = response->rooms[type];
 
 		while (room_json) {
-			bool is_valid = false;
-
 			*room = (struct matrix_room){
 				.id = room_json->string,
 				.events = {[MATRIX_EVENT_STATE] =
 							   type != MATRIX_ROOM_INVITE
-								   ? cJSON_GetObjectItem(room_json, "state")
-								   : cJSON_GetObjectItem(room_json,
-														 "invite_state"),
-						   [MATRIX_EVENT_TIMELINE] =
+								   ? get_array(cJSON_GetObjectItem(room_json,
+																   "state"),
+											   "events")
+								   : get_array(cJSON_GetObjectItem(
+												   room_json, "invite_state"),
+											   "events"),
+						   [MATRIX_EVENT_TIMELINE] = get_array(
 							   cJSON_GetObjectItem(room_json, "timeline"),
-						   [MATRIX_EVENT_EPHEMERAL] =
-							   cJSON_GetObjectItem(room_json, "ephemeral")},
+							   "events"),
+						   [MATRIX_EVENT_EPHEMERAL] = get_array(
+							   cJSON_GetObjectItem(room_json, "ephemeral"),
+							   "events")},
 				.type = (enum matrix_room_type) type,
 			};
 
 			switch (type) {
 			case MATRIX_ROOM_LEAVE:
 			case MATRIX_ROOM_JOIN:
-				is_valid =
-					((parse_summary(
-						 &room->summary,
-						 cJSON_GetObjectItem(room_json, "summary"))) == 0 &&
-					 (parse_timeline(
-						 &room->timeline,
-						 cJSON_GetObjectItem(room_json, "timeline"))) == 0);
+				parse_summary(&room->summary,
+							  cJSON_GetObjectItem(room_json, "summary"));
+				parse_timeline(&room->timeline,
+							   cJSON_GetObjectItem(room_json, "timeline"));
 				break;
 			case MATRIX_ROOM_INVITE:
-				is_valid = ((parse_summary(&room->summary,
-										   cJSON_GetObjectItem(
-											   room_json, "summary"))) == 0);
+				parse_summary(&room->summary,
+							  cJSON_GetObjectItem(room_json, "summary"));
 				break;
 			default:
 				assert(0);
 			};
 
-			room_json = room_json->next;
+			room_json = response->rooms[type] = room_json->next;
 
-			if (is_valid) {
+			if (room->id) {
 				return 0;
 			}
 		}
@@ -127,7 +133,7 @@ matrix_sync_state_next(struct matrix_room *room,
 
 		if (!base.origin_server_ts || !base.event_id || !base.sender ||
 			!base.type || !(content = cJSON_GetObjectItem(event, "content"))) {
-			event = event->next;
+			event = room->events[MATRIX_EVENT_STATE] = event->next;
 			continue;
 		}
 
@@ -219,7 +225,7 @@ matrix_sync_state_next(struct matrix_room *room,
 			is_valid = false;
 		}
 
-		event = event->next;
+		event = room->events[MATRIX_EVENT_STATE] = event->next;
 
 		if (is_valid) {
 			return 0;
@@ -253,7 +259,7 @@ matrix_sync_timeline_next(struct matrix_room *room,
 
 		if (!base.origin_server_ts || !base.event_id || !base.sender ||
 			!base.type || !(content = cJSON_GetObjectItem(event, "content"))) {
-			event = event->next;
+			event = room->events[MATRIX_EVENT_TIMELINE] = event->next;
 			continue;
 		}
 
@@ -294,7 +300,7 @@ matrix_sync_timeline_next(struct matrix_room *room,
 				!!revent->attachment.url && !!revent->attachment.filename;
 		}
 
-		event = event->next;
+		event = room->events[MATRIX_EVENT_TIMELINE] = event->next;
 
 		if (is_valid) {
 			return 0;
@@ -324,7 +330,7 @@ matrix_sync_ephemeral_next(struct matrix_room *room,
 		cJSON *content = cJSON_GetObjectItem(event, "content");
 
 		if (!content) {
-			event = event->next;
+			event = room->events[MATRIX_EVENT_EPHEMERAL] = event->next;
 			continue;
 		}
 
@@ -337,7 +343,7 @@ matrix_sync_ephemeral_next(struct matrix_room *room,
 			is_valid = !!revent->typing.user_ids;
 		}
 
-		event = event->next;
+		event = room->events[MATRIX_EVENT_EPHEMERAL] = event->next;
 
 		if (is_valid) {
 			return 0;
@@ -361,9 +367,9 @@ matrix_dispatch_sync(struct matrix *matrix, const cJSON *sync) {
 		.next_batch = GETSTR(sync, "next_batch"),
 		.rooms =
 			{
-				[MATRIX_ROOM_LEAVE] = cJSON_GetObjectItem(rooms, "leave"),
-				[MATRIX_ROOM_JOIN] = cJSON_GetObjectItem(rooms, "join"),
-				[MATRIX_ROOM_INVITE] = cJSON_GetObjectItem(rooms, "invite"),
+				[MATRIX_ROOM_LEAVE] = get_array(rooms, "leave"),
+				[MATRIX_ROOM_JOIN] = get_array(rooms, "join"),
+				[MATRIX_ROOM_INVITE] = get_array(rooms, "invite"),
 			},
 	};
 
