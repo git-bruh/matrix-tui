@@ -19,19 +19,21 @@ struct matrix;
 
 typedef struct cJSON matrix_json_t;
 
-#define MATRIX_EVENT_BASEFIELDS                                                \
-	int origin_server_ts;                                                      \
-	char *event_id;                                                            \
-	char *sender;                                                              \
-	char *type
-
+/* Members of all structs are non-nullable unless explicitly mentioned. */
+/* The "base" members of all event structs. */
 struct matrix_state_base {
-	MATRIX_EVENT_BASEFIELDS;
+	char *event_id;
+	char *sender;
+	char *type;
 	char *state_key;
+	int origin_server_ts;
 };
 
 struct matrix_room_base {
-	MATRIX_EVENT_BASEFIELDS;
+	char *event_id;
+	char *sender;
+	char *type;
+	int origin_server_ts;
 };
 
 struct matrix_ephemeral_base {
@@ -39,21 +41,19 @@ struct matrix_ephemeral_base {
 	char *room_id;
 };
 
-#undef MATRIX_EVENT_BASEFIELDS
-
 struct matrix_file_info {
 	int size;
 	char *mimetype; /* nullable. */
 };
 
 struct matrix_room_typing {
-	struct matrix_ephemeral_base base;
 	matrix_json_t *user_ids;
+	struct matrix_ephemeral_base base;
 };
 
 struct matrix_room_canonical_alias {
-	struct matrix_state_base base;
 	char *alias; /* nullable. */
+	struct matrix_state_base base;
 };
 
 struct matrix_room_create {
@@ -104,41 +104,40 @@ struct matrix_room_topic {
 };
 
 struct matrix_room_avatar {
-	struct matrix_file_info info;
 	char *url;
+	struct matrix_file_info info;
 	struct matrix_state_base base;
 };
 
 struct matrix_unknown_state {
+	matrix_json_t *content;
+	matrix_json_t *prev_content; /* nullable. */
 	struct matrix_state_base base;
-	char *content;		/* Raw JSON. */
-	char *prev_content; /* nullable, raw JSON. */
 };
 
 struct matrix_room_message {
-	struct matrix_room_base base;
 	char *body;
 	char *msgtype;
 	char *format;		  /* nullable. */
 	char *formatted_body; /* nullable. */
+	struct matrix_room_base base;
 };
 
 struct matrix_room_redaction {
-	struct matrix_room_base base;
 	char *redacts;
 	char *reason; /* nullable. */
+	struct matrix_room_base base;
 };
 
 struct matrix_room_attachment {
-	struct matrix_room_base base;
 	char *body;
 	char *msgtype;
 	char *url;
 	char *filename;
 	struct matrix_file_info info;
+	struct matrix_room_base base;
 };
 
-/* All members in these structs are non-nullable unless explicitly mentioned. */
 struct matrix_room_summary {
 	int joined_member_count;
 	int invited_member_count;
