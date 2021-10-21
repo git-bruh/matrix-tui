@@ -243,6 +243,7 @@ matrix_sync_forever(struct matrix *matrix, const char *next_batch,
 			if ((code = set_batch(url, &new_buf, &new_len,
 								  GETSTR(parsed, "next_batch"))) !=
 				MATRIX_SUCCESS) {
+				cJSON_Delete(parsed);
 				break;
 			}
 
