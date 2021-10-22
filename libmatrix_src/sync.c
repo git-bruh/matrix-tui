@@ -274,6 +274,29 @@ matrix_sync_timeline_next(struct matrix_room *room,
 			};
 
 			is_valid = !!revent->message.body && !!revent->message.msgtype;
+
+			cJSON *info = cJSON_GetObjectItem(content, "info");
+
+			/* Check if the message is an attachment. */
+			if (info && (STREQ(revent->message.msgtype, "m.image") ||
+						 STREQ(revent->message.msgtype, "m.file") ||
+						 STREQ(revent->message.msgtype, "m.audio") ||
+						 STREQ(revent->message.msgtype, "m.video"))) {
+				revent->type = MATRIX_ROOM_ATTACHMENT;
+				revent->attachment = (struct matrix_room_attachment){
+					.base = base,
+					.body = GETSTR(content, "body"),
+					.msgtype = GETSTR(content, "msgtype"),
+					.url = GETSTR(content, "url"),
+					.filename = GETSTR(content, "filename"),
+					.info = {.size = get_int(info, "size", 0),
+							 .mimetype = GETSTR(info, "mimetype")},
+				};
+
+				is_valid = !!revent->attachment.body &&
+						   !!revent->attachment.msgtype &&
+						   !!revent->attachment.url;
+			}
 		} else if (TYPE(MATRIX_ROOM_REDACTION, "m.room.redaction")) {
 			revent->redaction = (struct matrix_room_redaction){
 				.base = base,
@@ -282,23 +305,6 @@ matrix_sync_timeline_next(struct matrix_room *room,
 			};
 
 			is_valid = !!revent->redaction.redacts;
-		} else if (!TYPE(MATRIX_ROOM_ATTACHMENT, "m.location")) {
-			/* Assume that the event is an attachment. */
-			cJSON *info = cJSON_GetObjectItem(content, "info");
-
-			revent->attachment = (struct matrix_room_attachment){
-				.base = base,
-				.body = GETSTR(content, "body"),
-				.msgtype = GETSTR(content, "msgtype"),
-				.url = GETSTR(content, "url"),
-				.filename = GETSTR(content, "filename"),
-				.info = {.size = get_int(info, "size", 0),
-						 .mimetype = GETSTR(info, "mimetype")},
-			};
-
-			is_valid =
-				!!revent->attachment.body && !!revent->attachment.msgtype &&
-				!!revent->attachment.url && !!revent->attachment.filename;
 		}
 
 		event = room->events[MATRIX_EVENT_TIMELINE] = event->next;

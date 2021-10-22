@@ -132,7 +132,7 @@ struct matrix_room_redaction {
 struct matrix_room_attachment {
 	char *body;
 	char *msgtype;
-	char *url;
+	char *url; /* nullable. */
 	char *filename;
 	struct matrix_file_info info;
 	struct matrix_room_base base;
