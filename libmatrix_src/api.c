@@ -179,12 +179,15 @@ set_batch(char *url, char **new_url, size_t *new_len, const char *next_batch) {
 		strlen(url) + strlen(param_since) + strlen(next_batch) + 1;
 
 	/* Avoid repeated malloc calls if the token length remains the
-	 * same. */
+	 * same. We use malloc + snprintf instead of asprintf for this reason. */
 	if (*new_len != new_len_tmp) {
 		free(*new_url);
-		if (!(*new_url = malloc((*new_len = new_len_tmp)))) {
+
+		if (!(*new_url = malloc(new_len_tmp))) {
 			return MATRIX_NOMEM;
 		}
+
+		*new_len = new_len_tmp;
 	}
 
 	snprintf(*new_url, *new_len, "%s%s%s", url, param_since, next_batch);
