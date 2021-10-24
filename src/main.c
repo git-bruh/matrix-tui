@@ -1,6 +1,7 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
+#include "cJSON.h"
 #include "input.h"
 #include "log.h"
 #include "matrix.h"
@@ -33,8 +34,7 @@ struct state {
 	struct input input;
 };
 
-static const int input_height = 5;
-static const unsigned sync_timeout = 1000;
+enum { input_height = 5, sync_timeout = 1000 };
 
 static void
 redraw(struct state *state) {
@@ -93,16 +93,86 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 	struct matrix_room room;
 
 	while ((matrix_sync_next(response, &room)) == MATRIX_SUCCESS) {
+		printf("Events for room (%s)\n", room.id);
+
+		struct matrix_state_event sevent;
+
+		while ((matrix_sync_next(&room, &sevent)) == MATRIX_SUCCESS) {
+			switch (sevent.type) {
+			case MATRIX_ROOM_MEMBER:
+				printf("(%s) => Membership (%s)\n", sevent.member.base.sender,
+					   sevent.member.membership);
+				break;
+			case MATRIX_ROOM_POWER_LEVELS:
+				break;
+			case MATRIX_ROOM_CANONICAL_ALIAS:
+				printf("Canonical Alias => (%s)\n",
+					   sevent.canonical_alias.alias
+						   ? sevent.canonical_alias.alias
+						   : "");
+				break;
+			case MATRIX_ROOM_CREATE:
+				printf("Created => Creator (%s), Version (%s), Federate (%d)\n",
+					   sevent.create.creator, sevent.create.room_version,
+					   sevent.create.federate);
+				break;
+			case MATRIX_ROOM_JOIN_RULES:
+				printf("Join Rule => (%s)\n", sevent.join_rules.join_rule);
+				break;
+			case MATRIX_ROOM_NAME:
+				printf("Name => (%s)\n", sevent.name.name);
+				break;
+			case MATRIX_ROOM_TOPIC:
+				printf("Topic => (%s)\n", sevent.topic.topic);
+				break;
+			case MATRIX_ROOM_AVATAR:
+				printf("Avatar => (%s)\n", sevent.avatar.url);
+				break;
+			case MATRIX_ROOM_UNKNOWN_STATE:
+				break;
+			default:
+				assert(0);
+			}
+		}
+
 		struct matrix_timeline_event tevent;
 
 		while ((matrix_sync_next(&room, &tevent)) == MATRIX_SUCCESS) {
 			switch (tevent.type) {
 			case MATRIX_ROOM_MESSAGE:
+				printf("(%s) => (%s)\n", tevent.message.base.sender,
+					   tevent.message.body);
 				break;
 			case MATRIX_ROOM_REDACTION:
+				printf("(%s) redacted by (%s) for (%s)\n",
+					   tevent.redaction.redacts, tevent.redaction.base.event_id,
+					   tevent.redaction.reason ? tevent.redaction.reason : "");
 				break;
 			case MATRIX_ROOM_ATTACHMENT:
+				printf("File (%s), URL (%s), Msgtype (%s), Size (%u)\n",
+					   tevent.attachment.body, tevent.attachment.url,
+					   tevent.attachment.msgtype, tevent.attachment.info.size);
 				break;
+			default:
+				assert(0);
+			}
+		}
+
+		struct matrix_ephemeral_event eevent;
+
+		while ((matrix_sync_next(&room, &eevent)) == MATRIX_SUCCESS) {
+			switch (eevent.type) {
+			case MATRIX_ROOM_TYPING: {
+				cJSON *user_id = NULL;
+
+				cJSON_ArrayForEach(user_id, eevent.typing.user_ids) {
+					char *uid = cJSON_GetStringValue(user_id);
+
+					if (uid) {
+						printf("(%s) => Typing\n", uid);
+					}
+				}
+			} break;
 			default:
 				assert(0);
 			}
@@ -178,7 +248,7 @@ main() {
 				/* Loop until Ctrl+C */
 			}
 #endif
-			switch ((matrix_sync_forever(state.matrix, sync_timeout))) {
+			switch ((matrix_sync_forever(state.matrix, NULL, sync_timeout))) {
 			case MATRIX_NOMEM:
 				(void) ERRLOG(0, "Out of memory!");
 				break;
