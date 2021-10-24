@@ -278,10 +278,11 @@ matrix_sync_timeline_next(struct matrix_room *room,
 			cJSON *info = cJSON_GetObjectItem(content, "info");
 
 			/* Check if the message is an attachment. */
-			if (info && (STREQ(revent->message.msgtype, "m.image") ||
-						 STREQ(revent->message.msgtype, "m.file") ||
-						 STREQ(revent->message.msgtype, "m.audio") ||
-						 STREQ(revent->message.msgtype, "m.video"))) {
+			if (is_valid && info &&
+				(STREQ(revent->message.msgtype, "m.image") ||
+				 STREQ(revent->message.msgtype, "m.file") ||
+				 STREQ(revent->message.msgtype, "m.audio") ||
+				 STREQ(revent->message.msgtype, "m.video"))) {
 				revent->type = MATRIX_ROOM_ATTACHMENT;
 				revent->attachment = (struct matrix_room_attachment){
 					.base = base,
