@@ -9,6 +9,7 @@ BIN = client
 XCFLAGS = \
 	$(CFLAGS_COMMON) -Wcast-qual -Wconversion -Wpointer-arith \
 	-Wunused-macros -Wredundant-decls \
+	-DTB_OPT_TRUECOLOR \
 	-DCLIENT_NAME=\"matrix-client\"
 
 LDLIBS = `curl-config --libs` -lpthread
@@ -18,7 +19,7 @@ INCLUDES = \
 	-isystem third_party/cJSON \
 	-isystem third_party/log.c/src \
 	-isystem third_party/stb \
-	-isystem third_party/termbox/src
+	-isystem third_party/termbox2
 
 OBJ = \
 	src/buffer.o \

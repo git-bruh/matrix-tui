@@ -91,7 +91,7 @@ input_finish(struct input *input) {
 
 void
 input_redraw(struct input *input) {
-	tb_clear_buffer();
+	tb_clear();
 
 	int cur_x = 0, cur_line = 1, lines = 1;
 
@@ -182,7 +182,7 @@ input_redraw(struct input *input) {
 
 		/* Don't print newlines directly as they mess up the screen. */
 		if (!should_forcebreak(width)) {
-			tb_char(x, y, TB_DEFAULT, TB_DEFAULT, uc);
+			tb_set_cell(x, y, uc, TB_DEFAULT, TB_DEFAULT);
 		}
 
 		line += adjust_xy(width, &x, &y);
@@ -206,25 +206,25 @@ input_event(struct tb_event event, struct input *input) {
 	case TB_KEY_SPACE:
 		return buffer_add(&input->buffer, ' ');
 	case TB_KEY_ENTER:
-		if (event.meta == TB_META_ALTCTRL) {
+		if (event.mod == TB_MOD_ALT) {
 			return buffer_add(&input->buffer, '\n');
 		}
 
 		return INPUT_NOOP;
 	case TB_KEY_BACKSPACE:
-		if (event.meta == TB_META_ALT) {
+		if (event.mod == TB_MOD_CTRL) {
 			return buffer_delete_word(&input->buffer);
 		}
 
 		return buffer_delete(&input->buffer);
 	case TB_KEY_ARROW_RIGHT:
-		if (event.meta == TB_META_CTRL) {
+		if (event.mod == TB_MOD_CTRL) {
 			return buffer_right_word(&input->buffer);
 		}
 
 		return buffer_right(&input->buffer);
 	case TB_KEY_ARROW_LEFT:
-		if (event.meta == TB_META_CTRL) {
+		if (event.mod == TB_MOD_CTRL) {
 			return buffer_left_word(&input->buffer);
 		}
 

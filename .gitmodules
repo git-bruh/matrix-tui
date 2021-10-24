@@ -1,12 +1,9 @@
-[submodule "third_party/termbox"]
-	path = third_party/termbox
-	url = https://github.com/tomas/termbox
 [submodule "third_party/cJSON"]
 	path = third_party/cJSON
 	url = https://github.com/DaveGamble/cJSON
-[submodule "third_party/stb"]
-	path = third_party/stb
-	url = https://github.com/nothings/stb
 [submodule "third_party/log.c"]
 	path = third_party/log.c
 	url = https://github.com/rxi/log.c
+[submodule "third_party/termbox2"]
+	path = third_party/termbox2
+	url = https://github.com/termbox/termbox2

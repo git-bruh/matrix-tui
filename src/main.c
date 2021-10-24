@@ -39,7 +39,7 @@ enum { input_height = 5, sync_timeout = 1000 };
 static void
 redraw(struct state *state) {
 	input_redraw(&state->input);
-	tb_render();
+	tb_present();
 }
 
 static void
