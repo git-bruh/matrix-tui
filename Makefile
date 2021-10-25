@@ -23,7 +23,6 @@ INCLUDES = \
 
 OBJ = \
 	src/build_headerlibs.o \
-	src/buffer.o \
 	src/input.o \
 	src/main.o \
 	libmatrix_src/api.o \

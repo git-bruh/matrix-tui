@@ -2,14 +2,19 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "input.h"
+#include "stb_ds.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
+#include <wctype.h>
 
-static const int ch_width = 2; /* Max width of a character. */
+enum {
+	buf_max = 2000,
+	ch_width = 2, /* Max width of a character. */
+};
 
 static uint32_t
 uc_sanitize(uint32_t uc, int *width) {
@@ -40,7 +45,7 @@ should_forcebreak(int width) {
 
 static bool
 should_scroll(int x, int width) {
-	return (x >= (tb_width() - width) || should_forcebreak(width));
+	return (x >= ((tb_width()) - width) || (should_forcebreak(width)));
 }
 
 /* Returns the number of times y was advanced. */
@@ -48,13 +53,13 @@ static int
 adjust_xy(int width, int *x, int *y) {
 	int original_y = *y;
 
-	if (should_scroll(*x, width)) {
+	if ((should_scroll(*x, width))) {
 		*x = 0;
 		(*y)++;
 	}
 
 	/* Newline, already scrolled. */
-	if (should_forcebreak(width)) {
+	if ((should_forcebreak(width))) {
 		return *y - original_y;
 	}
 
@@ -62,7 +67,7 @@ adjust_xy(int width, int *x, int *y) {
 
 	/* We must accomodate for another character to move the cursor to the next
 	 * line, which prevents us from adding an unreachable character. */
-	if (should_scroll(*x, ch_width)) {
+	if ((should_scroll(*x, ch_width))) {
 		*x = 0;
 		(*y)++;
 	}
@@ -72,20 +77,14 @@ adjust_xy(int width, int *x, int *y) {
 
 int
 input_init(struct input *input, int input_height) {
-	if ((buffer_init(&input->buffer)) == -1) {
-		return -1;
-	}
-
-	input->max_height = input_height;
-	input->last_cur_line = 1;
+	*input = (struct input){.max_height = input_height, .last_cur_line = 1};
 
 	return 0;
 }
 
 void
 input_finish(struct input *input) {
-	buffer_finish(&input->buffer);
-
+	arrfree(input->buf);
 	memset(input, 0, sizeof(*input));
 }
 
@@ -93,17 +92,19 @@ void
 input_redraw(struct input *input) {
 	tb_clear();
 
+	size_t buf_len = arrlenu(input->buf);
+
 	int cur_x = 0, cur_line = 1, lines = 1;
 
 	{
 		int x = 0, y = 0, width = 0;
 
-		for (size_t written = 0; written < input->buffer.len; written++) {
-			uc_sanitize(input->buffer.buf[written], &width);
+		for (size_t written = 0; written < buf_len; written++) {
+			uc_sanitize(input->buf[written], &width);
 
 			lines += adjust_xy(width, &x, &y);
 
-			if ((written + 1) == input->buffer.cur) {
+			if ((written + 1) == input->cur_buf) {
 				cur_x = x;
 				cur_line = lines;
 			}
@@ -155,12 +156,12 @@ input_redraw(struct input *input) {
 	uint32_t uc = 0;
 
 	/* Calculate starting index. */
-	for (int x = 0, y = 0; written < input->buffer.len; written++) {
+	for (int x = 0, y = 0; written < buf_len; written++) {
 		if (line == input->line_off) {
 			break;
 		}
 
-		uc_sanitize(input->buffer.buf[written], &width);
+		uc_sanitize(input->buf[written], &width);
 
 		line += adjust_xy(width, &x, &y);
 	}
@@ -170,7 +171,7 @@ input_redraw(struct input *input) {
 
 	tb_set_cursor(cur_x, y + input->cur_y);
 
-	while (written < input->buffer.len) {
+	while (written < buf_len) {
 		if (line >= lines) {
 			break;
 		}
@@ -178,7 +179,7 @@ input_redraw(struct input *input) {
 		assert(y < tb_height());
 		assert((tb_height() - y) <= input->max_height);
 
-		uc = uc_sanitize(input->buffer.buf[written++], &width);
+		uc = uc_sanitize(input->buf[written++], &width);
 
 		/* Don't print newlines directly as they mess up the screen. */
 		if (!should_forcebreak(width)) {
@@ -196,40 +197,132 @@ input_set_initial_cursor(struct input *input) {
 	tb_set_cursor(0, tb_height() - 1);
 }
 
+static enum input_error
+buf_add(struct input *input, uint32_t ch) {
+	if (((arrlenu(input->buf)) + 1) >= buf_max) {
+		return INPUT_NOOP;
+	}
+
+	arrins(input->buf, input->cur_buf, ch);
+	input->cur_buf++;
+
+	return INPUT_NEED_REDRAW;
+}
+
+static enum input_error
+buf_left(struct input *input) {
+	if (input->cur_buf > 0) {
+		input->cur_buf--;
+
+		return INPUT_NEED_REDRAW;
+	}
+
+	return INPUT_NOOP;
+}
+
+static enum input_error
+buf_leftword(struct input *input) {
+	if (input->cur_buf > 0) {
+		do {
+			input->cur_buf--;
+		} while (input->cur_buf > 0 &&
+				 ((iswspace((wint_t) input->buf[input->cur_buf])) ||
+				  !(iswspace((wint_t) input->buf[input->cur_buf - 1]))));
+
+		return INPUT_NEED_REDRAW;
+	}
+
+	return INPUT_NOOP;
+}
+
+static enum input_error
+buf_right(struct input *input) {
+	if (input->cur_buf < arrlenu(input->buf)) {
+		input->cur_buf++;
+
+		return INPUT_NEED_REDRAW;
+	}
+
+	return INPUT_NOOP;
+}
+
+static enum input_error
+buf_rightword(struct input *input) {
+	size_t buf_len = arrlenu(input->buf);
+
+	if (input->cur_buf < buf_len) {
+		do {
+			input->cur_buf++;
+		} while (input->cur_buf < buf_len &&
+				 !((iswspace((wint_t) input->buf[input->cur_buf])) &&
+				   !(iswspace((wint_t) input->buf[input->cur_buf - 1]))));
+
+		return INPUT_NEED_REDRAW;
+	}
+
+	return INPUT_NOOP;
+}
+
+static enum input_error
+buf_del(struct input *input) {
+	if (input->cur_buf > 0) {
+		--input->cur_buf;
+
+		arrdel(input->buf, input->cur_buf);
+
+		return INPUT_NEED_REDRAW;
+	}
+
+	return INPUT_NOOP;
+}
+
+static enum input_error
+buf_delword(struct input *input) {
+	size_t original_cur = input->cur_buf;
+
+	if ((buf_leftword(input)) == INPUT_NEED_REDRAW) {
+		arrdeln(input->buf, input->cur_buf, original_cur - input->cur_buf);
+
+		return INPUT_NEED_REDRAW;
+	}
+
+	return INPUT_NOOP;
+}
+
 enum input_error
 input_event(struct tb_event event, struct input *input) {
 	if (!event.key && event.ch) {
-		return buffer_add(&input->buffer, event.ch);
+		return buf_add(input, event.ch);
 	}
 
 	switch (event.key) {
 	case TB_KEY_SPACE:
-		return buffer_add(&input->buffer, ' ');
+		return buf_add(input, ' ');
 	case TB_KEY_ENTER:
 		if (event.mod & TB_MOD_ALT) {
-			return buffer_add(&input->buffer, '\n');
+			return buf_add(input, '\n');
 		}
 
 		return INPUT_NOOP;
 	case TB_KEY_BACKSPACE:
 	case TB_KEY_BACKSPACE2:
 		if (event.mod & TB_MOD_ALT) {
-			return buffer_delete_word(&input->buffer);
+			return buf_delword(input);
 		}
 
-		return buffer_delete(&input->buffer);
+		return buf_del(input);
 	case TB_KEY_ARROW_RIGHT:
 		if (event.mod & TB_MOD_ALT) {
-			return buffer_right_word(&input->buffer);
+			return buf_rightword(input);
 		}
 
-		return buffer_right(&input->buffer);
+		return buf_right(input);
 	case TB_KEY_ARROW_LEFT:
 		if (event.mod & TB_MOD_ALT) {
-			return buffer_left_word(&input->buffer);
+			return buf_leftword(input);
 		}
 
-		return buffer_left(&input->buffer);
+		return buf_left(input);
 	case TB_KEY_CTRL_C:
 		return INPUT_GOT_SHUTDOWN;
 	default:
