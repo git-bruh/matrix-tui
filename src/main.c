@@ -62,7 +62,7 @@ input(struct state *state) {
 
 	struct tb_event event = {0};
 
-	while ((tb_peek_event(&event, 0)) != -1) {
+	while ((tb_poll_event(&event)) != -1) {
 		switch (event.type) {
 		case TB_EVENT_KEY:
 			switch ((input_event(event, &state->input))) {
