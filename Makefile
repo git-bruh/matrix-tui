@@ -22,6 +22,7 @@ INCLUDES = \
 	-isystem third_party/termbox2
 
 OBJ = \
+	src/build_headerlibs.o \
 	src/buffer.o \
 	src/input.o \
 	src/main.o \

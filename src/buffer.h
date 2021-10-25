@@ -10,11 +10,6 @@ struct buffer {
 	size_t cur, len;
 };
 
-enum {
-	BUFFER_FAIL = -1,
-	BUFFER_SUCCESS,
-};
-
 int
 buffer_init(struct buffer *buffer);
 void

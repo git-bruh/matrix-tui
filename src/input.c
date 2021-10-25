@@ -196,7 +196,7 @@ input_set_initial_cursor(struct input *input) {
 	tb_set_cursor(0, tb_height() - 1);
 }
 
-int
+enum input_error
 input_event(struct tb_event event, struct input *input) {
 	if (!event.key && event.ch) {
 		return buffer_add(&input->buffer, event.ch);
@@ -206,25 +206,26 @@ input_event(struct tb_event event, struct input *input) {
 	case TB_KEY_SPACE:
 		return buffer_add(&input->buffer, ' ');
 	case TB_KEY_ENTER:
-		if (event.mod == TB_MOD_ALT) {
+		if (event.mod & TB_MOD_ALT) {
 			return buffer_add(&input->buffer, '\n');
 		}
 
 		return INPUT_NOOP;
 	case TB_KEY_BACKSPACE:
-		if (event.mod == TB_MOD_CTRL) {
+	case TB_KEY_BACKSPACE2:
+		if (event.mod & TB_MOD_ALT) {
 			return buffer_delete_word(&input->buffer);
 		}
 
 		return buffer_delete(&input->buffer);
 	case TB_KEY_ARROW_RIGHT:
-		if (event.mod == TB_MOD_CTRL) {
+		if (event.mod & TB_MOD_ALT) {
 			return buffer_right_word(&input->buffer);
 		}
 
 		return buffer_right(&input->buffer);
 	case TB_KEY_ARROW_LEFT:
-		if (event.mod == TB_MOD_CTRL) {
+		if (event.mod & TB_MOD_ALT) {
 			return buffer_left_word(&input->buffer);
 		}
 

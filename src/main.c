@@ -44,31 +44,32 @@ redraw(struct state *state) {
 
 static void
 cleanup(struct state *state) {
-#if 0
 	input_finish(&state->input);
-#endif
 	matrix_destroy(state->matrix);
 
-#if 0
 	tb_shutdown();
-#endif
 	matrix_global_cleanup();
 
-	fclose(state->log_fp);
+	if (state->log_fp) {
+		fclose(state->log_fp);
+	}
 }
 
-static bool
+static void
 input(struct state *state) {
+	input_set_initial_cursor(&state->input);
+	redraw(state);
+
 	struct tb_event event = {0};
 
-	if ((tb_peek_event(&event, 0)) != -1) {
+	while ((tb_peek_event(&event, 0)) != -1) {
 		switch (event.type) {
 		case TB_EVENT_KEY:
 			switch ((input_event(event, &state->input))) {
 			case INPUT_NOOP:
 				break;
 			case INPUT_GOT_SHUTDOWN:
-				return false;
+				return;
 			case INPUT_NEED_REDRAW:
 				redraw(state);
 				break;
@@ -84,8 +85,6 @@ input(struct state *state) {
 			break;
 		}
 	}
-
-	return true;
 }
 
 static void
@@ -190,64 +189,24 @@ main() {
 
 	struct state state = {0};
 
-	{
-		FILE *log_fp = fopen(LOG_PATH, "w");
-
-		if (ERRLOG(log_fp, "Failed to open log file '" LOG_PATH "'.")) {
-			return EXIT_FAILURE;
-		}
-
-#if 0
-		bool success = false;
-
-		switch ((tb_init())) {
-		case TB_EUNSUPPORTED_TERMINAL:
-			ERRLOG(0, "Unsupported terminal. Is TERM set ?");
-			break;
-		case TB_EFAILED_TO_OPEN_TTY:
-			ERRLOG(0, "Failed to open TTY.");
-			break;
-		case TB_EPIPE_TRAP_ERROR:
-			ERRLOG(0, "Failed to create pipe.");
-			break;
-		case 0:
-			success = true;
-			break;
-		default:
-			assert(0);
-		}
-
-		if (!success) {
-			fclose(log_fp);
-			return EXIT_FAILURE;
-		}
-#endif
-
-		state.log_fp = log_fp;
-	}
-
-	if (!ERRLOG(log_add_fp(state.log_fp, LOG_TRACE) == 0,
+	if (!ERRLOG(state.log_fp = fopen(LOG_PATH, "w"),
+				"Failed to open log file '" LOG_PATH "'.") &&
+		!ERRLOG(tb_init() == TB_OK, "Failed to initialize termbox.") &&
+		!ERRLOG(tb_set_input_mode(TB_INPUT_ALT) == TB_OK,
+				"Failed to set input mode.") &&
+		!ERRLOG(log_add_fp(state.log_fp, LOG_TRACE) == 0,
 				"Failed to initialize logging callbacks.") &&
 		!ERRLOG(matrix_global_init() == 0,
 				"Failed to initialize matrix globals.") &&
-#if 0
 		!ERRLOG(input_init(&state.input, input_height) == 0,
-					 "Failed to initialize input layer.") &&
-#endif
+				"Failed to initialize input UI.") &&
 		!ERRLOG(state.matrix = matrix_alloc(sync_cb, MXID, HOMESERVER, &state),
-				"Failed to initialize libmatrix.")) {
-#if 0
-		input_set_initial_cursor(&state.input);
-		redraw(&state);
-#endif
+				"Failed to initialize libmatrix.") &&
+		!ERRLOG(matrix_login(state.matrix, PASS, NULL) == MATRIX_SUCCESS,
+				"Failed to login.")) {
+		input(&state);
 
-		if (!ERRLOG(matrix_login(state.matrix, PASS, NULL) == MATRIX_SUCCESS,
-					"Failed to login.")) {
 #if 0
-			while ((input(&state))) {
-				/* Loop until Ctrl+C */
-			}
-#endif
 			switch ((matrix_sync_forever(state.matrix, NULL, sync_timeout))) {
 			case MATRIX_NOMEM:
 				(void) ERRLOG(0, "Out of memory!");
@@ -258,10 +217,10 @@ main() {
 			default:
 				break;
 			}
+#endif
 
-			cleanup(&state);
-			return EXIT_SUCCESS;
-		}
+		cleanup(&state);
+		return EXIT_SUCCESS;
 	}
 
 	cleanup(&state);

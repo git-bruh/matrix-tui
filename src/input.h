@@ -15,7 +15,7 @@ struct input {
 	int cur_y; /* y co-ordinate relative to the input field (not window). */
 };
 
-enum input_action {
+enum input_error {
 	INPUT_GOT_SHUTDOWN = -2,
 	INPUT_NOOP,
 	INPUT_NEED_REDRAW,
