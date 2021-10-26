@@ -10,6 +10,10 @@
 
 /* Get the value of a key from an object. */
 #define GETSTR(obj, key) (cJSON_GetStringValue(cJSON_GetObjectItem(obj, key)))
+/* Set a key with a value if val is non-NULL and check whether the operation was
+ * successful. */
+#define ADDSTR(obj, key, val)                                                  \
+	(val ? (!!(cJSON_AddStringToObject(obj, key, val))) : true)
 
 struct matrix {
 	char *access_token;

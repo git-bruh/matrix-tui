@@ -281,8 +281,8 @@ matrix_login_with_token(struct matrix *matrix, const char *access_token) {
 }
 
 enum matrix_code
-matrix_login(struct matrix *matrix, const char *password,
-			 const char *device_id) {
+matrix_login(struct matrix *matrix, const char *password, const char *device_id,
+			 const char *initial_device_display_name) {
 	if (!password) {
 		return MATRIX_INVALID_ARGUMENT;
 	}
@@ -298,10 +298,13 @@ matrix_login(struct matrix *matrix, const char *password,
 
 	if ((json = cJSON_CreateObject()) &&
 		(identifier = cJSON_AddObjectToObject(json, "identifier")) &&
-		(cJSON_AddStringToObject(json, "type", "m.login.password")) &&
-		(cJSON_AddStringToObject(json, "password", password)) &&
-		(cJSON_AddStringToObject(identifier, "type", "m.id.user")) &&
-		(cJSON_AddStringToObject(identifier, "user", matrix->mxid)) &&
+		(ADDSTR(json, "device_id", device_id)) &&
+		(ADDSTR(json, "initial_device_display_name",
+				initial_device_display_name)) &&
+		(ADDSTR(json, "type", "m.login.password")) &&
+		(ADDSTR(json, "password", password)) &&
+		(ADDSTR(identifier, "type", "m.id.user")) &&
+		(ADDSTR(identifier, "user", matrix->mxid)) &&
 		(code = perform(matrix, json, POST, "/login", NULL, &response)) ==
 			MATRIX_SUCCESS) {
 		cJSON *parsed = cJSON_Parse(response.data);
