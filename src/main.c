@@ -202,21 +202,21 @@ main() {
 				"Failed to initialize input UI.") &&
 		!ERRLOG(state.matrix = matrix_alloc(sync_cb, MXID, HOMESERVER, &state),
 				"Failed to initialize libmatrix.") &&
-		!ERRLOG(matrix_login(state.matrix, PASS, NULL) == MATRIX_SUCCESS,
+		!ERRLOG(matrix_login(state.matrix, PASS, NULL, NULL) == MATRIX_SUCCESS,
 				"Failed to login.")) {
 		input(&state);
 
 #if 0
-			switch ((matrix_sync_forever(state.matrix, NULL, sync_timeout))) {
-			case MATRIX_NOMEM:
-				(void) ERRLOG(0, "Out of memory!");
-				break;
-			case MATRIX_CURL_FAILURE:
-				(void) ERRLOG(0, "Lost connection to homeserver.");
-				break;
-			default:
-				break;
-			}
+		switch ((matrix_sync_forever(state.matrix, NULL, sync_timeout))) {
+		case MATRIX_NOMEM:
+			(void) ERRLOG(0, "Out of memory!");
+			break;
+		case MATRIX_CURL_FAILURE:
+			(void) ERRLOG(0, "Lost connection to homeserver.");
+			break;
+		default:
+			break;
+		}
 #endif
 
 		cleanup(&state);

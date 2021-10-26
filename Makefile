@@ -60,13 +60,7 @@ format:
 	clang-format -i ./*src/*.[hc]
 
 tidy:
-	clang-tidy ./*src/*.[hc] -- $(XCFLAGS) $(INCLUDES) \
-		-DNDEBUG # Prevent assertions from increasing cognitive complexity.
-
-iwyu:
-	for src in ./*src/*.c; do \
-		include-what-you-use $$src $(XCFLAGS) $(INCLUDES) ||:; \
-	done
+	clang-tidy ./*src/*.[hc] -- $(XCFLAGS) $(INCLUDES)
 
 clean:
 	rm -f $(BIN) $(OBJ)

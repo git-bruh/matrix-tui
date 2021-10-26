@@ -12,8 +12,11 @@
 #define GETSTR(obj, key) (cJSON_GetStringValue(cJSON_GetObjectItem(obj, key)))
 /* Set a key with a value if val is non-NULL and check whether the operation was
  * successful. */
+/* const char cast to make clang-tidy shut up about evaluating string literal as
+ * bool. */
 #define ADDSTR(obj, key, val)                                                  \
-	(val ? (!!(cJSON_AddStringToObject(obj, key, val))) : true)
+	(!!((const char *) (val)) ? (!!(cJSON_AddStringToObject(obj, key, val)))   \
+							  : true)
 
 struct matrix {
 	char *access_token;
