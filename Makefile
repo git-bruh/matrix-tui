@@ -1,15 +1,22 @@
 .POSIX:
 
-.PHONY: third_party format tidy clean
-
-include common.mk
+.PHONY: format tidy clean
 
 BIN = client
 
 XCFLAGS = \
-	$(CFLAGS_COMMON) -Wcast-qual -Wconversion -Wpointer-arith \
+	$(CFLAGS) $(CPPFLAGS) -O3 -std=c11 \
+	-D_GNU_SOURCE -D_FORTIFY_SOURCE=2 \
+	-flto -fstack-protector-strong --param=ssp-buffer-size=4 \
+	-Wall -Wextra -Wpedantic -Wwrite-strings \
+	-Wshadow -Wnull-dereference -Wformat=2 \
+	-Werror=implicit-function-declaration \
+	-Werror=incompatible-pointer-types \
+	-Werror=discarded-qualifiers \
+	-Werror=ignored-qualifiers \
+	-Wcast-qual -Wconversion -Wpointer-arith \
 	-Wunused-macros -Wredundant-decls \
-	-DTB_OPT_TRUECOLOR \
+	-DLOG_USE_COLOR \
 	-DCLIENT_NAME=\"matrix-client\"
 
 LDLIBS = `curl-config --libs` -lpthread
@@ -22,25 +29,23 @@ INCLUDES = \
 	-isystem third_party/termbox2
 
 OBJ = \
-	src/build_headerlibs.o \
+	src/header_libs.o \
 	src/input.o \
 	src/main.o \
 	libmatrix_src/api.o \
 	libmatrix_src/matrix.o \
 	libmatrix_src/sync.o \
-	libmatrix_src/utils.o
+	libmatrix_src/utils.o \
+	third_party/cJSON/cJSON.o \
+	third_party/log.c/src/log.o
 
 all: release
 
 .c.o:
 	$(CC) $(XCFLAGS) $(INCLUDES) $(CPPFLAGS) -c $< -o $@
 
-# Makefile pattern matching isn't portable so we must use this hack :(
-third_party:
-	$(MAKE) -f third_party.mk
-
-$(BIN): $(OBJ) third_party
-	$(CC) $(XCFLAGS) -o $@ $(OBJ) $(THIRD_PARTY_OBJ) $(LDLIBS) $(LDFLAGS)
+$(BIN): $(OBJ)
+	$(CC) $(XCFLAGS) -o $@ $(OBJ) $(LDLIBS) $(LDFLAGS)
 
 release:
 	$(MAKE) $(BIN) \
@@ -64,4 +69,3 @@ tidy:
 
 clean:
 	rm -f $(BIN) $(OBJ)
-	$(MAKE) -f third_party.mk clean
