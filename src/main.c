@@ -62,10 +62,10 @@ input(struct state *state) {
 
 	struct tb_event event = {0};
 
-	while ((tb_poll_event(&event)) != -1) {
+	while ((tb_poll_event(&event)) != TB_ERR) {
 		switch (event.type) {
 		case TB_EVENT_KEY:
-			switch ((input_event(event, &state->input))) {
+			switch ((input_event(&event, &state->input))) {
 			case INPUT_NOOP:
 				break;
 			case INPUT_GOT_SHUTDOWN:

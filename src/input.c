@@ -75,6 +75,98 @@ adjust_xy(int width, int *x, int *y) {
 	return *y - original_y;
 }
 
+static enum input_error
+buf_add(struct input *input, uint32_t ch) {
+	if (((arrlenu(input->buf)) + 1) >= buf_max) {
+		return INPUT_NOOP;
+	}
+
+	arrins(input->buf, input->cur_buf, ch);
+	input->cur_buf++;
+
+	return INPUT_NEED_REDRAW;
+}
+
+static enum input_error
+buf_left(struct input *input) {
+	if (input->cur_buf > 0) {
+		input->cur_buf--;
+
+		return INPUT_NEED_REDRAW;
+	}
+
+	return INPUT_NOOP;
+}
+
+static enum input_error
+buf_leftword(struct input *input) {
+	if (input->cur_buf > 0) {
+		do {
+			input->cur_buf--;
+		} while (input->cur_buf > 0 &&
+				 ((iswspace((wint_t) input->buf[input->cur_buf])) ||
+				  !(iswspace((wint_t) input->buf[input->cur_buf - 1]))));
+
+		return INPUT_NEED_REDRAW;
+	}
+
+	return INPUT_NOOP;
+}
+
+static enum input_error
+buf_right(struct input *input) {
+	if (input->cur_buf < arrlenu(input->buf)) {
+		input->cur_buf++;
+
+		return INPUT_NEED_REDRAW;
+	}
+
+	return INPUT_NOOP;
+}
+
+static enum input_error
+buf_rightword(struct input *input) {
+	size_t buf_len = arrlenu(input->buf);
+
+	if (input->cur_buf < buf_len) {
+		do {
+			input->cur_buf++;
+		} while (input->cur_buf < buf_len &&
+				 !((iswspace((wint_t) input->buf[input->cur_buf])) &&
+				   !(iswspace((wint_t) input->buf[input->cur_buf - 1]))));
+
+		return INPUT_NEED_REDRAW;
+	}
+
+	return INPUT_NOOP;
+}
+
+static enum input_error
+buf_del(struct input *input) {
+	if (input->cur_buf > 0) {
+		--input->cur_buf;
+
+		arrdel(input->buf, input->cur_buf);
+
+		return INPUT_NEED_REDRAW;
+	}
+
+	return INPUT_NOOP;
+}
+
+static enum input_error
+buf_delword(struct input *input) {
+	size_t original_cur = input->cur_buf;
+
+	if ((buf_leftword(input)) == INPUT_NEED_REDRAW) {
+		arrdeln(input->buf, input->cur_buf, original_cur - input->cur_buf);
+
+		return INPUT_NEED_REDRAW;
+	}
+
+	return INPUT_NOOP;
+}
+
 int
 input_init(struct input *input, int input_height) {
 	*input = (struct input){.max_height = input_height, .last_cur_line = 1};
@@ -197,128 +289,34 @@ input_set_initial_cursor(struct input *input) {
 	tb_set_cursor(0, tb_height() - 1);
 }
 
-static enum input_error
-buf_add(struct input *input, uint32_t ch) {
-	if (((arrlenu(input->buf)) + 1) >= buf_max) {
-		return INPUT_NOOP;
-	}
-
-	arrins(input->buf, input->cur_buf, ch);
-	input->cur_buf++;
-
-	return INPUT_NEED_REDRAW;
-}
-
-static enum input_error
-buf_left(struct input *input) {
-	if (input->cur_buf > 0) {
-		input->cur_buf--;
-
-		return INPUT_NEED_REDRAW;
-	}
-
-	return INPUT_NOOP;
-}
-
-static enum input_error
-buf_leftword(struct input *input) {
-	if (input->cur_buf > 0) {
-		do {
-			input->cur_buf--;
-		} while (input->cur_buf > 0 &&
-				 ((iswspace((wint_t) input->buf[input->cur_buf])) ||
-				  !(iswspace((wint_t) input->buf[input->cur_buf - 1]))));
-
-		return INPUT_NEED_REDRAW;
-	}
-
-	return INPUT_NOOP;
-}
-
-static enum input_error
-buf_right(struct input *input) {
-	if (input->cur_buf < arrlenu(input->buf)) {
-		input->cur_buf++;
-
-		return INPUT_NEED_REDRAW;
-	}
-
-	return INPUT_NOOP;
-}
-
-static enum input_error
-buf_rightword(struct input *input) {
-	size_t buf_len = arrlenu(input->buf);
-
-	if (input->cur_buf < buf_len) {
-		do {
-			input->cur_buf++;
-		} while (input->cur_buf < buf_len &&
-				 !((iswspace((wint_t) input->buf[input->cur_buf])) &&
-				   !(iswspace((wint_t) input->buf[input->cur_buf - 1]))));
-
-		return INPUT_NEED_REDRAW;
-	}
-
-	return INPUT_NOOP;
-}
-
-static enum input_error
-buf_del(struct input *input) {
-	if (input->cur_buf > 0) {
-		--input->cur_buf;
-
-		arrdel(input->buf, input->cur_buf);
-
-		return INPUT_NEED_REDRAW;
-	}
-
-	return INPUT_NOOP;
-}
-
-static enum input_error
-buf_delword(struct input *input) {
-	size_t original_cur = input->cur_buf;
-
-	if ((buf_leftword(input)) == INPUT_NEED_REDRAW) {
-		arrdeln(input->buf, input->cur_buf, original_cur - input->cur_buf);
-
-		return INPUT_NEED_REDRAW;
-	}
-
-	return INPUT_NOOP;
-}
-
 enum input_error
-input_event(struct tb_event event, struct input *input) {
-	if (!event.key && event.ch) {
-		return buf_add(input, event.ch);
+input_event(struct tb_event *event, struct input *input) {
+	if (!event->key && event->ch) {
+		return buf_add(input, event->ch);
 	}
 
-	switch (event.key) {
-	case TB_KEY_SPACE:
-		return buf_add(input, ' ');
+	switch (event->key) {
 	case TB_KEY_ENTER:
-		if (event.mod & TB_MOD_ALT) {
+		if (event->mod & TB_MOD_ALT) {
 			return buf_add(input, '\n');
 		}
 
 		return INPUT_NOOP;
 	case TB_KEY_BACKSPACE:
 	case TB_KEY_BACKSPACE2:
-		if (event.mod & TB_MOD_ALT) {
+		if (event->mod & TB_MOD_ALT) {
 			return buf_delword(input);
 		}
 
 		return buf_del(input);
 	case TB_KEY_ARROW_RIGHT:
-		if (event.mod & TB_MOD_ALT) {
+		if (event->mod & TB_MOD_ALT) {
 			return buf_rightword(input);
 		}
 
 		return buf_right(input);
 	case TB_KEY_ARROW_LEFT:
-		if (event.mod & TB_MOD_ALT) {
+		if (event->mod & TB_MOD_ALT) {
 			return buf_leftword(input);
 		}
 
