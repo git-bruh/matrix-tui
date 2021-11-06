@@ -169,7 +169,7 @@ buf_delword(struct input *input) {
 
 int
 input_init(struct input *input, struct widget_callback cb) {
-	*input = (struct input){.last_cur_line = 1, .cb = cb};
+	*input = (struct input){.cb = cb};
 
 	return 0;
 }
@@ -184,51 +184,6 @@ input_finish(struct input *input) {
 	memset(input, 0, sizeof(*input));
 }
 
-static void
-fix_cursor(struct input *input, int max_height, int cur_line) {
-	int cur_delta = cur_line - input->last_cur_line;
-
-	/* We moved forward, add the delta to the cursor position and add the
-	 * overflow to the line offset. */
-	if (cur_delta > 0 && (input->cur_y += cur_delta) > (max_height - 1)) {
-		input->line_off += (input->cur_y - (max_height - 1));
-		input->cur_y -= (input->cur_y - (max_height - 1));
-	}
-	/* We moved backward, subtract the delta from the cursor position and
-	 * subtract the underflow from the line offset. */
-	else if (cur_delta < 0 && (input->cur_y -= -cur_delta) < 0) {
-		input->line_off -= -(input->cur_y);
-		input->cur_y += -(input->cur_y);
-	}
-
-	input->last_cur_line = cur_line;
-}
-
-static void
-count_lines(struct input *input, struct widget_points *points, int *lines,
-			int *cur_x, int max_height) {
-	int x = points->x1;
-	int y = 0;
-	int width = 0;
-
-	int cur_line = *lines = 1;
-
-	size_t len = arrlenu(input->buf);
-
-	for (size_t written = 0; written < len; written++) {
-		uc_sanitize(input->buf[written], &width);
-
-		*lines += adjust_xy(width, points, &x, &y);
-
-		if ((written + 1) == input->cur_buf) {
-			*cur_x = x;
-			cur_line = *lines;
-		}
-	}
-
-	fix_cursor(input, max_height, cur_line);
-}
-
 void
 input_redraw(struct input *input) {
 	size_t buf_len = arrlenu(input->buf);
@@ -238,27 +193,37 @@ input_redraw(struct input *input) {
 
 	int max_height = points.y2 - points.y1;
 	int cur_x = points.x1;
-	int lines = 0;
+	int cur_line = 1;
+	int lines = 1;
 
-	count_lines(input, &points, &lines, &cur_x, max_height);
+	{
+		int x = points.x1;
+		int y = 0;
+		int width = 0;
 
-	assert(input->line_off >= 0);
-	assert(input->cur_y >= 0);
-	assert(input->cur_y < max_height);
-	assert(input->line_off < lines);
+		for (size_t written = 0; written < buf_len; written++) {
+			uc_sanitize(input->buf[written], &width);
 
-	if (!input->line_off) {
-		/* Prevent overflow if the cursor if on the first line and input would
-		 * take more than the available lines to represent. */
-		lines = lines > max_height ? max_height : lines;
-	} else {
-		/* Don't write more lines than will be visible. */
-		lines = (input->line_off + max_height) < lines
-					? input->line_off + max_height
-					: lines;
+			lines += adjust_xy(width, &points, &x, &y);
+
+			if ((written + 1) == input->cur_buf) {
+				cur_x = x;
+				cur_line = lines;
+			}
+		}
 	}
 
-	assert(input->line_off < lines);
+	int diff_forward = cur_line - (input->start_y + max_height);
+	int diff_backward = input->start_y - (cur_line - 1);
+
+	if (diff_backward > 0) {
+		input->start_y -= diff_backward;
+	} else if (diff_forward > 0) {
+		input->start_y += diff_forward;
+	}
+
+	assert(input->start_y >= 0);
+	assert(input->start_y < lines);
 
 	int width = 0;
 	int line = 0;
@@ -266,8 +231,10 @@ input_redraw(struct input *input) {
 	uint32_t uc = 0;
 
 	/* Calculate starting index. */
-	for (int x = points.x1, y = 0; written < buf_len; written++) {
-		if (line == input->line_off) {
+	int y = points.y1;
+
+	for (int x = points.x1; written < buf_len; written++) {
+		if (line >= input->start_y) {
 			break;
 		}
 
@@ -277,26 +244,24 @@ input_redraw(struct input *input) {
 	}
 
 	int x = points.x1;
-	int y = points.y2 - (input->line_off ? max_height : lines);
 
-	tb_set_cursor(cur_x, y + input->cur_y);
+	tb_set_cursor(cur_x, points.y1 + (cur_line - (input->start_y + 1)));
 
 	while (written < buf_len) {
-		if (line >= lines) {
+		if (line >= lines || (y - input->start_y) >= points.y2) {
 			break;
 		}
 
 		assert(x >= points.x1);
 		assert(y >= points.y1);
 		assert(x < points.x2);
-		assert(y < points.y2);
-		assert((points.y2 - y) <= max_height);
+		assert((y - input->start_y) >= points.y1);
 
 		uc = uc_sanitize(input->buf[written++], &width);
 
 		/* Don't print newlines directly as they mess up the screen. */
 		if (!should_forcebreak(width)) {
-			tb_set_cell(x, y, uc, TB_DEFAULT, TB_DEFAULT);
+			tb_set_cell(x, y - input->start_y, uc, TB_DEFAULT, TB_DEFAULT);
 		}
 
 		line += adjust_xy(width, &points, &x, &y);

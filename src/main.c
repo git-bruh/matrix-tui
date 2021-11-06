@@ -86,9 +86,9 @@ ui_cb(enum widget_type type, struct widget_points *points, void *userp) {
 		break;
 	case WIDGET_TREEVIEW:
 		points->x1 = 0;
-		points->x2 = width - 1;
-		points->y1 = 1;
-		points->y2 = height - 1;
+		points->x2 = width;
+		points->y1 = 0;
+		points->y2 = height;
 		break;
 	default:
 		break;

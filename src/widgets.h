@@ -34,11 +34,7 @@ enum input_event {
 };
 
 struct input {
-	int line_off; /* The number of lines to skip when rendering the buffer. */
-	int last_cur_line; /* The "line" where the cursor was placed in the last
-						  draw, used to advance / decrement cur_y and line_off.
-						*/
-	int cur_y; /* y co-ordinate relative to the input field (not window). */
+	int start_y;
 	size_t cur_buf; /* Current position inside buf. */
 	uint32_t *buf;	/* We use a basic array instead of something like a linked
 					 * list of small arrays  or a gap buffer as pretty much all
