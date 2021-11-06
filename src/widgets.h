@@ -49,8 +49,6 @@ void
 input_finish(struct input *input);
 void
 input_redraw(struct input *input);
-void
-input_set_initial_cursor(struct input *input);
 enum widget_error
 input_handle_event(struct input *input, enum input_event event, ...);
 

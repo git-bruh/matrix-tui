@@ -268,16 +268,6 @@ input_redraw(struct input *input) {
 	}
 }
 
-void
-input_set_initial_cursor(struct input *input) {
-	(void) input;
-
-	struct widget_points points = {0};
-	input->cb.cb(WIDGET_INPUT, &points, input->cb.userp);
-
-	tb_set_cursor(points.x1, points.y2);
-}
-
 enum widget_error
 input_handle_event(struct input *input, enum input_event event, ...) {
 	switch (event) {

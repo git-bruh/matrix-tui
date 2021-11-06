@@ -151,7 +151,6 @@ static void
 ui_loop(struct state *state) {
 	struct tb_event event = {0};
 
-	input_set_initial_cursor(&state->input);
 	redraw(state);
 
 	while ((tb_poll_event(&event)) != TB_ERR) {
