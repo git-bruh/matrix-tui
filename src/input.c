@@ -44,17 +44,17 @@ should_forcebreak(int width) {
 }
 
 static bool
-should_scroll(int x, int width) {
-	return (x >= ((tb_width()) - width) || (should_forcebreak(width)));
+should_scroll(int x, int width, int max_width) {
+	return (x >= (max_width - width) || (should_forcebreak(width)));
 }
 
 /* Returns the number of times y was advanced. */
 static int
-adjust_xy(int width, int *x, int *y) {
+adjust_xy(int width, struct widget_points *points, int *x, int *y) {
 	int original_y = *y;
 
-	if ((should_scroll(*x, width))) {
-		*x = 0;
+	if ((should_scroll(*x, width, points->x2))) {
+		*x = points->x1;
 		(*y)++;
 	}
 
@@ -67,8 +67,8 @@ adjust_xy(int width, int *x, int *y) {
 
 	/* We must accomodate for another character to move the cursor to the next
 	 * line, which prevents us from adding an unreachable character. */
-	if ((should_scroll(*x, ch_width))) {
-		*x = 0;
+	if ((should_scroll(*x, ch_width, points->x2))) {
+		*x = points->x1;
 		(*y)++;
 	}
 
@@ -168,9 +168,8 @@ buf_delword(struct input *input) {
 }
 
 int
-input_init(struct input *input, int input_height, struct widget_callback cb) {
-	*input = (struct input){
-		.max_height = input_height, .last_cur_line = 1, .cb = cb};
+input_init(struct input *input, struct widget_callback cb) {
+	*input = (struct input){.last_cur_line = 1, .cb = cb};
 
 	return 0;
 }
@@ -183,19 +182,22 @@ input_finish(struct input *input) {
 
 void
 input_redraw(struct input *input) {
-	tb_clear();
-
 	size_t buf_len = arrlenu(input->buf);
 
-	int cur_x = 0, cur_line = 1, lines = 1;
+	struct widget_points points = {0};
+	input->cb.cb(WIDGET_INPUT, &points, input->cb.userp);
+
+	int max_height = points.y2 - points.y1;
+
+	int cur_x = points.x1, cur_line = 1, lines = 1;
 
 	{
-		int x = 0, y = 0, width = 0;
+		int x = points.x1, y = 0, width = 0;
 
 		for (size_t written = 0; written < buf_len; written++) {
 			uc_sanitize(input->buf[written], &width);
 
-			lines += adjust_xy(width, &x, &y);
+			lines += adjust_xy(width, &points, &x, &y);
 
 			if ((written + 1) == input->cur_buf) {
 				cur_x = x;
@@ -209,10 +211,9 @@ input_redraw(struct input *input) {
 
 		/* We moved forward, add the delta to the cursor position and add the
 		 * overflow to the line offset. */
-		if (cur_delta > 0 &&
-			(input->cur_y += cur_delta) > (input->max_height - 1)) {
-			input->line_off += (input->cur_y - (input->max_height - 1));
-			input->cur_y -= (input->cur_y - (input->max_height - 1));
+		if (cur_delta > 0 && (input->cur_y += cur_delta) > (max_height - 1)) {
+			input->line_off += (input->cur_y - (max_height - 1));
+			input->cur_y -= (input->cur_y - (max_height - 1));
 		}
 		/* We moved backward, subtract the delta from the cursor position and
 		 * subtract the underflow from the line offset. */
@@ -224,17 +225,17 @@ input_redraw(struct input *input) {
 
 	assert(input->line_off >= 0);
 	assert(input->cur_y >= 0);
-	assert(input->cur_y < input->max_height);
+	assert(input->cur_y < max_height);
 	assert(input->line_off < lines);
 
 	if (!input->line_off) {
 		/* Prevent overflow if the cursor if on the first line and input would
 		 * take more than the available lines to represent. */
-		lines = lines > input->max_height ? input->max_height : lines;
+		lines = lines > max_height ? max_height : lines;
 	} else {
 		/* Don't write more lines than will be visible. */
-		lines = (input->line_off + input->max_height) < lines
-					? input->line_off + input->max_height
+		lines = (input->line_off + max_height) < lines
+					? input->line_off + max_height
 					: lines;
 	}
 
@@ -249,18 +250,20 @@ input_redraw(struct input *input) {
 	uint32_t uc = 0;
 
 	/* Calculate starting index. */
-	for (int x = 0, y = 0; written < buf_len; written++) {
+	for (int x = points.x1, y = 0; written < buf_len; written++) {
 		if (line == input->line_off) {
 			break;
 		}
 
 		uc_sanitize(input->buf[written], &width);
 
-		line += adjust_xy(width, &x, &y);
+		line += adjust_xy(width, &points, &x, &y);
 	}
 
-	int x = 0;
-	int y = tb_height() - (input->line_off ? input->max_height : lines);
+	int x = points.x1;
+	int y = points.y2 - (input->line_off ? max_height : lines);
+	// int y = (points.y2 - points.y1);//- (input->line_off ? max_height :
+	// lines);
 
 	tb_set_cursor(cur_x, y + input->cur_y);
 
@@ -269,8 +272,13 @@ input_redraw(struct input *input) {
 			break;
 		}
 
-		assert(y < tb_height());
-		assert((tb_height() - y) <= input->max_height);
+		assert(x >= points.x1);
+		assert(y >= points.y1);
+		assert(x < points.x2);
+		assert(y < points.y2);
+		assert((points.y2 - y) <= max_height);
+		// assert(y < (points.y2 - points.y1));
+		// assert((points.y2 - points.y1) - y <= max_height);
 
 		uc = uc_sanitize(input->buf[written++], &width);
 
@@ -279,7 +287,7 @@ input_redraw(struct input *input) {
 			tb_set_cell(x, y, uc, TB_DEFAULT, TB_DEFAULT);
 		}
 
-		line += adjust_xy(width, &x, &y);
+		line += adjust_xy(width, &points, &x, &y);
 	}
 }
 
@@ -287,7 +295,10 @@ void
 input_set_initial_cursor(struct input *input) {
 	(void) input;
 
-	tb_set_cursor(0, tb_height() - 1);
+	struct widget_points points = {0};
+	input->cb.cb(WIDGET_INPUT, &points, input->cb.userp);
+
+	tb_set_cursor(points.x1, points.y2);
 }
 
 enum widget_error

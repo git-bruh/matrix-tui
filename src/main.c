@@ -28,6 +28,9 @@
 #define ERRLOG(cond, ...) (!(cond) ? (log_fatal(__VA_ARGS__), true) : false)
 
 struct state {
+#ifndef NDEBUG
+	bool cleaned_up;
+#endif
 	enum { INPUT = 0, TREE } active_widget;
 	char *current_room;
 	FILE *log_fp;
@@ -36,16 +39,22 @@ struct state {
 	struct treeview treeview;
 };
 
-enum { input_height = 5, sync_timeout = 1000 };
+enum { sync_timeout = 1000 };
 
 static void
 redraw(struct state *state) {
+	tb_clear();
 	input_redraw(&state->input);
 	tb_present();
 }
 
 static void
 cleanup(struct state *state) {
+#ifndef NDEBUG
+	assert(!state->cleaned_up);
+	state->cleaned_up = true;
+#endif
+
 	input_finish(&state->input);
 	matrix_destroy(state->matrix);
 
@@ -55,11 +64,15 @@ cleanup(struct state *state) {
 	if (state->log_fp) {
 		fclose(state->log_fp);
 	}
+
+	memset(state, 0, sizeof(*state));
 }
 
 static void
 ui_cb(enum widget_type type, struct widget_points *points, void *userp) {
 	(void) userp;
+
+	enum { input_height = 5 };
 
 	int height = tb_height();
 	int width = tb_width();
@@ -67,9 +80,9 @@ ui_cb(enum widget_type type, struct widget_points *points, void *userp) {
 	switch (type) {
 	case WIDGET_INPUT:
 		points->x1 = 0;
-		points->x2 = width - 1;
-		points->y1 = height - 5;
-		points->y2 = height - 1;
+		points->x2 = width;
+		points->y1 = height - input_height;
+		points->y2 = height;
 		break;
 	case WIDGET_TREEVIEW:
 		points->x1 = 0;
@@ -89,7 +102,7 @@ ui_init(struct state *state) {
 		.cb = ui_cb,
 	};
 
-	if ((input_init(&state->input, input_height, cb)) == -1 ||
+	if ((input_init(&state->input, cb)) == -1 ||
 		0 /*(treeview_init(&state->treeview, cb)) == -1*/) {
 		return -1;
 	}

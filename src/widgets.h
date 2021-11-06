@@ -34,7 +34,6 @@ enum input_event {
 };
 
 struct input {
-	int max_height;
 	int line_off; /* The number of lines to skip when rendering the buffer. */
 	int last_cur_line; /* The "line" where the cursor was placed in the last
 						  draw, used to advance / decrement cur_y and line_off.
@@ -49,7 +48,7 @@ struct input {
 };
 
 int
-input_init(struct input *input, int input_height, struct widget_callback cb);
+input_init(struct input *input, struct widget_callback cb);
 void
 input_finish(struct input *input);
 void
