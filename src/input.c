@@ -228,10 +228,11 @@ input_redraw(struct input *input) {
 	int width = 0;
 	int line = 0;
 	size_t written = 0;
-	uint32_t uc = 0;
+
+	bool lines_fit_in_height = (lines < max_height);
 
 	/* Calculate starting index. */
-	int y = points.y1;
+	int y = lines_fit_in_height ? (points.y2 - lines) : points.y1;
 
 	for (int x = points.x1; written < buf_len; written++) {
 		if (line >= input->start_y) {
@@ -245,7 +246,9 @@ input_redraw(struct input *input) {
 
 	int x = points.x1;
 
-	tb_set_cursor(cur_x, points.y1 + (cur_line - (input->start_y + 1)));
+	tb_set_cursor(cur_x, lines_fit_in_height
+							 ? (y + cur_line - 1)
+							 : (points.y1 + (cur_line - (input->start_y + 1))));
 
 	while (written < buf_len) {
 		if (line >= lines || (y - input->start_y) >= points.y2) {
@@ -257,7 +260,7 @@ input_redraw(struct input *input) {
 		assert(x < points.x2);
 		assert((y - input->start_y) >= points.y1);
 
-		uc = uc_sanitize(input->buf[written++], &width);
+		uint32_t uc = uc_sanitize(input->buf[written++], &width);
 
 		/* Don't print newlines directly as they mess up the screen. */
 		if (!should_forcebreak(width)) {
