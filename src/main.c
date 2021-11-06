@@ -1,11 +1,11 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
-#include "cJSON.h"
 #include "log.h"
 #include "matrix.h"
 #include "widgets.h"
 #include <assert.h>
+#include <cjson/cJSON.h>
 #include <curl/curl.h>
 #include <langinfo.h>
 #include <locale.h>
