@@ -3,64 +3,42 @@
 #include <assert.h>
 #include <stdbool.h>
 
-struct tree {
-	bool is_expanded;
-	size_t index;
-	char data[100];
-	struct tree *parent;
-	struct tree **trees;
-};
+struct treeview_node *
+treeview_node_alloc(struct treeview_node *parent, char *string, void *data) {
+	struct treeview_node *node = malloc(sizeof(*node));
 
-struct treeview {
-	int skipped;
-	int start_y;
-	struct tree *root;
-	struct tree *selected;
-};
-
-static struct tree *
-alloc(struct tree *parent) {
-#if 0
-	static int counter = 0;
-
-	struct tree *tree = malloc(sizeof(*tree));
-
-	if (tree) {
-		*tree = (struct tree){
+	if (node) {
+		*node = (struct treeview_node){
 			.parent = parent,
+			.string = string,
+			.data = data,
 			.is_expanded = true,
 		};
-
-		tree->data[0] = '0' + counter++ % 10;
-		tree->data[1] = '\0';
 	}
 
-	return tree;
-#else
-	return NULL;
-#endif
+	return node;
 }
 
-static void
-destroy(struct tree *tree) {
-	if (!tree) {
+void
+treeview_node_destroy(struct treeview_node *node) {
+	if (!node) {
 		return;
 	}
 
-	if (tree->trees) {
-		for (size_t i = 0, len = arrlenu(tree->trees); i < len; i++) {
-			destroy(tree->trees[i]);
+	if (node->nodes) {
+		for (size_t i = 0, len = arrlenu(tree->nodes); i < len; i++) {
+			destroy(node->nodes[i]);
 		}
 
-		arrfree(tree->trees);
+		arrfree(node->nodes);
 	}
 
-	free(tree);
+	free(node);
 }
 
 /* If node is the parent's last child. */
 static bool
-is_last(const struct tree *tree) {
+is_last(const struct treeview_node *tree) {
 	if (tree->parent) {
 		size_t len = arrlenu(tree->parent->trees);
 
@@ -72,8 +50,8 @@ is_last(const struct tree *tree) {
 	return false;
 }
 
-static struct tree *
-leaf(struct tree *tree) {
+static struct treeview_node *
+leaf(struct treeview_node *tree) {
 	if (tree->is_expanded && tree->trees) {
 		size_t len = arrlenu(tree->trees);
 		return leaf(tree->trees[len > 0 ? len - 1 : 0]);
@@ -82,8 +60,8 @@ leaf(struct tree *tree) {
 	return tree;
 }
 
-static struct tree *
-parent_next(struct tree *tree) {
+static struct treeview_node *
+parent_next(struct treeview_node *tree) {
 	if (tree->parent) {
 		if ((tree->parent->index + 1) < arrlenu(tree->parent->trees)) {
 			return tree->parent->trees[++tree->parent->index];
@@ -102,7 +80,8 @@ parent_next(struct tree *tree) {
    it would retain it's original value.
    This is very hacky but it's the only way to do this recursively. */
 static int
-node_height(struct tree *tree, struct tree *node, int height, int *realheight) {
+node_height(struct treeview_node *tree, struct treeview_node *node, int height,
+			int *realheight) {
 	if (!tree) {
 		return height;
 	}
@@ -126,7 +105,8 @@ node_height(struct tree *tree, struct tree *node, int height, int *realheight) {
 }
 
 static int
-redraw(struct treeview *treeview, const struct tree *tree, int x, int y) {
+redraw(struct treeview *treeview, const struct treeview_node *tree, int x,
+	   int y) {
 	if (!tree) {
 		return y;
 	}
@@ -204,21 +184,57 @@ treeview_redraw(struct treeview *treeview) {
 	treeview->skipped = 0;
 }
 
-int
-treeview_event(struct tb_event *event, struct treeview *tree) {
-	enum {
-		ADD = 'n',
-		ADD_TOP = 'h',
-		DELETE = 'd',
-	};
-
-	switch (event->ch) {
-	case ADD: {
+enum widget_error
+treeview_event(struct treeview *treeview, enum treeview_event event) {
+	switch (event) {
+	case TREEVIEW_EXPAND:
 		if (!tree->selected) {
 			break;
 		}
 
-		struct tree *ntree = alloc(tree->selected);
+		tree->selected->is_expanded = !tree->selected->is_expanded;
+		return WIDGET_REDRAW;
+	case TB_KEY_ARROW_UP:
+		if (!tree->selected) {
+			break;
+		}
+
+		if (tree->selected->parent->index > 0) {
+			tree->selected =
+				tree->selected->parent->trees[--tree->selected->parent->index];
+			tree->selected = leaf(tree->selected); /* Bottom node. */
+		} else if (tree->selected->parent->parent) {
+			tree->selected = tree->selected->parent;
+		} else if (tree->selected == tree->root->trees[0]) {
+			tree->start_y = 0; /* Scroll up to the title if we're already at the
+								  top-most node. */
+		} else {
+			break;
+		}
+
+		return WIDGET_REDRAW;
+	case TB_KEY_ARROW_DOWN:
+		if (!tree->selected) {
+			break;
+		}
+
+		if (tree->selected->is_expanded && tree->selected->trees) {
+			tree->selected = tree->selected->trees[0]; /* First node. */
+		} else {
+			/* Ensure that we don't create a loop between the end-most node of
+			 * the tree and it's parent at the root. */
+			if (tree->selected != (leaf(tree->root))) {
+				tree->selected = parent_next(tree->selected);
+			}
+		}
+
+		return WIDGET_REDRAW;
+	case TREEVIEW_INSERT: {
+		if (!tree->selected) {
+			break;
+		}
+
+		struct treeview_node *ntree = alloc(tree->selected);
 
 		if (!ntree) {
 			break;
@@ -228,8 +244,8 @@ treeview_event(struct tb_event *event, struct treeview *tree) {
 
 		break;
 	}
-	case ADD_TOP: {
-		struct tree *ntree =
+	case TREEVIEW_: {
+		struct treeview_node *ntree =
 			alloc(!tree->selected ? tree->root : tree->selected->parent);
 
 		if (!ntree) {
@@ -250,7 +266,7 @@ treeview_event(struct tb_event *event, struct treeview *tree) {
 		break;
 	}
 	case DELETE: {
-		struct tree *current = tree->selected;
+		struct treeview_node *current = tree->selected;
 
 		if (!current) {
 			break;
@@ -276,83 +292,5 @@ treeview_event(struct tb_event *event, struct treeview *tree) {
 	}
 	}
 
-	switch (event->key) {
-	case TB_KEY_TAB:
-		if (!tree->selected) {
-			break;
-		}
-
-		tree->selected->is_expanded = !tree->selected->is_expanded;
-		break;
-	case TB_KEY_ARROW_UP:
-		if (!tree->selected) {
-			break;
-		}
-
-		if (tree->selected->parent->index > 0) {
-			tree->selected =
-				tree->selected->parent->trees[--tree->selected->parent->index];
-			tree->selected = leaf(tree->selected); /* Bottom node. */
-		} else if (tree->selected->parent->parent) {
-			tree->selected = tree->selected->parent;
-		} else if (tree->selected == tree->root->trees[0]) {
-			tree->start_y = 0; /* Scroll up to the title if we're already at the
-								  top-most node. */
-		}
-
-		break;
-	case TB_KEY_ARROW_DOWN:
-		if (!tree->selected) {
-			break;
-		}
-
-		if (tree->selected->is_expanded && tree->selected->trees) {
-			tree->selected = tree->selected->trees[0]; /* First node. */
-		} else {
-			/* Ensure that we don't create a loop between the end-most node of
-			 * the tree and it's parent at the root. */
-			if (tree->selected != (leaf(tree->root))) {
-				tree->selected = parent_next(tree->selected);
-			}
-		}
-
-		break;
-	case TB_KEY_CTRL_C:
-		return -1;
-	}
-
-	return 0;
-}
-
-int
-main() {
-	tb_init();
-	tb_set_input_mode(TB_INPUT_ALT);
-
-	struct tree root = {.is_expanded = true, .data = "Root"};
-
-	struct treeview tree = {
-		.root = &root,
-	};
-
-	struct tb_event event = {0};
-
-	do {
-		tb_clear();
-
-		if ((treeview_event(&event, &tree)) == -1) {
-			for (size_t i = 0, len = arrlenu(root.trees); i < len; i++) {
-				destroy(root.trees[i]);
-			}
-
-			arrfree(root.trees);
-
-			tb_shutdown();
-			return EXIT_SUCCESS;
-		}
-
-		treeview_redraw(&tree);
-
-		tb_present();
-	} while ((tb_poll_event(&event)) != TB_ERR);
+	return WIDGET_NOOP;
 }

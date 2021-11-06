@@ -2,9 +2,9 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "cJSON.h"
-#include "input.h"
 #include "log.h"
 #include "matrix.h"
+#include "widgets.h"
 #include <assert.h>
 #include <curl/curl.h>
 #include <langinfo.h>
@@ -28,10 +28,12 @@
 #define ERRLOG(cond, ...) (!(cond) ? (log_fatal(__VA_ARGS__), true) : false)
 
 struct state {
+	enum { INPUT = 0, TREE } active_widget;
 	char *current_room;
 	FILE *log_fp;
 	struct matrix *matrix;
 	struct input input;
+	struct treeview treeview;
 };
 
 enum { input_height = 5, sync_timeout = 1000 };
@@ -56,33 +58,109 @@ cleanup(struct state *state) {
 }
 
 static void
-input(struct state *state) {
+ui_cb(enum widget_type type, struct widget_points *points, void *userp) {
+	(void) userp;
+
+	int height = tb_height();
+	int width = tb_width();
+
+	switch (type) {
+	case WIDGET_INPUT:
+		points->x1 = 0;
+		points->x2 = width - 1;
+		points->y1 = height - 5;
+		points->y2 = height - 1;
+		break;
+	case WIDGET_TREEVIEW:
+		points->x1 = 0;
+		points->x2 = width - 1;
+		points->y1 = 1;
+		points->y2 = height - 1;
+		break;
+	default:
+		break;
+	}
+}
+
+static int
+ui_init(struct state *state) {
+	struct widget_callback cb = {
+		.userp = state,
+		.cb = ui_cb,
+	};
+
+	if ((input_init(&state->input, input_height, cb)) == -1 ||
+		0 /*(treeview_init(&state->treeview, cb)) == -1*/) {
+		return -1;
+	}
+
+	return 0;
+}
+
+static enum widget_error
+handle_tree(struct state *state, struct tb_event *event) {
+	return WIDGET_NOOP;
+}
+
+static enum widget_error
+handle_input(struct state *state, struct tb_event *event) {
+	if (!event->key && event->ch) {
+		return input_handle_event(&state->input, INPUT_ADD, event->ch);
+	}
+
+	bool mod = (event->mod & TB_MOD_SHIFT);
+	bool mod_enter = (event->mod & TB_MOD_ALT);
+
+	switch (event->key) {
+	case TB_KEY_ENTER:
+		if (mod_enter) {
+			return input_handle_event(&state->input, INPUT_ADD, '\n');
+		}
+		break;
+	case TB_KEY_BACKSPACE:
+	case TB_KEY_BACKSPACE2:
+		return input_handle_event(&state->input,
+								  mod ? INPUT_DELETE_WORD : INPUT_DELETE);
+	case TB_KEY_ARROW_RIGHT:
+		return input_handle_event(&state->input,
+								  mod ? INPUT_RIGHT_WORD : INPUT_RIGHT);
+	case TB_KEY_ARROW_LEFT:
+		return input_handle_event(&state->input,
+								  mod ? INPUT_LEFT_WORD : INPUT_LEFT);
+	default:
+		break;
+	}
+
+	return WIDGET_NOOP;
+}
+
+static void
+ui_loop(struct state *state) {
+	struct tb_event event = {0};
+
 	input_set_initial_cursor(&state->input);
 	redraw(state);
 
-	struct tb_event event = {0};
-
 	while ((tb_poll_event(&event)) != TB_ERR) {
-		switch (event.type) {
-		case TB_EVENT_KEY:
-			switch ((input_event(&event, &state->input))) {
-			case INPUT_NOOP:
-				break;
-			case INPUT_GOT_SHUTDOWN:
-				return;
-			case INPUT_NEED_REDRAW:
-				redraw(state);
-				break;
-			default:
-				assert(0);
-			}
+		enum widget_error ret = WIDGET_NOOP;
 
+		if (event.key == TB_KEY_CTRL_C) {
+			return;
+		}
+
+		switch (state->active_widget) {
+		case INPUT:
+			ret = handle_input(state, &event);
 			break;
-		case TB_EVENT_RESIZE:
-			redraw(state);
+		case TREE:
+			ret = handle_tree(state, &event);
 			break;
 		default:
-			break;
+			assert(0);
+		}
+
+		if (ret == WIDGET_REDRAW) {
+			redraw(state);
 		}
 	}
 }
@@ -198,13 +276,12 @@ main() {
 				"Failed to initialize logging callbacks.") &&
 		!ERRLOG(matrix_global_init() == 0,
 				"Failed to initialize matrix globals.") &&
-		!ERRLOG(input_init(&state.input, input_height) == 0,
-				"Failed to initialize input UI.") &&
+		!ERRLOG(ui_init(&state) == 0, "Failed to initialize UI.") &&
 		!ERRLOG(state.matrix = matrix_alloc(sync_cb, MXID, HOMESERVER, &state),
 				"Failed to initialize libmatrix.") &&
 		!ERRLOG(matrix_login(state.matrix, PASS, NULL, NULL) == MATRIX_SUCCESS,
 				"Failed to login.")) {
-		input(&state);
+		ui_loop(&state);
 
 #if 0
 		switch ((matrix_sync_forever(state.matrix, NULL, sync_timeout))) {

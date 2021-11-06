@@ -1,8 +1,8 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
-#include "input.h"
 #include "stb_ds.h"
+#include "widgets.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -75,30 +75,30 @@ adjust_xy(int width, int *x, int *y) {
 	return *y - original_y;
 }
 
-static enum input_error
+static enum widget_error
 buf_add(struct input *input, uint32_t ch) {
 	if (((arrlenu(input->buf)) + 1) >= buf_max) {
-		return INPUT_NOOP;
+		return WIDGET_NOOP;
 	}
 
 	arrins(input->buf, input->cur_buf, ch);
 	input->cur_buf++;
 
-	return INPUT_NEED_REDRAW;
+	return WIDGET_REDRAW;
 }
 
-static enum input_error
+static enum widget_error
 buf_left(struct input *input) {
 	if (input->cur_buf > 0) {
 		input->cur_buf--;
 
-		return INPUT_NEED_REDRAW;
+		return WIDGET_REDRAW;
 	}
 
-	return INPUT_NOOP;
+	return WIDGET_NOOP;
 }
 
-static enum input_error
+static enum widget_error
 buf_leftword(struct input *input) {
 	if (input->cur_buf > 0) {
 		do {
@@ -107,24 +107,24 @@ buf_leftword(struct input *input) {
 				 ((iswspace((wint_t) input->buf[input->cur_buf])) ||
 				  !(iswspace((wint_t) input->buf[input->cur_buf - 1]))));
 
-		return INPUT_NEED_REDRAW;
+		return WIDGET_REDRAW;
 	}
 
-	return INPUT_NOOP;
+	return WIDGET_NOOP;
 }
 
-static enum input_error
+static enum widget_error
 buf_right(struct input *input) {
 	if (input->cur_buf < arrlenu(input->buf)) {
 		input->cur_buf++;
 
-		return INPUT_NEED_REDRAW;
+		return WIDGET_REDRAW;
 	}
 
-	return INPUT_NOOP;
+	return WIDGET_NOOP;
 }
 
-static enum input_error
+static enum widget_error
 buf_rightword(struct input *input) {
 	size_t buf_len = arrlenu(input->buf);
 
@@ -135,41 +135,42 @@ buf_rightword(struct input *input) {
 				 !((iswspace((wint_t) input->buf[input->cur_buf])) &&
 				   !(iswspace((wint_t) input->buf[input->cur_buf - 1]))));
 
-		return INPUT_NEED_REDRAW;
+		return WIDGET_REDRAW;
 	}
 
-	return INPUT_NOOP;
+	return WIDGET_NOOP;
 }
 
-static enum input_error
+static enum widget_error
 buf_del(struct input *input) {
 	if (input->cur_buf > 0) {
 		--input->cur_buf;
 
 		arrdel(input->buf, input->cur_buf);
 
-		return INPUT_NEED_REDRAW;
+		return WIDGET_REDRAW;
 	}
 
-	return INPUT_NOOP;
+	return WIDGET_NOOP;
 }
 
-static enum input_error
+static enum widget_error
 buf_delword(struct input *input) {
 	size_t original_cur = input->cur_buf;
 
-	if ((buf_leftword(input)) == INPUT_NEED_REDRAW) {
+	if ((buf_leftword(input)) == WIDGET_REDRAW) {
 		arrdeln(input->buf, input->cur_buf, original_cur - input->cur_buf);
 
-		return INPUT_NEED_REDRAW;
+		return WIDGET_REDRAW;
 	}
 
-	return INPUT_NOOP;
+	return WIDGET_NOOP;
 }
 
 int
-input_init(struct input *input, int input_height) {
-	*input = (struct input){.max_height = input_height, .last_cur_line = 1};
+input_init(struct input *input, int input_height, struct widget_callback cb) {
+	*input = (struct input){
+		.max_height = input_height, .last_cur_line = 1, .cb = cb};
 
 	return 0;
 }
@@ -289,41 +290,30 @@ input_set_initial_cursor(struct input *input) {
 	tb_set_cursor(0, tb_height() - 1);
 }
 
-enum input_error
-input_event(struct tb_event *event, struct input *input) {
-	if (!event->key && event->ch) {
-		return buf_add(input, event->ch);
-	}
-
-	switch (event->key) {
-	case TB_KEY_ENTER:
-		if (event->mod & TB_MOD_ALT) {
-			return buf_add(input, '\n');
-		}
-
-		return INPUT_NOOP;
-	case TB_KEY_BACKSPACE:
-	case TB_KEY_BACKSPACE2:
-		if (event->mod & TB_MOD_ALT) {
-			return buf_delword(input);
-		}
-
+enum widget_error
+input_handle_event(struct input *input, enum input_event event, ...) {
+	switch (event) {
+	case INPUT_DELETE:
 		return buf_del(input);
-	case TB_KEY_ARROW_RIGHT:
-		if (event->mod & TB_MOD_ALT) {
-			return buf_rightword(input);
-		}
-
+	case INPUT_DELETE_WORD:
+		return buf_delword(input);
+	case INPUT_RIGHT:
 		return buf_right(input);
-	case TB_KEY_ARROW_LEFT:
-		if (event->mod & TB_MOD_ALT) {
-			return buf_leftword(input);
-		}
-
+	case INPUT_RIGHT_WORD:
+		return buf_rightword(input);
+	case INPUT_LEFT:
 		return buf_left(input);
-	case TB_KEY_CTRL_C:
-		return INPUT_GOT_SHUTDOWN;
-	default:
-		return INPUT_NOOP;
+	case INPUT_LEFT_WORD:
+		return buf_leftword(input);
+	case INPUT_ADD: {
+		va_list vl = {0};
+		va_start(vl, event);
+		uint32_t ch = va_arg(vl, uint32_t);
+		va_end(vl);
+
+		return buf_add(input, ch);
 	}
+	}
+
+	return WIDGET_NOOP;
 }
