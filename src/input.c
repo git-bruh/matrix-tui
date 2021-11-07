@@ -13,72 +13,12 @@
 #include <wctype.h>
 
 enum {
-	buf_max = 2000,
-	ch_width = 2, /* Max width of a character. */
+	BUF_MAX = 2000,
 };
-
-static uint32_t
-uc_sanitize(uint32_t uc, int *width) {
-	int tmp_width = wcwidth((wchar_t) uc);
-
-	switch (uc) {
-	case '\n':
-		*width = 0;
-		return uc;
-	case '\t':
-		*width = 1;
-		return ' ';
-	default:
-		if (tmp_width <= 0 || tmp_width > ch_width) {
-			*width = 1;
-			return '?';
-		}
-
-		*width = tmp_width;
-		return uc;
-	}
-}
-
-static bool
-should_forcebreak(int width) {
-	return width == 0;
-}
-
-static bool
-should_scroll(int x, int width, int max_width) {
-	return (x >= (max_width - width) || (should_forcebreak(width)));
-}
-
-/* Returns the number of times y was advanced. */
-static int
-adjust_xy(int width, struct widget_points *points, int *x, int *y) {
-	int original_y = *y;
-
-	if ((should_scroll(*x, width, points->x2))) {
-		*x = points->x1;
-		(*y)++;
-	}
-
-	/* Newline, already scrolled. */
-	if ((should_forcebreak(width))) {
-		return *y - original_y;
-	}
-
-	*x += width;
-
-	/* We must accomodate for another character to move the cursor to the next
-	 * line, which prevents us from adding an unreachable character. */
-	if ((should_scroll(*x, ch_width, points->x2))) {
-		*x = points->x1;
-		(*y)++;
-	}
-
-	return *y - original_y;
-}
 
 static enum widget_error
 buf_add(struct input *input, uint32_t ch) {
-	if (((arrlenu(input->buf)) + 1) >= buf_max) {
+	if (((arrlenu(input->buf)) + 1) >= BUF_MAX) {
 		return WIDGET_NOOP;
 	}
 
@@ -187,6 +127,10 @@ input_finish(struct input *input) {
 
 void
 input_redraw(struct input *input) {
+	if (!input->cb.cb) {
+		return;
+	}
+
 	size_t buf_len = arrlenu(input->buf);
 
 	struct widget_points points = {0};
@@ -203,9 +147,9 @@ input_redraw(struct input *input) {
 		int width = 0;
 
 		for (size_t written = 0; written < buf_len; written++) {
-			uc_sanitize(input->buf[written], &width);
+			widget_uc_sanitize(input->buf[written], &width);
 
-			lines += adjust_xy(width, &points, &x, &y);
+			lines += widget_adjust_xy(width, &points, &x, &y);
 
 			if ((written + 1) == input->cur_buf) {
 				cur_x = x;
@@ -240,9 +184,9 @@ input_redraw(struct input *input) {
 			break;
 		}
 
-		uc_sanitize(input->buf[written], &width);
+		widget_uc_sanitize(input->buf[written], &width);
 
-		line += adjust_xy(width, &points, &x, &y);
+		line += widget_adjust_xy(width, &points, &x, &y);
 	}
 
 	int x = points.x1;
@@ -261,14 +205,14 @@ input_redraw(struct input *input) {
 		assert(x < points.x2);
 		assert((y - input->start_y) >= points.y1);
 
-		uint32_t uc = uc_sanitize(input->buf[written++], &width);
+		uint32_t uc = widget_uc_sanitize(input->buf[written++], &width);
 
 		/* Don't print newlines directly as they mess up the screen. */
-		if (!should_forcebreak(width)) {
+		if (!widget_should_forcebreak(width)) {
 			tb_set_cell(x, y - input->start_y, uc, TB_DEFAULT, TB_DEFAULT);
 		}
 
-		line += adjust_xy(width, &points, &x, &y);
+		line += widget_adjust_xy(width, &points, &x, &y);
 	}
 }
 
@@ -296,6 +240,8 @@ input_handle_event(struct input *input, enum input_event event, ...) {
 
 			return buf_add(input, ch);
 		}
+	default:
+		assert(0);
 	}
 
 	return WIDGET_NOOP;

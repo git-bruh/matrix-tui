@@ -10,12 +10,12 @@ XCFLAGS = \
 	-flto -fstack-protector-strong --param=ssp-buffer-size=4 \
 	-Wall -Wextra -Wpedantic -Wwrite-strings \
 	-Wshadow -Wnull-dereference -Wformat=2 \
+	-Wcast-qual -Wconversion -Wpointer-arith \
+	-Wunused-macros -Wredundant-decls \
 	-Werror=implicit-function-declaration \
 	-Werror=incompatible-pointer-types \
 	-Werror=discarded-qualifiers \
 	-Werror=ignored-qualifiers \
-	-Wcast-qual -Wconversion -Wpointer-arith \
-	-Wunused-macros -Wredundant-decls \
 	-DLOG_USE_COLOR \
 	-DCLIENT_NAME=\"matrix-client\"
 
@@ -30,6 +30,8 @@ INCLUDES = \
 OBJ = \
 	src/header_libs.o \
 	src/input.o \
+	src/tree.o \
+	src/ui_common.o \
 	src/main.o \
 	libmatrix_src/api.o \
 	libmatrix_src/matrix.o \

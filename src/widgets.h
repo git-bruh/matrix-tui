@@ -6,6 +6,8 @@
 
 #include <stdbool.h>
 
+enum { WIDGET_CH_MAX = 2 }; /* Max width. */
+
 enum widget_type { WIDGET_INPUT = 0, WIDGET_TREEVIEW };
 
 enum widget_error { WIDGET_NOOP = 0, WIDGET_REDRAW };
@@ -22,6 +24,21 @@ struct widget_callback {
 	void *userp;
 	void (*cb)(enum widget_type, struct widget_points *, void *);
 };
+
+uint32_t
+widget_uc_sanitize(uint32_t uc, int *width);
+bool
+widget_points_in_bounds(const struct widget_points *points, int x, int y);
+bool
+widget_should_forcebreak(int width);
+bool
+widget_should_scroll(int x, int width, int max_width);
+/* Returns the number of times y was advanced. */
+int
+widget_adjust_xy(int width, const struct widget_points *points, int *x, int *y);
+int
+widget_print_str(
+  int x, int y, int max_x, uintattr_t fg, uintattr_t bg, const char *str);
 
 /* Input. */
 enum input_event {
@@ -73,10 +90,10 @@ struct treeview_node {
 };
 
 struct treeview {
-	int skipped;
+	int skipped; /* A hack used to skip lines in recursive rendering. */
 	int start_y;
-	struct tree *root;
-	struct tree *selected;
+	struct treeview_node *root;
+	struct treeview_node *selected;
 	struct widget_callback cb;
 };
 
@@ -84,6 +101,8 @@ int
 treeview_init(struct treeview *treeview, struct widget_callback cb);
 void
 treeview_finish(struct treeview *treeview);
+void
+treeview_redraw(struct treeview *treeview);
 enum widget_error
 treeview_event(struct treeview *treeview, enum treeview_event event);
 #endif /* !WIDGETS_H */

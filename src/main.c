@@ -46,6 +46,7 @@ static void
 redraw(struct state *state) {
 	tb_clear();
 	input_redraw(&state->input);
+	treeview_redraw(&state->treeview);
 	tb_present();
 }
 
@@ -57,6 +58,7 @@ cleanup(struct state *state) {
 #endif
 
 	input_finish(&state->input);
+	treeview_finish(&state->treeview);
 	matrix_destroy(state->matrix);
 
 	tb_shutdown();
@@ -104,7 +106,7 @@ ui_init(struct state *state) {
 	};
 
 	if ((input_init(&state->input, cb)) == -1
-		|| 0 /*(treeview_init(&state->treeview, cb)) == -1*/) {
+		|| (treeview_init(&state->treeview, cb)) == -1) {
 		return -1;
 	}
 
@@ -113,11 +115,39 @@ ui_init(struct state *state) {
 
 static enum widget_error
 handle_tree(struct state *state, struct tb_event *event) {
+	assert(state->active_widget == TREE);
+
+	if (!event->key && event->ch) {
+		switch (event->ch) {
+		case 'h':
+			return treeview_event(&state->treeview, TREEVIEW_INSERT_PARENT);
+		case 'n':
+			return treeview_event(&state->treeview, TREEVIEW_INSERT);
+		case ' ':
+			return treeview_event(&state->treeview, TREEVIEW_EXPAND);
+		default:
+			break;
+		}
+	}
+
+	switch (event->key) {
+	case TB_KEY_TAB:
+		return treeview_event(&state->treeview, TREEVIEW_EXPAND);
+	case TB_KEY_ARROW_UP:
+		return treeview_event(&state->treeview, TREEVIEW_UP);
+	case TB_KEY_ARROW_DOWN:
+		return treeview_event(&state->treeview, TREEVIEW_DOWN);
+	default:
+		break;
+	}
+
 	return WIDGET_NOOP;
 }
 
 static enum widget_error
 handle_input(struct state *state, struct tb_event *event) {
+	assert(state->active_widget == INPUT);
+
 	if (!event->key && event->ch) {
 		return input_handle_event(&state->input, INPUT_ADD, event->ch);
 	}
@@ -154,8 +184,15 @@ ui_loop(struct state *state) {
 
 	redraw(state);
 
+	state->active_widget = TREE;
+
 	while ((tb_poll_event(&event)) != TB_ERR) {
 		enum widget_error ret = WIDGET_NOOP;
+
+		if (event.type == TB_EVENT_RESIZE) {
+			redraw(state);
+			continue;
+		}
 
 		if (event.key == TB_KEY_CTRL_C) {
 			return;
@@ -180,6 +217,8 @@ ui_loop(struct state *state) {
 
 static void
 sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
+	(void) matrix;
+
 	struct matrix_room room;
 
 	while ((matrix_sync_next(response, &room)) == MATRIX_SUCCESS) {
