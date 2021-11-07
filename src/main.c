@@ -4,6 +4,7 @@
 #include "log.h"
 #include "matrix.h"
 #include "widgets.h"
+
 #include <assert.h>
 #include <cjson/cJSON.h>
 #include <curl/curl.h>
@@ -98,12 +99,12 @@ ui_cb(enum widget_type type, struct widget_points *points, void *userp) {
 static int
 ui_init(struct state *state) {
 	struct widget_callback cb = {
-		.userp = state,
-		.cb = ui_cb,
+	  .userp = state,
+	  .cb = ui_cb,
 	};
 
-	if ((input_init(&state->input, cb)) == -1 ||
-		0 /*(treeview_init(&state->treeview, cb)) == -1*/) {
+	if ((input_init(&state->input, cb)) == -1
+		|| 0 /*(treeview_init(&state->treeview, cb)) == -1*/) {
 		return -1;
 	}
 
@@ -132,14 +133,14 @@ handle_input(struct state *state, struct tb_event *event) {
 		break;
 	case TB_KEY_BACKSPACE:
 	case TB_KEY_BACKSPACE2:
-		return input_handle_event(&state->input,
-								  mod ? INPUT_DELETE_WORD : INPUT_DELETE);
+		return input_handle_event(
+		  &state->input, mod ? INPUT_DELETE_WORD : INPUT_DELETE);
 	case TB_KEY_ARROW_RIGHT:
-		return input_handle_event(&state->input,
-								  mod ? INPUT_RIGHT_WORD : INPUT_RIGHT);
+		return input_handle_event(
+		  &state->input, mod ? INPUT_RIGHT_WORD : INPUT_RIGHT);
 	case TB_KEY_ARROW_LEFT:
-		return input_handle_event(&state->input,
-								  mod ? INPUT_LEFT_WORD : INPUT_LEFT);
+		return input_handle_event(
+		  &state->input, mod ? INPUT_LEFT_WORD : INPUT_LEFT);
 	default:
 		break;
 	}
@@ -190,20 +191,19 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 			switch (sevent.type) {
 			case MATRIX_ROOM_MEMBER:
 				printf("(%s) => Membership (%s)\n", sevent.member.base.sender,
-					   sevent.member.membership);
+				  sevent.member.membership);
 				break;
 			case MATRIX_ROOM_POWER_LEVELS:
 				break;
 			case MATRIX_ROOM_CANONICAL_ALIAS:
 				printf("Canonical Alias => (%s)\n",
-					   sevent.canonical_alias.alias
-						   ? sevent.canonical_alias.alias
-						   : "");
+				  sevent.canonical_alias.alias ? sevent.canonical_alias.alias
+											   : "");
 				break;
 			case MATRIX_ROOM_CREATE:
 				printf("Created => Creator (%s), Version (%s), Federate (%d)\n",
-					   sevent.create.creator, sevent.create.room_version,
-					   sevent.create.federate);
+				  sevent.create.creator, sevent.create.room_version,
+				  sevent.create.federate);
 				break;
 			case MATRIX_ROOM_JOIN_RULES:
 				printf("Join Rule => (%s)\n", sevent.join_rules.join_rule);
@@ -230,17 +230,17 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 			switch (tevent.type) {
 			case MATRIX_ROOM_MESSAGE:
 				printf("(%s) => (%s)\n", tevent.message.base.sender,
-					   tevent.message.body);
+				  tevent.message.body);
 				break;
 			case MATRIX_ROOM_REDACTION:
 				printf("(%s) redacted by (%s) for (%s)\n",
-					   tevent.redaction.redacts, tevent.redaction.base.event_id,
-					   tevent.redaction.reason ? tevent.redaction.reason : "");
+				  tevent.redaction.redacts, tevent.redaction.base.event_id,
+				  tevent.redaction.reason ? tevent.redaction.reason : "");
 				break;
 			case MATRIX_ROOM_ATTACHMENT:
 				printf("File (%s), URL (%s), Msgtype (%s), Size (%u)\n",
-					   tevent.attachment.body, tevent.attachment.url,
-					   tevent.attachment.msgtype, tevent.attachment.info.size);
+				  tevent.attachment.body, tevent.attachment.url,
+				  tevent.attachment.msgtype, tevent.attachment.info.size);
 				break;
 			default:
 				assert(0);
@@ -251,17 +251,19 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 		while ((matrix_sync_next(&room, &eevent)) == MATRIX_SUCCESS) {
 			switch (eevent.type) {
-			case MATRIX_ROOM_TYPING: {
-				cJSON *user_id = NULL;
+			case MATRIX_ROOM_TYPING:
+				{
+					cJSON *user_id = NULL;
 
-				cJSON_ArrayForEach(user_id, eevent.typing.user_ids) {
-					char *uid = cJSON_GetStringValue(user_id);
+					cJSON_ArrayForEach(user_id, eevent.typing.user_ids) {
+						char *uid = cJSON_GetStringValue(user_id);
 
-					if (uid) {
-						printf("(%s) => Typing\n", uid);
+						if (uid) {
+							printf("(%s) => Typing\n", uid);
+						}
 					}
 				}
-			} break;
+				break;
 			default:
 				assert(0);
 			}
@@ -271,28 +273,30 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 int
 main() {
-	if (ERRLOG(setlocale(LC_ALL, ""), "Failed to set locale.") ||
-		ERRLOG(strcmp("UTF-8", nl_langinfo(CODESET)) == 0,
-			   "Locale is not UTF-8.")) {
+	if (ERRLOG(setlocale(LC_ALL, ""), "Failed to set locale.")
+		|| ERRLOG(
+		  strcmp("UTF-8", nl_langinfo(CODESET)) == 0, "Locale is not UTF-8.")) {
 		return EXIT_FAILURE;
 	}
 
 	struct state state = {0};
 
 	if (!ERRLOG(state.log_fp = fopen(LOG_PATH, "w"),
-				"Failed to open log file '" LOG_PATH "'.") &&
-		!ERRLOG(tb_init() == TB_OK, "Failed to initialize termbox.") &&
-		!ERRLOG(tb_set_input_mode(TB_INPUT_ALT) == TB_OK,
-				"Failed to set input mode.") &&
-		!ERRLOG(log_add_fp(state.log_fp, LOG_TRACE) == 0,
-				"Failed to initialize logging callbacks.") &&
-		!ERRLOG(matrix_global_init() == 0,
-				"Failed to initialize matrix globals.") &&
-		!ERRLOG(ui_init(&state) == 0, "Failed to initialize UI.") &&
-		!ERRLOG(state.matrix = matrix_alloc(sync_cb, MXID, HOMESERVER, &state),
-				"Failed to initialize libmatrix.") &&
-		!ERRLOG(matrix_login(state.matrix, PASS, NULL, NULL) == MATRIX_SUCCESS,
-				"Failed to login.")) {
+		  "Failed to open log file '" LOG_PATH "'.")
+		&& !ERRLOG(tb_init() == TB_OK, "Failed to initialize termbox.")
+		&& !ERRLOG(
+		  tb_set_input_mode(TB_INPUT_ALT) == TB_OK, "Failed to set input mode.")
+		&& !ERRLOG(log_add_fp(state.log_fp, LOG_TRACE) == 0,
+		  "Failed to initialize logging callbacks.")
+		&& !ERRLOG(
+		  matrix_global_init() == 0, "Failed to initialize matrix globals.")
+		&& !ERRLOG(ui_init(&state) == 0, "Failed to initialize UI.")
+		&& !ERRLOG(
+		  state.matrix = matrix_alloc(sync_cb, MXID, HOMESERVER, &state),
+		  "Failed to initialize libmatrix.")
+		&& !ERRLOG(
+		  matrix_login(state.matrix, PASS, NULL, NULL) == MATRIX_SUCCESS,
+		  "Failed to login.")) {
 		ui_loop(&state);
 
 #if 0

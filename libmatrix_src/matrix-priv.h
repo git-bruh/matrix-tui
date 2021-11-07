@@ -1,6 +1,7 @@
 #ifndef MATRIX_PRIV_H
 #define MATRIX_PRIV_H
 #include "matrix.h"
+
 #include <assert.h>
 #include <cjson/cJSON.h>
 #include <curl/curl.h>

@@ -1,5 +1,6 @@
 #include "stb_ds.h"
 #include "termbox.h"
+
 #include <assert.h>
 #include <stdbool.h>
 
@@ -9,10 +10,10 @@ treeview_node_alloc(struct treeview_node *parent, char *string, void *data) {
 
 	if (node) {
 		*node = (struct treeview_node){
-			.parent = parent,
-			.string = string,
-			.data = data,
-			.is_expanded = true,
+		  .parent = parent,
+		  .string = string,
+		  .data = data,
+		  .is_expanded = true,
 		};
 	}
 
@@ -81,7 +82,7 @@ parent_next(struct treeview_node *tree) {
    This is very hacky but it's the only way to do this recursively. */
 static int
 node_height(struct treeview_node *tree, struct treeview_node *node, int height,
-			int *realheight) {
+  int *realheight) {
 	if (!tree) {
 		return height;
 	}
@@ -105,8 +106,8 @@ node_height(struct treeview_node *tree, struct treeview_node *node, int height,
 }
 
 static int
-redraw(struct treeview *treeview, const struct treeview_node *tree, int x,
-	   int y) {
+redraw(
+  struct treeview *treeview, const struct treeview_node *tree, int x, int y) {
 	if (!tree) {
 		return y;
 	}
@@ -124,12 +125,12 @@ redraw(struct treeview *treeview, const struct treeview_node *tree, int x,
 	if (treeview->skipped++ >= treeview->start_y) {
 		/* Print the symbol and use the offset returned from that to print the
 		 * data. */
-		tb_print((x + (tb_print(x, y, TB_DEFAULT, TB_DEFAULT,
-								tree->parent ? (is_end ? symbol_end : symbol)
-											 : symbol_root))),
-				 y, TB_DEFAULT,
-				 tree == treeview->selected ? TB_REVERSE : TB_DEFAULT,
-				 tree->data);
+		tb_print(
+		  (x
+			+ (tb_print(x, y, TB_DEFAULT, TB_DEFAULT,
+			  tree->parent ? (is_end ? symbol_end : symbol) : symbol_root))),
+		  y, TB_DEFAULT, tree == treeview->selected ? TB_REVERSE : TB_DEFAULT,
+		  tree->data);
 
 		y++; /* Next node will be on another line. */
 	}
@@ -200,8 +201,8 @@ treeview_event(struct treeview *treeview, enum treeview_event event) {
 		}
 
 		if (tree->selected->parent->index > 0) {
-			tree->selected =
-				tree->selected->parent->trees[--tree->selected->parent->index];
+			tree->selected
+			  = tree->selected->parent->trees[--tree->selected->parent->index];
 			tree->selected = leaf(tree->selected); /* Bottom node. */
 		} else if (tree->selected->parent->parent) {
 			tree->selected = tree->selected->parent;
@@ -229,67 +230,71 @@ treeview_event(struct treeview *treeview, enum treeview_event event) {
 		}
 
 		return WIDGET_REDRAW;
-	case TREEVIEW_INSERT: {
-		if (!tree->selected) {
+	case TREEVIEW_INSERT:
+		{
+			if (!tree->selected) {
+				break;
+			}
+
+			struct treeview_node *ntree = alloc(tree->selected);
+
+			if (!ntree) {
+				break;
+			}
+
+			arrput(tree->selected->trees, ntree);
+
 			break;
 		}
+	case TREEVIEW_:
+		{
+			struct treeview_node *ntree
+			  = alloc(!tree->selected ? tree->root : tree->selected->parent);
 
-		struct treeview_node *ntree = alloc(tree->selected);
+			if (!ntree) {
+				break;
+			}
 
-		if (!ntree) {
+			arrput(ntree->parent->trees, ntree);
+
+			/* We don't adjust indexes or set the selected tree unless it's the
+			 * first entry. This is done to avoid accounting for the cases where
+			 * we ascend to the top of a node, add a new node below it in the
+			 * parent's trees and then try moving back to the node where all
+			 * indices are set to 0. */
+			if (!tree->selected) {
+				tree->selected = ntree;
+			}
+
 			break;
 		}
+	case DELETE:
+		{
+			struct treeview_node *current = tree->selected;
 
-		arrput(tree->selected->trees, ntree);
+			if (!current) {
+				break;
+			}
 
-		break;
-	}
-	case TREEVIEW_: {
-		struct treeview_node *ntree =
-			alloc(!tree->selected ? tree->root : tree->selected->parent);
+			arrdel(current->parent->trees, current->parent->index);
 
-		if (!ntree) {
+			if (current->parent->index < arrlenu(current->parent->trees)) {
+				tree->selected = current->parent->trees[current->parent->index];
+			} else if (current->parent->index > 0) {
+				tree->selected
+				  = current->parent->trees[--current->parent->index];
+			} else if (current->parent->parent) {
+				/* Move up a level. */
+				tree->selected = current->parent;
+			} else {
+				/* At top level and all nodes deleted. */
+				tree->selected = NULL;
+			}
+
+			destroy(current);
+
 			break;
 		}
-
-		arrput(ntree->parent->trees, ntree);
-
-		/* We don't adjust indexes or set the selected tree unless it's the
-		 * first entry. This is done to avoid accounting for the cases where we
-		 * ascend to the top of a node, add a new node below it in the parent's
-		 * trees and then
-		 * try moving back to the node where all indices are set to 0. */
-		if (!tree->selected) {
-			tree->selected = ntree;
-		}
-
-		break;
-	}
-	case DELETE: {
-		struct treeview_node *current = tree->selected;
-
-		if (!current) {
-			break;
-		}
-
-		arrdel(current->parent->trees, current->parent->index);
-
-		if (current->parent->index < arrlenu(current->parent->trees)) {
-			tree->selected = current->parent->trees[current->parent->index];
-		} else if (current->parent->index > 0) {
-			tree->selected = current->parent->trees[--current->parent->index];
-		} else if (current->parent->parent) {
-			/* Move up a level. */
-			tree->selected = current->parent;
-		} else {
-			/* At top level and all nodes deleted. */
-			tree->selected = NULL;
-		}
-
-		destroy(current);
-
-		break;
-	}
 	}
 
 	return WIDGET_NOOP;

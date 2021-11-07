@@ -3,6 +3,7 @@
 
 #include "stb_ds.h"
 #include "widgets.h"
+
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -103,9 +104,9 @@ buf_leftword(struct input *input) {
 	if (input->cur_buf > 0) {
 		do {
 			input->cur_buf--;
-		} while (input->cur_buf > 0 &&
-				 ((iswspace((wint_t) input->buf[input->cur_buf])) ||
-				  !(iswspace((wint_t) input->buf[input->cur_buf - 1]))));
+		} while (input->cur_buf > 0
+				 && ((iswspace((wint_t) input->buf[input->cur_buf]))
+					 || !(iswspace((wint_t) input->buf[input->cur_buf - 1]))));
 
 		return WIDGET_REDRAW;
 	}
@@ -131,9 +132,9 @@ buf_rightword(struct input *input) {
 	if (input->cur_buf < buf_len) {
 		do {
 			input->cur_buf++;
-		} while (input->cur_buf < buf_len &&
-				 !((iswspace((wint_t) input->buf[input->cur_buf])) &&
-				   !(iswspace((wint_t) input->buf[input->cur_buf - 1]))));
+		} while (input->cur_buf < buf_len
+				 && !((iswspace((wint_t) input->buf[input->cur_buf]))
+					  && !(iswspace((wint_t) input->buf[input->cur_buf - 1]))));
 
 		return WIDGET_REDRAW;
 	}
@@ -247,8 +248,8 @@ input_redraw(struct input *input) {
 	int x = points.x1;
 
 	tb_set_cursor(cur_x, lines_fit_in_height
-							 ? (y + cur_line - 1)
-							 : (points.y1 + (cur_line - (input->start_y + 1))));
+						   ? (y + cur_line - 1)
+						   : (points.y1 + (cur_line - (input->start_y + 1))));
 
 	while (written < buf_len) {
 		if (line >= lines || (y - input->start_y) >= points.y2) {
@@ -286,14 +287,15 @@ input_handle_event(struct input *input, enum input_event event, ...) {
 		return buf_left(input);
 	case INPUT_LEFT_WORD:
 		return buf_leftword(input);
-	case INPUT_ADD: {
-		va_list vl = {0};
-		va_start(vl, event);
-		uint32_t ch = va_arg(vl, uint32_t);
-		va_end(vl);
+	case INPUT_ADD:
+		{
+			va_list vl = {0};
+			va_start(vl, event);
+			uint32_t ch = va_arg(vl, uint32_t);
+			va_end(vl);
 
-		return buf_add(input, ch);
-	}
+			return buf_add(input, ch);
+		}
 	}
 
 	return WIDGET_NOOP;

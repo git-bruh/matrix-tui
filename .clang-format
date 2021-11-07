@@ -1,9 +1,31 @@
 ---
+AlignAfterOpenBracket: DontAlign
+AlignArrayOfStructures: Right
+AlignOperands: AlignAfterOperator
+AlignTrailingComments: true
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AlwaysBreakAfterReturnType: All
+AlwaysBreakBeforeMultilineStrings: true
 BasedOnStyle: LLVM
+BinPackArguments: true
+BinPackParameters: true
+BreakBeforeBinaryOperators: All
+BreakBeforeBraces: Attach
+BreakBeforeTernaryOperators: true
+BreakStringLiterals: true
 ColumnLimit: 80
+ContinuationIndentWidth: 2
+IncludeBlocks: Regroup
+IndentCaseBlocks: true
 IndentWidth: 4
+PointerAlignment: Right
+QualifierAlignmentStyle: Left
+SpaceAfterCStyleCast: true
+SpaceBeforeParens: ControlStatements
 TabWidth: 4
 UseTab: Always
-AlwaysBreakAfterReturnType: All
-SpaceAfterCStyleCast: true
 ...

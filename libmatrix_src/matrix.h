@@ -60,8 +60,8 @@ struct matrix_room_create {
 	bool federate;
 	char *creator;
 	const char
-		*room_version; /* This is marked const as we assign a string literal to
-						  it if the room_version key is not present. */
+	  *room_version; /* This is marked const as we assign a string literal to
+						it if the room_version key is not present. */
 	struct matrix_state_base base;
 };
 
@@ -165,7 +165,7 @@ struct matrix_room {
 	matrix_json_t *events[MATRIX_EVENT_MAX];
 	struct matrix_room_summary summary;
 	struct matrix_room_timeline
-		timeline; /* Irrelevant if type == MATRIX_ROOM_INVITE. */
+	  timeline; /* Irrelevant if type == MATRIX_ROOM_INVITE. */
 	enum matrix_room_type {
 		MATRIX_ROOM_LEAVE = 0,
 		MATRIX_ROOM_JOIN,
@@ -239,7 +239,7 @@ int
 matrix_global_init(void);
 struct matrix *
 matrix_alloc(matrix_sync_cb sync_cb, const char *mxid, const char *homeserver,
-			 void *userp);
+  void *userp);
 void
 matrix_destroy(struct matrix *matrix);
 /* Must be the last function called only a single time. */
@@ -253,30 +253,30 @@ matrix_login_with_token(struct matrix *matrix, const char *access_token);
 /* nullable: device_id, initial_device_display_name */
 enum matrix_code
 matrix_login(struct matrix *matrix, const char *password, const char *device_id,
-			 const char *initial_device_display_name);
+  const char *initial_device_display_name);
 
 /* timeout specifies the maximum time in milliseconds that the server will wait
  * for events to be received. The recommended minimum is 1000 == 1 second to
  * avoid burning CPU cycles. */
 /* nullable: next_batch */
 enum matrix_code
-matrix_sync_forever(struct matrix *matrix, const char *next_batch,
-					unsigned timeout);
+matrix_sync_forever(
+  struct matrix *matrix, const char *next_batch, unsigned timeout);
 
 /* These functions fill in the passed struct with the corresponding JSON item's
  * representation at the current index. */
 int
-matrix_sync_room_next(struct matrix_sync_response *response,
-					  struct matrix_room *room);
+matrix_sync_room_next(
+  struct matrix_sync_response *response, struct matrix_room *room);
 int
-matrix_sync_state_next(struct matrix_room *room,
-					   struct matrix_state_event *event);
+matrix_sync_state_next(
+  struct matrix_room *room, struct matrix_state_event *event);
 int
-matrix_sync_timeline_next(struct matrix_room *room,
-						  struct matrix_timeline_event *event);
+matrix_sync_timeline_next(
+  struct matrix_room *room, struct matrix_timeline_event *event);
 int
-matrix_sync_ephemeral_next(struct matrix_room *room,
-						   struct matrix_ephemeral_event *event);
+matrix_sync_ephemeral_next(
+  struct matrix_room *room, struct matrix_ephemeral_event *event);
 
 /* Magic macro to call one of the above functions depending on the argument
  * type. */

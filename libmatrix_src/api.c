@@ -40,15 +40,16 @@ static struct curl_slist *
 get_headers(struct matrix *matrix) {
 	char *auth = NULL;
 
-	if (matrix->access_token &&
-		(asprintf(&auth, "%s%s", "Authorization: Bearer ",
-				  matrix->access_token)) == -1) {
+	if (matrix->access_token
+		&& (asprintf(
+			 &auth, "%s%s", "Authorization: Bearer ", matrix->access_token))
+			 == -1) {
 		return NULL;
 	}
 
 	struct curl_slist *headers = auth ? curl_slist_append(NULL, auth) : NULL;
-	struct curl_slist *tmp =
-		curl_slist_append(headers, "Content-Type: application/json");
+	struct curl_slist *tmp
+	  = curl_slist_append(headers, "Content-Type: application/json");
 
 	if (tmp) {
 		free(auth);
@@ -62,8 +63,8 @@ get_headers(struct matrix *matrix) {
 }
 
 static char *
-endpoint_create(const char *homeserver, const char *endpoint,
-				const char *params) {
+endpoint_create(
+  const char *homeserver, const char *endpoint, const char *params) {
 	assert(homeserver);
 	assert(endpoint);
 	assert(endpoint[0] == '/'); /* base[] doesn't have a trailing slash. */
@@ -73,7 +74,8 @@ endpoint_create(const char *homeserver, const char *endpoint,
 	char *final = NULL;
 
 	if ((asprintf(&final, "%s%s%s%s", homeserver, base, endpoint,
-				  (params ? params : ""))) == -1) {
+		  (params ? params : "")))
+		== -1) {
 		return NULL;
 	}
 
@@ -82,21 +84,21 @@ endpoint_create(const char *homeserver, const char *endpoint,
 
 static enum matrix_code
 response_init(enum method method, const char *data, const char *url,
-			  const struct curl_slist *headers, struct response *response) {
+  const struct curl_slist *headers, struct response *response) {
 	assert(headers);
 	assert(response);
 	assert(url);
 
 	CURL *easy = curl_easy_init();
 
-	if (easy && (curl_easy_setopt(easy, CURLOPT_URL, url)) == CURLE_OK &&
-		(curl_easy_setopt(easy, CURLOPT_HTTPHEADER, headers)) == CURLE_OK &&
-		(curl_easy_setopt(easy, CURLOPT_ERRORBUFFER, response->error)) ==
-			CURLE_OK &&
-		(curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, write_cb)) == CURLE_OK &&
-		(curl_easy_setopt(easy, CURLOPT_WRITEDATA, response)) == CURLE_OK) {
+	if (easy && (curl_easy_setopt(easy, CURLOPT_URL, url)) == CURLE_OK
+		&& (curl_easy_setopt(easy, CURLOPT_HTTPHEADER, headers)) == CURLE_OK
+		&& (curl_easy_setopt(easy, CURLOPT_ERRORBUFFER, response->error))
+			 == CURLE_OK
+		&& (curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, write_cb)) == CURLE_OK
+		&& (curl_easy_setopt(easy, CURLOPT_WRITEDATA, response)) == CURLE_OK) {
 		*response = (struct response){
-			.easy = easy,
+		  .easy = easy,
 		};
 
 		switch (method) {
@@ -106,8 +108,8 @@ response_init(enum method method, const char *data, const char *url,
 		case POST:
 			assert(data);
 
-			if ((curl_easy_setopt(easy, CURLOPT_POSTFIELDS, data)) ==
-				CURLE_OK) {
+			if ((curl_easy_setopt(easy, CURLOPT_POSTFIELDS, data))
+				== CURLE_OK) {
 				return MATRIX_SUCCESS;
 			}
 			break;
@@ -126,8 +128,8 @@ response_init(enum method method, const char *data, const char *url,
 static enum matrix_code
 response_perform(struct response *response) {
 	if ((curl_easy_perform(response->easy)) == CURLE_OK) {
-		curl_easy_getinfo(response->easy, CURLINFO_RESPONSE_CODE,
-						  &response->http_code);
+		curl_easy_getinfo(
+		  response->easy, CURLINFO_RESPONSE_CODE, &response->http_code);
 
 		if ((http_code_is_success(response->http_code))) {
 			return MATRIX_SUCCESS;
@@ -146,7 +148,7 @@ response_finish(struct response *response) {
 /* The caller must response_finish() the response. */
 static enum matrix_code
 perform(struct matrix *matrix, const cJSON *json, enum method method,
-		const char endpoint[], const char params[], struct response *response) {
+  const char endpoint[], const char params[], struct response *response) {
 	char *url = endpoint_create(matrix->homeserver, endpoint, params);
 	char *data = json ? cJSON_Print(json) : NULL;
 
@@ -156,7 +158,7 @@ perform(struct matrix *matrix, const cJSON *json, enum method method,
 
 	if (url && headers) {
 		code = response_perform(
-			((response_init(method, data, url, headers, response)), response));
+		  ((response_init(method, data, url, headers, response)), response));
 	}
 
 	curl_slist_free_all(headers);
@@ -175,8 +177,8 @@ set_batch(char *url, char **new_url, size_t *new_len, const char *next_batch) {
 
 	const char *param_since = "&since=";
 
-	size_t new_len_tmp =
-		strlen(url) + strlen(param_since) + strlen(next_batch) + 1;
+	size_t new_len_tmp
+	  = strlen(url) + strlen(param_since) + strlen(next_batch) + 1;
 
 	/* Avoid repeated malloc calls if the token length remains the
 	 * same. We use malloc + snprintf instead of asprintf for this reason. */
@@ -196,8 +198,8 @@ set_batch(char *url, char **new_url, size_t *new_len, const char *next_batch) {
 }
 
 enum matrix_code
-matrix_sync_forever(struct matrix *matrix, const char *next_batch,
-					unsigned timeout) {
+matrix_sync_forever(
+  struct matrix *matrix, const char *next_batch, unsigned timeout) {
 	if (!matrix->access_token) {
 		return MATRIX_NOT_LOGGED_IN;
 	}
@@ -225,13 +227,15 @@ matrix_sync_forever(struct matrix *matrix, const char *next_batch,
 	char *new_buf = NULL; /* We fill in this buf with the new batch token on
 							 every successful response. */
 
-	if ((next_batch ? ((code = set_batch(url, &new_buf, &new_len,
-										 next_batch)) == MATRIX_SUCCESS)
-					: true) &&
-		(response_init(GET, NULL, url, headers, &response)) == MATRIX_SUCCESS) {
+	if ((next_batch ? ((code = set_batch(url, &new_buf, &new_len, next_batch))
+					   == MATRIX_SUCCESS)
+					: true)
+		&& (response_init(GET, NULL, url, headers, &response))
+			 == MATRIX_SUCCESS) {
 		for (;;) {
-			if (new_buf && (curl_easy_setopt(response.easy, CURLOPT_URL,
-											 new_buf)) != CURLE_OK) {
+			if (new_buf
+				&& (curl_easy_setopt(response.easy, CURLOPT_URL, new_buf))
+					 != CURLE_OK) {
 				code = MATRIX_CURL_FAILURE;
 				break;
 			}
@@ -243,9 +247,9 @@ matrix_sync_forever(struct matrix *matrix, const char *next_batch,
 
 			cJSON *parsed = cJSON_Parse(response.data);
 
-			if ((code = set_batch(url, &new_buf, &new_len,
-								  GETSTR(parsed, "next_batch"))) !=
-				MATRIX_SUCCESS) {
+			if ((code = set_batch(
+				   url, &new_buf, &new_len, GETSTR(parsed, "next_batch")))
+				!= MATRIX_SUCCESS) {
 				cJSON_Delete(parsed);
 				break;
 			}
@@ -282,13 +286,13 @@ matrix_login_with_token(struct matrix *matrix, const char *access_token) {
 
 enum matrix_code
 matrix_login(struct matrix *matrix, const char *password, const char *device_id,
-			 const char *initial_device_display_name) {
+  const char *initial_device_display_name) {
 	if (!password) {
 		return MATRIX_INVALID_ARGUMENT;
 	}
 
-	enum matrix_code code =
-		MATRIX_NOMEM; /* Before a call to perform(), only cJSON-related errors
+	enum matrix_code code
+	  = MATRIX_NOMEM; /* Before a call to perform(), only cJSON-related errors
 						 are possible. */
 
 	cJSON *json = NULL;
@@ -296,22 +300,22 @@ matrix_login(struct matrix *matrix, const char *password, const char *device_id,
 
 	struct response response = {0};
 
-	if ((json = cJSON_CreateObject()) &&
-		(identifier = cJSON_AddObjectToObject(json, "identifier")) &&
-		(ADDSTR(json, "device_id", device_id)) &&
-		(ADDSTR(json, "initial_device_display_name",
-				initial_device_display_name)) &&
-		(ADDSTR(json, "type", "m.login.password")) &&
-		(ADDSTR(json, "password", password)) &&
-		(ADDSTR(identifier, "type", "m.id.user")) &&
-		(ADDSTR(identifier, "user", matrix->mxid)) &&
-		(code = perform(matrix, json, POST, "/login", NULL, &response)) ==
-			MATRIX_SUCCESS) {
+	if ((json = cJSON_CreateObject())
+		&& (identifier = cJSON_AddObjectToObject(json, "identifier"))
+		&& (ADDSTR(json, "device_id", device_id))
+		&& (ADDSTR(
+		  json, "initial_device_display_name", initial_device_display_name))
+		&& (ADDSTR(json, "type", "m.login.password"))
+		&& (ADDSTR(json, "password", password))
+		&& (ADDSTR(identifier, "type", "m.id.user"))
+		&& (ADDSTR(identifier, "user", matrix->mxid))
+		&& (code = perform(matrix, json, POST, "/login", NULL, &response))
+			 == MATRIX_SUCCESS) {
 		cJSON *parsed = cJSON_Parse(response.data);
 
-		if ((code = matrix_login_with_token(matrix,
-											GETSTR(parsed, "access_token"))) ==
-			MATRIX_INVALID_ARGUMENT) {
+		if ((code
+			  = matrix_login_with_token(matrix, GETSTR(parsed, "access_token")))
+			== MATRIX_INVALID_ARGUMENT) {
 			code = MATRIX_MALFORMED_JSON; /* token was NULL */
 		}
 

@@ -3,6 +3,7 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "termbox.h"
+
 #include <stdbool.h>
 
 enum widget_type { WIDGET_INPUT = 0, WIDGET_TREEVIEW };
