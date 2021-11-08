@@ -200,10 +200,7 @@ input_redraw(struct input *input) {
 			break;
 		}
 
-		assert(x >= points.x1);
-		assert(y >= points.y1);
-		assert(x < points.x2);
-		assert((y - input->start_y) >= points.y1);
+		assert((widget_points_in_bounds(&points, x, y - input->start_y)));
 
 		uint32_t uc = widget_uc_sanitize(input->buf[written++], &width);
 

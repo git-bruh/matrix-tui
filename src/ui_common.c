@@ -24,7 +24,8 @@ widget_uc_sanitize(uint32_t uc, int *width) {
 
 bool
 widget_points_in_bounds(const struct widget_points *points, int x, int y) {
-	return (x < points->x2 && y < points->y2);
+	return (
+	  x >= points->x1 && x < points->x2 && y >= points->y1 && y < points->y2);
 }
 
 bool

@@ -71,9 +71,11 @@ node_height(struct treeview_node *parent, struct treeview_node *target,
 static int
 redraw(struct treeview *treeview, const struct treeview_node *node,
   const struct widget_points *points, int x, int y) {
-	if (!node || !(widget_points_in_bounds(points, x, y))) {
+	if (!node) {
 		return y;
 	}
+
+	assert((widget_points_in_bounds(points, x, y)));
 
 	/* Stolen from tview's semigraphics. */
 	const char symbol[] = "├──";
@@ -97,7 +99,7 @@ redraw(struct treeview *treeview, const struct treeview_node *node,
 		y++; /* Next node will be on another line. */
 	}
 
-	if (!node->is_expanded) {
+	if (!node->is_expanded || (x + gap_size) >= points->x2) {
 		return y;
 	}
 
