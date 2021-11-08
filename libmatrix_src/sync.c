@@ -29,7 +29,7 @@ parse_summary(struct matrix_room_summary *summary, const cJSON *data) {
 		return -1;
 	}
 
-	*summary = (struct matrix_room_summary){
+	*summary = (struct matrix_room_summary) {
 	  .joined_member_count = get_int(data, "m.joined_member_count", 0),
 	  .invited_member_count = get_int(data, "m.invited_member_count", 0),
 	  .heroes = cJSON_GetObjectItem(data, "m.heroes"),
@@ -44,7 +44,7 @@ parse_timeline(struct matrix_room_timeline *timeline, const cJSON *data) {
 		return -1;
 	}
 
-	*timeline = (struct matrix_room_timeline){
+	*timeline = (struct matrix_room_timeline) {
 	  .prev_batch = GETSTR(data, "prev_batch"),
 	  .limited = cJSON_IsTrue(cJSON_GetObjectItem(data, "limited")),
 	};
@@ -59,7 +59,7 @@ matrix_sync_room_next(
 		cJSON *room_json = response->rooms[type];
 
 		while (room_json) {
-			*room = (struct matrix_room){
+			*room = (struct matrix_room) {
 			  .id = room_json->string,
 			  .events
 			  = {[MATRIX_EVENT_STATE]
@@ -137,7 +137,7 @@ matrix_sync_state_next(
 		}
 
 		if (TYPE(MATRIX_ROOM_MEMBER, "m.room.member")) {
-			revent->member = (struct matrix_room_member){
+			revent->member = (struct matrix_room_member) {
 			  .base = base,
 			  .is_direct
 			  = cJSON_IsTrue(cJSON_GetObjectItem(content, "is_direct")),
@@ -152,7 +152,7 @@ matrix_sync_state_next(
 		} else if (TYPE(MATRIX_ROOM_POWER_LEVELS, "m.room.power_levels")) {
 			const int default_power = 50;
 
-			revent->power_levels = (struct matrix_room_power_levels){
+			revent->power_levels = (struct matrix_room_power_levels) {
 			  .base = base,
 			  .ban = get_int(content, "ban", default_power),
 			  .events_default
@@ -169,7 +169,7 @@ matrix_sync_state_next(
 			};
 		} else if (TYPE(
 					 MATRIX_ROOM_CANONICAL_ALIAS, "m.room.canonical_alias")) {
-			revent->canonical_alias = (struct matrix_room_canonical_alias){
+			revent->canonical_alias = (struct matrix_room_canonical_alias) {
 			  .base = base,
 			  .alias = GETSTR(content, "alias"),
 			};
@@ -181,7 +181,7 @@ matrix_sync_state_next(
 				version = "1";
 			}
 
-			revent->create = (struct matrix_room_create){
+			revent->create = (struct matrix_room_create) {
 			  .base = base,
 			  .federate = federate ? cJSON_IsTrue(federate)
 								   : true, /* Federation is enabled if the key
@@ -190,19 +190,19 @@ matrix_sync_state_next(
 			  .room_version = version,
 			};
 		} else if (TYPE(MATRIX_ROOM_JOIN_RULES, "m.room.join_rules")) {
-			revent->join_rules = (struct matrix_room_join_rules){
+			revent->join_rules = (struct matrix_room_join_rules) {
 			  .base = base,
 			  .join_rule = GETSTR(content, "join_rule"),
 			};
 
 			is_valid = !!revent->join_rules.join_rule;
 		} else if (TYPE(MATRIX_ROOM_NAME, "m.room.name")) {
-			revent->name = (struct matrix_room_name){
+			revent->name = (struct matrix_room_name) {
 			  .base = base,
 			  .name = GETSTR(content, "name"),
 			};
 		} else if (TYPE(MATRIX_ROOM_TOPIC, "m.room.topic")) {
-			revent->topic = (struct matrix_room_topic){
+			revent->topic = (struct matrix_room_topic) {
 			  .base = base,
 			  .topic = GETSTR(content, "topic"),
 			};
@@ -263,7 +263,7 @@ matrix_sync_timeline_next(
 		}
 
 		if (TYPE(MATRIX_ROOM_MESSAGE, "m.room.message")) {
-			revent->message = (struct matrix_room_message){
+			revent->message = (struct matrix_room_message) {
 			  .base = base,
 			  .body = GETSTR(content, "body"),
 			  .msgtype = GETSTR(content, "msgtype"),
@@ -282,7 +282,7 @@ matrix_sync_timeline_next(
 					|| STREQ(revent->message.msgtype, "m.audio")
 					|| STREQ(revent->message.msgtype, "m.video"))) {
 				revent->type = MATRIX_ROOM_ATTACHMENT;
-				revent->attachment = (struct matrix_room_attachment){
+				revent->attachment = (struct matrix_room_attachment) {
 				  .base = base,
 				  .body = GETSTR(content, "body"),
 				  .msgtype = GETSTR(content, "msgtype"),
@@ -297,7 +297,7 @@ matrix_sync_timeline_next(
 						&& !!revent->attachment.url;
 			}
 		} else if (TYPE(MATRIX_ROOM_REDACTION, "m.room.redaction")) {
-			revent->redaction = (struct matrix_room_redaction){
+			revent->redaction = (struct matrix_room_redaction) {
 			  .base = base,
 			  .redacts = GETSTR(event, "redacts"),
 			  .reason = GETSTR(content, "reason"),
@@ -341,7 +341,7 @@ matrix_sync_ephemeral_next(
 		}
 
 		if (TYPE(MATRIX_ROOM_TYPING, "m.typing")) {
-			revent->typing = (struct matrix_room_typing){
+			revent->typing = (struct matrix_room_typing) {
 			  .base = base,
 			  .user_ids = cJSON_GetObjectItem(content, "user_ids"),
 			};

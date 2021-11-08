@@ -110,7 +110,7 @@ buf_delword(struct input *input) {
 
 int
 input_init(struct input *input, struct widget_callback cb) {
-	*input = (struct input){.cb = cb};
+	*input = (struct input) {.cb = cb};
 
 	return 0;
 }

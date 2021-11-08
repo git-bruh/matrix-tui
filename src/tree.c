@@ -127,7 +127,7 @@ treeview_node_alloc(struct treeview_node *parent, char *string, void *data) {
 	struct treeview_node *node = malloc(sizeof(*node));
 
 	if (node) {
-		*node = (struct treeview_node){
+		*node = (struct treeview_node) {
 		  .parent = parent,
 		  .string = string,
 		  .data = data,
@@ -155,7 +155,7 @@ int
 treeview_init(struct treeview *treeview, struct widget_callback cb) {
 	static char msg[] = "msg";
 
-	*treeview = (struct treeview){
+	*treeview = (struct treeview) {
 	  .root = treeview_node_alloc(NULL, msg, NULL),
 	  .cb = cb,
 	};

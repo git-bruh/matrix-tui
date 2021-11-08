@@ -97,7 +97,7 @@ response_init(enum method method, const char *data, const char *url,
 			 == CURLE_OK
 		&& (curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, write_cb)) == CURLE_OK
 		&& (curl_easy_setopt(easy, CURLOPT_WRITEDATA, response)) == CURLE_OK) {
-		*response = (struct response){
+		*response = (struct response) {
 		  .easy = easy,
 		};
 
