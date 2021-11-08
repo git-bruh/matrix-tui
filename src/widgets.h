@@ -71,6 +71,12 @@ enum widget_error
 input_handle_event(struct input *input, enum input_event event, ...);
 
 /* Treeview. */
+
+/* Called to request string representation of the data. */
+typedef const char *(*treeview_string_cb)(void *data);
+/* Called when destroying the node. */
+typedef void (*treeview_free_cb)(void *data);
+
 enum treeview_event {
 	TREEVIEW_EXPAND = 0,
 	TREEVIEW_UP,
@@ -83,10 +89,11 @@ enum treeview_event {
 struct treeview_node {
 	bool is_expanded; /* Whether it's children are visible. */
 	size_t index;	  /* Index in the **trees array. */
-	char *string;
-	void *data; /* Any user data. */
 	struct treeview_node *parent;
 	struct treeview_node **nodes;
+	void *data; /* Any user data. */
+	treeview_string_cb string_cb;
+	treeview_free_cb free_cb;
 };
 
 struct treeview {
@@ -97,12 +104,18 @@ struct treeview {
 	struct widget_callback cb;
 };
 
+struct treeview_node *
+treeview_node_alloc(
+  void *data, treeview_string_cb string_cb, treeview_free_cb free_cb);
+void
+treeview_node_destroy(struct treeview_node *node);
 int
-treeview_init(struct treeview *treeview, struct widget_callback cb);
+treeview_init(struct treeview *treeview, struct treeview_node *root,
+  struct widget_callback cb);
 void
 treeview_finish(struct treeview *treeview);
 void
 treeview_redraw(struct treeview *treeview);
 enum widget_error
-treeview_event(struct treeview *treeview, enum treeview_event event);
+treeview_event(struct treeview *treeview, enum treeview_event event, ...);
 #endif /* !WIDGETS_H */

@@ -98,6 +98,11 @@ ui_cb(enum widget_type type, struct widget_points *points, void *userp) {
 	}
 }
 
+static const char *
+tree_string_cb(void *data) {
+	return (char *) data;
+}
+
 static int
 ui_init(struct state *state) {
 	struct widget_callback cb = {
@@ -105,8 +110,12 @@ ui_init(struct state *state) {
 	  .cb = ui_cb,
 	};
 
+	struct treeview_node *root
+	  = treeview_node_alloc("Root", tree_string_cb, NULL);
+
 	if ((input_init(&state->input, cb)) == -1
-		|| (treeview_init(&state->treeview, cb)) == -1) {
+		|| (treeview_init(&state->treeview, root, cb)) == -1) {
+		treeview_node_destroy(root);
 		return -1;
 	}
 
@@ -120,9 +129,26 @@ handle_tree(struct state *state, struct tb_event *event) {
 	if (!event->key && event->ch) {
 		switch (event->ch) {
 		case 'h':
-			return treeview_event(&state->treeview, TREEVIEW_INSERT_PARENT);
+			{
+				struct treeview_node *node
+				  = treeview_node_alloc("Hello!", tree_string_cb, NULL);
+
+				return treeview_event(
+						 &state->treeview, TREEVIEW_INSERT_PARENT, node)
+						== WIDGET_REDRAW
+					   ? WIDGET_REDRAW
+					   : (treeview_node_destroy(node), WIDGET_NOOP);
+			}
 		case 'n':
-			return treeview_event(&state->treeview, TREEVIEW_INSERT);
+			{
+				struct treeview_node *node
+				  = treeview_node_alloc("Hello!", tree_string_cb, NULL);
+
+				return treeview_event(&state->treeview, TREEVIEW_INSERT, node)
+						== WIDGET_REDRAW
+					   ? WIDGET_REDRAW
+					   : (treeview_node_destroy(node), WIDGET_NOOP);
+			}
 		case ' ':
 			return treeview_event(&state->treeview, TREEVIEW_EXPAND);
 		default:

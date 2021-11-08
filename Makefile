@@ -14,8 +14,6 @@ XCFLAGS = \
 	-Wunused-macros -Wredundant-decls \
 	-Werror=implicit-function-declaration \
 	-Werror=incompatible-pointer-types \
-	-Werror=discarded-qualifiers \
-	-Werror=ignored-qualifiers \
 	-DLOG_USE_COLOR \
 	-DCLIENT_NAME=\"matrix-client\"
 

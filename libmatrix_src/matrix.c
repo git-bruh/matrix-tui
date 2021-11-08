@@ -17,7 +17,7 @@ matrix_alloc(matrix_sync_cb sync_cb, const char *mxid, const char *homeserver,
 		}
 	}
 
-	struct matrix *matrix = calloc(1, sizeof(*matrix));
+	struct matrix *matrix = malloc(sizeof(*matrix));
 
 	if (matrix) {
 		*matrix = (struct matrix) {.homeserver = strdup(homeserver),

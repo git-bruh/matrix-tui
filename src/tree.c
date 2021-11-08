@@ -94,7 +94,8 @@ redraw(struct treeview *treeview, const struct treeview_node *node,
 		  node->parent ? (is_end ? symbol_end : symbol) : symbol_root);
 
 		widget_print_str(x + gap_size, y, points->x2, TB_DEFAULT,
-		  node == treeview->selected ? TB_REVERSE : TB_DEFAULT, node->string);
+		  node == treeview->selected ? TB_REVERSE : TB_DEFAULT,
+		  node->string_cb(node->data));
 
 		y++; /* Next node will be on another line. */
 	}
@@ -125,15 +126,16 @@ redraw(struct treeview *treeview, const struct treeview_node *node,
 }
 
 struct treeview_node *
-treeview_node_alloc(struct treeview_node *parent, char *string, void *data) {
+treeview_node_alloc(
+  void *data, treeview_string_cb string_cb, treeview_free_cb free_cb) {
 	struct treeview_node *node = malloc(sizeof(*node));
 
 	if (node) {
 		*node = (struct treeview_node) {
-		  .parent = parent,
-		  .string = string,
-		  .data = data,
 		  .is_expanded = true,
+		  .data = data,
+		  .string_cb = string_cb,
+		  .free_cb = free_cb,
 		};
 	}
 
@@ -142,7 +144,11 @@ treeview_node_alloc(struct treeview_node *parent, char *string, void *data) {
 
 void
 treeview_node_destroy(struct treeview_node *node) {
-	if (node && node->nodes) {
+	if (!node) {
+		return;
+	}
+
+	if (node->nodes) {
 		for (size_t i = 0, len = arrlenu(node->nodes); i < len; i++) {
 			treeview_node_destroy(node->nodes[i]);
 		}
@@ -150,15 +156,18 @@ treeview_node_destroy(struct treeview_node *node) {
 		arrfree(node->nodes);
 	}
 
+	if (node->free_cb) {
+		node->free_cb(node);
+	}
+
 	free(node);
 }
 
 int
-treeview_init(struct treeview *treeview, struct widget_callback cb) {
-	static char msg[] = "msg";
-
+treeview_init(struct treeview *treeview, struct treeview_node *root,
+  struct widget_callback cb) {
 	*treeview = (struct treeview) {
-	  .root = treeview_node_alloc(NULL, msg, NULL),
+	  .root = root,
 	  .cb = cb,
 	};
 
@@ -210,12 +219,10 @@ treeview_redraw(struct treeview *treeview) {
 }
 
 enum widget_error
-treeview_event(struct treeview *treeview, enum treeview_event event) {
+treeview_event(struct treeview *treeview, enum treeview_event event, ...) {
 	if (!treeview->root) {
 		return WIDGET_NOOP;
 	}
-
-	static char st[] = "Hello!"; /* TODO remove */
 
 	switch (event) {
 	case TREEVIEW_EXPAND:
@@ -266,27 +273,33 @@ treeview_event(struct treeview *treeview, enum treeview_event event) {
 				break;
 			}
 
-			struct treeview_node *nnode
-			  = treeview_node_alloc(treeview->selected, st, NULL);
+			va_list vl = {0};
+			va_start(vl, event);
+			struct treeview_node *nnode = va_arg(vl, struct treeview_node *);
+			va_end(vl);
 
-			if (!nnode) {
+			if (!nnode || !nnode->string_cb) {
 				break;
 			}
 
+			nnode->parent = treeview->selected;
 			arrput(treeview->selected->nodes, nnode);
 
 			return WIDGET_REDRAW;
 		}
 	case TREEVIEW_INSERT_PARENT:
 		{
-			struct treeview_node *nnode = treeview_node_alloc(
-			  !treeview->selected ? treeview->root : treeview->selected->parent,
-			  st, NULL);
+			va_list vl = {0};
+			va_start(vl, event);
+			struct treeview_node *nnode = va_arg(vl, struct treeview_node *);
+			va_end(vl);
 
-			if (!nnode) {
+			if (!nnode || !nnode->string_cb) {
 				break;
 			}
 
+			nnode->parent = !treeview->selected ? treeview->root
+												: treeview->selected->parent;
 			arrput(nnode->parent->nodes, nnode);
 
 			/* We don't adjust indexes or set the selected tree unless it's the
