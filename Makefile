@@ -39,8 +39,11 @@ OBJ = \
 
 all: release
 
+# Track header file changes.
+-include $(OBJ:.o=.d)
+
 .c.o:
-	$(CC) $(XCFLAGS) $(INCLUDES) $(CPPFLAGS) -c $< -o $@
+	$(CC) $(XCFLAGS) $(INCLUDES) $(CPPFLAGS) -MMD -c $< -o $@
 
 $(BIN): $(OBJ)
 	$(CC) $(XCFLAGS) -o $@ $(OBJ) $(LDLIBS) $(LDFLAGS)
@@ -66,4 +69,4 @@ tidy:
 	clang-tidy ./*src/*.[hc] -- $(XCFLAGS) $(INCLUDES)
 
 clean:
-	rm -f $(BIN) $(OBJ)
+	rm -f $(BIN) $(OBJ) $(DEP)
