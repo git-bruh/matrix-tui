@@ -4,6 +4,8 @@
 
 BIN = client
 
+include config.mk
+
 XCFLAGS = \
 	$(CFLAGS) $(CPPFLAGS) -O3 -std=c11 \
 	-D_GNU_SOURCE -D_FORTIFY_SOURCE=2 \
@@ -17,7 +19,7 @@ XCFLAGS = \
 	-DLOG_USE_COLOR \
 	-DCLIENT_NAME=\"matrix-client\"
 
-LDLIBS = `curl-config --libs` -lcjson -lpthread
+XLDLIBS = $(LDLIBS) `curl-config --libs` -lcjson -lpthread
 
 INCLUDES = \
 	-I libmatrix_src \
@@ -37,30 +39,17 @@ OBJ = \
 	libmatrix_src/utils.o \
 	third_party/log.c/src/log.o
 
-all: release
+all: $(BIN)
 
 # Track header file changes.
--include $(OBJ:.o=.d)
+DEP = $(OBJ:.o=.d)
+-include $(DEP)
 
 .c.o:
 	$(CC) $(XCFLAGS) $(INCLUDES) $(CPPFLAGS) -MMD -c $< -o $@
 
 $(BIN): $(OBJ)
-	$(CC) $(XCFLAGS) -o $@ $(OBJ) $(LDLIBS) $(LDFLAGS)
-
-release:
-	$(MAKE) $(BIN) \
-		CFLAGS="$(CFLAGS) -DNDEBUG"
-
-release-static:
-	$(MAKE) $(BIN) \
-		CFLAGS="$(CFLAGS) -DNDEBUG" \
-		LDFLAGS="$(LDFLAGS) -static" \
-		LDLIBS="$(LDLIBS) `curl-config --static-libs`"
-
-sanitize:
-	$(MAKE) $(BIN) \
-		CFLAGS="$(CFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer -g3"
+	$(CC) $(XCFLAGS) -o $@ $(OBJ) $(XLDLIBS) $(LDFLAGS)
 
 format:
 	clang-format -Wno-error=unknown -i ./*src/*.[hc]

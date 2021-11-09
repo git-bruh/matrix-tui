@@ -1,0 +1,38 @@
+#!/usr/bin/env sh
+
+set -e
+
+fail() {
+	echo "$1"
+	exit 1
+}
+
+CFLAGS="-DNDEBUG"
+LDFLAGS=
+LDLIBS=
+PREFIX=/usr/local
+
+for arg; do
+	case "$arg" in
+	--prefix=*)
+		PREFIX=${arg#*=}
+	;;
+	--enable-debug*)
+		CFLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g3"
+	;;
+	--enable-static*)
+		LDFLAGS="-static"
+		LDLIBS="$(curl-config --static-libs)"
+	;;
+	*)
+		fail "Unknown Option '$arg'"
+	;;
+	esac
+done
+
+cat > config.mk << EOF
+CFLAGS += $CFLAGS
+LDFLAGS += $LDFLAGS
+LDLIBS += $LDLIBS
+PREFIX = $PREFIX
+EOF
