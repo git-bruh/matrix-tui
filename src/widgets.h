@@ -81,9 +81,13 @@ enum treeview_event {
 	TREEVIEW_EXPAND = 0,
 	TREEVIEW_UP,
 	TREEVIEW_DOWN,
-	TREEVIEW_INSERT,		/* Add a child node to the node. */
-	TREEVIEW_INSERT_PARENT, /* Add a node to the node's parent node. */
-	TREEVIEW_DELETE,		/* Delete a node along with it's children. */
+	/* Must pass a treeview_node struct for INSERT*
+	 * If WIDGET_NOOP is returned here then the operation was invalid and the
+	 * passed node should be freed to avoid leaks. */
+	TREEVIEW_INSERT,		/* Add a child node to the selected node. */
+	TREEVIEW_INSERT_PARENT, /* Add a node to the selected node's parent. */
+	TREEVIEW_DELETE, /* Delete the selected node along with it's children. The
+						root node cannot be deleted. */
 };
 
 struct treeview_node {
@@ -104,6 +108,7 @@ struct treeview {
 	struct widget_callback cb;
 };
 
+/* Pass NULL as the free_cb if the data is stack allocated. */
 struct treeview_node *
 treeview_node_alloc(
   void *data, treeview_string_cb string_cb, treeview_free_cb free_cb);

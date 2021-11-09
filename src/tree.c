@@ -128,7 +128,7 @@ redraw(struct treeview *treeview, const struct treeview_node *node,
 struct treeview_node *
 treeview_node_alloc(
   void *data, treeview_string_cb string_cb, treeview_free_cb free_cb) {
-	struct treeview_node *node = malloc(sizeof(*node));
+	struct treeview_node *node = string_cb ? malloc(sizeof(*node)) : NULL;
 
 	if (node) {
 		*node = (struct treeview_node) {
@@ -278,7 +278,7 @@ treeview_event(struct treeview *treeview, enum treeview_event event, ...) {
 			struct treeview_node *nnode = va_arg(vl, struct treeview_node *);
 			va_end(vl);
 
-			if (!nnode || !nnode->string_cb) {
+			if (!nnode) {
 				break;
 			}
 
@@ -294,7 +294,7 @@ treeview_event(struct treeview *treeview, enum treeview_event event, ...) {
 			struct treeview_node *nnode = va_arg(vl, struct treeview_node *);
 			va_end(vl);
 
-			if (!nnode || !nnode->string_cb) {
+			if (!nnode) {
 				break;
 			}
 

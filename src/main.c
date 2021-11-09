@@ -128,6 +128,8 @@ handle_tree(struct state *state, struct tb_event *event) {
 
 	if (!event->key && event->ch) {
 		switch (event->ch) {
+		case 'd':
+			return treeview_event(&state->treeview, TREEVIEW_DELETE);
 		case 'h':
 			{
 				struct treeview_node *node
