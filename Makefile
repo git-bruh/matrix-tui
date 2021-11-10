@@ -1,8 +1,9 @@
 .POSIX:
 
-.PHONY: format tidy clean
-
 BIN = client
+LIB = libmatrix.h
+
+.PHONY: $(LIB) format tidy clean
 
 include config.mk
 
@@ -51,6 +52,24 @@ DEP = $(OBJ:.o=.d)
 $(BIN): $(OBJ)
 	$(CC) $(XCFLAGS) -o $@ $(OBJ) $(XLDLIBS) $(LDFLAGS)
 
+$(LIB):
+	@{ \
+		:>$(LIB); \
+		printf "%s\n" \
+			"#ifndef LIBMATRIX_H" \
+			"#define LIBMATRIX_H" >> $(LIB); \
+		cat ./libmatrix_src/matrix.h >> $(LIB); \
+		printf "%s\n" \
+			"#endif" \
+			"#ifdef LIBMATRIX_IMPL" \
+			>> $(LIB); \
+		cat ./libmatrix_src/matrix-priv.h >> $(LIB); \
+		cat ./libmatrix_src/*.c >> $(LIB); \
+		printf "%s\n" \
+			"#endif" >> $(LIB); \
+		sed -i '/^#include \"/d' $(LIB); \
+	}
+
 format:
 	clang-format -Wno-error=unknown -i ./*src/*.[hc]
 
@@ -58,4 +77,4 @@ tidy:
 	clang-tidy ./*src/*.[hc] -- $(XCFLAGS) $(INCLUDES)
 
 clean:
-	rm -f $(BIN) $(OBJ) $(DEP)
+	rm -f $(DEP) $(OBJ) $(BIN) $(LIB)
