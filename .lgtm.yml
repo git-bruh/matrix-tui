@@ -1,0 +1,13 @@
+path_classifiers:
+  library:
+  - third_party/*
+extraction:
+  cpp:
+    prepare:
+      packages:
+        - libcurl4-openssl-dev
+    # LGTM's build server's cJSON is over a year old...
+    after_prepare:
+      - git clone --depth=1 https://github.com/DaveGamble/cJSON ./third_party/cjson
+      - export C_INCLUDE_PATH=$PWD/third_party
+      - sed -i -e 's|-lcjson||' -e 's|OBJ = |&third_party/cjson/cJSON.o |' Makefile
