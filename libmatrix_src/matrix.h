@@ -291,5 +291,7 @@ matrix_sync_ephemeral_next(
 			 : matrix_sync_ephemeral_next)(response_or_room, result)
 
 /* API */
-
+enum matrix_code
+matrix_send_message(struct matrix *matrix, char **event_id, const char *room_id,
+  const char *msgtype, const char *body, const char *formatted_body);
 #endif /* !MATRIX_MATRIX_H */

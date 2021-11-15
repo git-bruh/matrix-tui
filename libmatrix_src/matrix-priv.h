@@ -21,6 +21,8 @@
 #define ADDSTR(obj, key, val)                                                  \
 	(!!((const char *) (val)) ? (!!(cJSON_AddStringToObject(obj, key, val)))   \
 							  : true)
+/* Stringify the variable name and set it's value as the key. */
+#define ADDVARSTR(obj, var) (ADDSTR(obj, #var, var))
 
 struct matrix {
 	char *access_token;

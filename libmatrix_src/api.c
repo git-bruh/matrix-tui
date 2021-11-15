@@ -117,6 +117,15 @@ response_init(enum method method, const char *data, const char *url,
 			}
 			break;
 		case PUT:
+			assert(data);
+
+			if ((curl_easy_setopt(easy, CURLOPT_CUSTOMREQUEST, "PUT"))
+				  == CURLE_OK
+				&& (curl_easy_setopt(easy, CURLOPT_POSTFIELDS, data))
+					 == CURLE_OK) {
+				return MATRIX_SUCCESS;
+			}
+
 			break;
 		default:
 			assert(0);
@@ -124,6 +133,7 @@ response_init(enum method method, const char *data, const char *url,
 	}
 
 	curl_easy_cleanup(easy);
+	memset(response, 0, sizeof(*response));
 
 	return MATRIX_CURL_FAILURE;
 }
@@ -327,6 +337,44 @@ matrix_login(struct matrix *matrix, const char *password, const char *device_id,
 
 	cJSON_Delete(json);
 
+	response_finish(&response);
+
+	return code;
+}
+
+enum matrix_code
+matrix_send_message(struct matrix *matrix, char **event_id, const char *room_id,
+  const char *msgtype, const char *body, const char *formatted_body) {
+	if (!event_id || !msgtype || !body) {
+		return MATRIX_INVALID_ARGUMENT;
+	}
+
+	enum matrix_code code = MATRIX_NOMEM;
+
+	cJSON *json = NULL;
+	char *endpoint = NULL;
+
+	const char *format = formatted_body ? "org.matrix.custom.html" : NULL;
+
+	struct response response = {0};
+
+	if ((asprintf(
+		  &endpoint, "/rooms/%s/send/%s/%s", room_id, "m.room.message", "txn"))
+		  != -1
+		&& (json = cJSON_CreateObject()) && (ADDVARSTR(json, body))
+		&& (ADDVARSTR(json, format)) && (ADDVARSTR(json, formatted_body))
+		&& (ADDVARSTR(json, msgtype))
+		&& (code = perform(matrix, json, PUT, endpoint, NULL, &response))
+			 == MATRIX_SUCCESS) {
+		cJSON *parsed = cJSON_Parse(response.data);
+
+		*event_id = matrix_strdup(GETSTR(parsed, "event_id"));
+
+		cJSON_Delete(parsed);
+	}
+
+	free(endpoint);
+	cJSON_Delete(json);
 	response_finish(&response);
 
 	return code;
