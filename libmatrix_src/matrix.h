@@ -1,3 +1,6 @@
+/* SPDX-FileCopyrightText: 2021 git-bruh
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
 #ifndef MATRIX_MATRIX_H
 #define MATRIX_MATRIX_H
 #include <stdbool.h>

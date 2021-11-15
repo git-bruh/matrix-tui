@@ -1,7 +1,8 @@
-#ifndef WIDGETS_H
-#define WIDGETS_H
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
+
+#ifndef WIDGETS_H
+#define WIDGETS_H
 #include "termbox.h"
 
 #include <stdbool.h>
