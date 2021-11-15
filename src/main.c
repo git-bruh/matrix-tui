@@ -103,8 +103,10 @@ ui_init(struct state *state) {
 	  .cb = ui_cb,
 	};
 
+	static char name[] = "Root";
+
 	struct treeview_node *root
-	  = treeview_node_alloc("Root", tree_string_cb, NULL);
+	  = treeview_node_alloc(name, tree_string_cb, NULL);
 
 	if ((input_init(&state->input, cb)) == -1
 		|| (treeview_init(&state->treeview, root, cb)) == -1) {
@@ -118,6 +120,7 @@ ui_init(struct state *state) {
 static enum widget_error
 handle_tree(struct state *state, struct tb_event *event) {
 	assert(state->active_widget == TREE);
+	static char hello[] = "Hello!";
 
 	if (!event->key && event->ch) {
 		switch (event->ch) {
@@ -126,7 +129,7 @@ handle_tree(struct state *state, struct tb_event *event) {
 		case 'h':
 			{
 				struct treeview_node *node
-				  = treeview_node_alloc("Hello!", tree_string_cb, NULL);
+				  = treeview_node_alloc(hello, tree_string_cb, NULL);
 
 				return treeview_event(
 						 &state->treeview, TREEVIEW_INSERT_PARENT, node)
@@ -137,7 +140,7 @@ handle_tree(struct state *state, struct tb_event *event) {
 		case 'n':
 			{
 				struct treeview_node *node
-				  = treeview_node_alloc("Hello!", tree_string_cb, NULL);
+				  = treeview_node_alloc(hello, tree_string_cb, NULL);
 
 				return treeview_event(&state->treeview, TREEVIEW_INSERT, node)
 						== WIDGET_REDRAW
@@ -202,6 +205,7 @@ handle_input(struct state *state, struct tb_event *event) {
 static void
 ui_loop(struct state *state) {
 	tb_set_input_mode(TB_INPUT_ALT);
+	tb_set_output_mode(TB_OUTPUT_256);
 
 	struct tb_event event = {0};
 

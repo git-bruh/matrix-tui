@@ -16,6 +16,7 @@ XCFLAGS = \
 	-Wcast-qual -Wconversion -Wpointer-arith \
 	-Wunused-macros -Wredundant-decls \
 	-Werror=implicit-function-declaration \
+	-Werror=incompatible-pointer-types \
 	-DLOG_USE_COLOR \
 	-DCLIENT_NAME=\"matrix-client\"
 
