@@ -23,7 +23,6 @@ XLDLIBS = $(LDLIBS) `curl-config --libs` -lcjson -lpthread
 
 INCLUDES = \
 	-I libmatrix_src \
-	-isystem third_party/log.c/src \
 	-isystem third_party/stb \
 	-isystem third_party/termbox2
 
@@ -36,8 +35,7 @@ OBJ = \
 	libmatrix_src/api.o \
 	libmatrix_src/matrix.o \
 	libmatrix_src/sync.o \
-	libmatrix_src/utils.o \
-	third_party/log.c/src/log.o
+	libmatrix_src/utils.o
 
 all: $(BIN)
 

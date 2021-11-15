@@ -1,7 +1,6 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
-#include "log.h"
 #include "matrix.h"
 #include "widgets.h"
 
@@ -24,9 +23,8 @@
 #define PASS ""
 #endif
 
-#define LOG_PATH "/tmp/" CLIENT_NAME ".log"
-
-#define ERRLOG(cond, ...) (!(cond) ? (log_fatal(__VA_ARGS__), true) : false)
+#define ERRLOG(cond, ...)                                                      \
+	(!(cond) ? (fprintf(stderr, __VA_ARGS__), true) : false)
 
 struct state {
 #ifndef NDEBUG
@@ -34,7 +32,6 @@ struct state {
 #endif
 	enum { INPUT = 0, TREE } active_widget;
 	char *current_room;
-	FILE *log_fp;
 	struct matrix *matrix;
 	struct input input;
 	struct treeview treeview;
@@ -63,10 +60,6 @@ cleanup(struct state *state) {
 
 	tb_shutdown();
 	matrix_global_cleanup();
-
-	if (state->log_fp) {
-		fclose(state->log_fp);
-	}
 
 	memset(state, 0, sizeof(*state));
 }
@@ -208,6 +201,8 @@ handle_input(struct state *state, struct tb_event *event) {
 
 static void
 ui_loop(struct state *state) {
+	tb_set_input_mode(TB_INPUT_ALT);
+
 	struct tb_event event = {0};
 
 	redraw(state);
@@ -340,39 +335,33 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 int
 main() {
-	if (ERRLOG(setlocale(LC_ALL, ""), "Failed to set locale.")
-		|| ERRLOG(
-		  strcmp("UTF-8", nl_langinfo(CODESET)) == 0, "Locale is not UTF-8.")) {
+	if (ERRLOG(setlocale(LC_ALL, ""), "Failed to set locale.\n")
+		|| ERRLOG(strcmp("UTF-8", nl_langinfo(CODESET)) == 0,
+		  "Locale is not UTF-8.\n")) {
 		return EXIT_FAILURE;
 	}
 
 	struct state state = {0};
 
-	if (!ERRLOG(state.log_fp = fopen(LOG_PATH, "w"),
-		  "Failed to open log file '" LOG_PATH "'.")
-		&& !ERRLOG(tb_init() == TB_OK, "Failed to initialize termbox.")
-		&& !ERRLOG(
-		  tb_set_input_mode(TB_INPUT_ALT) == TB_OK, "Failed to set input mode.")
-		&& !ERRLOG(log_add_fp(state.log_fp, LOG_TRACE) == 0,
-		  "Failed to initialize logging callbacks.")
-		&& !ERRLOG(
-		  matrix_global_init() == 0, "Failed to initialize matrix globals.")
-		&& !ERRLOG(ui_init(&state) == 0, "Failed to initialize UI.")
+	if (!ERRLOG(
+		  matrix_global_init() == 0, "Failed to initialize matrix globals.\n")
+		&& !ERRLOG(ui_init(&state) == 0, "Failed to initialize UI.\n")
 		&& !ERRLOG(
 		  state.matrix = matrix_alloc(sync_cb, MXID, HOMESERVER, &state),
-		  "Failed to initialize libmatrix.")
+		  "Failed to initialize libmatrix.\n")
 		&& !ERRLOG(
 		  matrix_login(state.matrix, PASS, NULL, NULL) == MATRIX_SUCCESS,
-		  "Failed to login.")) {
+		  "Failed to login.\n")
+		&& !ERRLOG(tb_init() == TB_OK, "Failed to initialize termbox.\n")) {
 		ui_loop(&state);
 
 #if 0
 		switch ((matrix_sync_forever(state.matrix, NULL, sync_timeout))) {
 		case MATRIX_NOMEM:
-			(void) ERRLOG(0, "Out of memory!");
+			(void) ERRLOG(0, "Out of memory!\n");
 			break;
 		case MATRIX_CURL_FAILURE:
-			(void) ERRLOG(0, "Lost connection to homeserver.");
+			(void) ERRLOG(0, "Lost connection to homeserver.\n");
 			break;
 		default:
 			break;

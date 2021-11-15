@@ -1,6 +1,3 @@
-[submodule "third_party/log.c"]
-	path = third_party/log.c
-	url = https://github.com/rxi/log.c
 [submodule "third_party/termbox2"]
 	path = third_party/termbox2
 	url = https://github.com/termbox/termbox2

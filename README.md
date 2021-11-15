@@ -30,8 +30,6 @@ The above can be installed through your distribution's package manager. The corr
 
 A few dependencies are bundled:
 
-* [log.c](https://github.com/rxi/log.c) - A tiny ~200 LOC logging library
-
 * [stb](https://github.com/nothings/stb) - Data structures from `stb_ds.h`
 
 * [termbox](https://github.com/termbox/termbox2) - The terminal rendering library
