@@ -193,6 +193,7 @@ treeview_redraw(struct treeview *treeview) {
 
 	struct widget_points points = {0};
 	treeview->cb.cb(WIDGET_TREEVIEW, &points, treeview->cb.userp);
+	widget_points_normalize(&points);
 
 	int tmp = 0;
 	int selected_height

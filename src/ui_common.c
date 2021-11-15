@@ -3,6 +3,16 @@
 
 #include "widgets.h"
 
+static int
+min(int x, int y) {
+	return x < y ? x : y;
+}
+
+static int
+max(int x, int y) {
+	return x > y ? x : y;
+}
+
 uint32_t
 widget_uc_sanitize(uint32_t uc, int *width) {
 	int tmp_width = wcwidth((wchar_t) uc);
@@ -29,6 +39,18 @@ bool
 widget_points_in_bounds(const struct widget_points *points, int x, int y) {
 	return (
 	  x >= points->x1 && x < points->x2 && y >= points->y1 && y < points->y2);
+}
+
+/* Ensure that no point is negative or out of bounds. */
+void
+widget_points_normalize(struct widget_points *points) {
+	int height = tb_height();
+	int width = tb_width();
+
+	points->x1 = min(max(0, points->x1), width);
+	points->x2 = min(max(0, points->x2), width);
+	points->y1 = min(max(0, points->y1), height);
+	points->y2 = min(max(0, points->y2), height);
 }
 
 bool

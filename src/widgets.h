@@ -30,6 +30,8 @@ uint32_t
 widget_uc_sanitize(uint32_t uc, int *width);
 bool
 widget_points_in_bounds(const struct widget_points *points, int x, int y);
+void
+widget_points_normalize(struct widget_points *points);
 bool
 widget_should_forcebreak(int width);
 bool

@@ -135,6 +135,7 @@ input_redraw(struct input *input) {
 
 	struct widget_points points = {0};
 	input->cb.cb(WIDGET_INPUT, &points, input->cb.userp);
+	widget_points_normalize(&points);
 
 	int max_height = points.y2 - points.y1;
 	int cur_x = points.x1;
