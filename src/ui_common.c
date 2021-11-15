@@ -98,7 +98,7 @@ widget_print_str(
 		return x;
 	}
 
-	uint32_t uc;
+	uint32_t uc = 0;
 	int width = 0;
 	int original = x;
 
