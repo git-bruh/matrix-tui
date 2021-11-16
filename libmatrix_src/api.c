@@ -315,11 +315,10 @@ matrix_login(struct matrix *matrix, const char *password, const char *device_id,
 
 	if ((json = cJSON_CreateObject())
 		&& (identifier = cJSON_AddObjectToObject(json, "identifier"))
-		&& (ADDSTR(json, "device_id", device_id))
-		&& (ADDSTR(
-		  json, "initial_device_display_name", initial_device_display_name))
+		&& (ADDVARSTR(json, device_id))
+		&& (ADDVARSTR(json, initial_device_display_name))
+		&& (ADDVARSTR(json, password))
 		&& (ADDSTR(json, "type", "m.login.password"))
-		&& (ADDSTR(json, "password", password))
 		&& (ADDSTR(identifier, "type", "m.id.user"))
 		&& (ADDSTR(identifier, "user", matrix->mxid))
 		&& (code = perform(matrix, json, POST, "/login", NULL, &response))
