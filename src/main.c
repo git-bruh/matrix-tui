@@ -9,9 +9,7 @@
 #include <curl/curl.h>
 #include <langinfo.h>
 #include <locale.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <pthread.h>
 
 #if 1
 #define MXID "@testuser:localhost"
@@ -26,12 +24,18 @@
 #define ERRLOG(cond, ...)                                                      \
 	(!(cond) ? (fprintf(stderr, __VA_ARGS__), true) : false)
 
+enum { THREAD_SYNC = 0, THREAD_QUEUE, THREAD_MAX } threads;
+
 struct state {
 #ifndef NDEBUG
 	bool cleaned_up;
 #endif
 	enum { INPUT = 0, TREE } active_widget;
+	bool done;
+	bool mutex_is_init;
 	char *current_room;
+	pthread_t threads[THREAD_MAX];
+	pthread_mutex_t mutex;
 	struct matrix *matrix;
 	struct input input;
 	struct treeview treeview;
@@ -56,9 +60,27 @@ cleanup(struct state *state) {
 
 	input_finish(&state->input);
 	treeview_finish(&state->treeview);
-	matrix_destroy(state->matrix);
-
 	tb_shutdown();
+
+	if (state->mutex_is_init) {
+		pthread_mutex_lock(&state->mutex);
+		state->done = true;
+		pthread_mutex_unlock(&state->mutex);
+	}
+
+	if (state->threads[THREAD_SYNC]) {
+		pthread_join(state->threads[THREAD_SYNC], NULL);
+	}
+
+	if (state->threads[THREAD_QUEUE]) {
+		pthread_join(state->threads[THREAD_QUEUE], NULL);
+	}
+
+	if (state->mutex_is_init) {
+		pthread_mutex_destroy(&state->mutex);
+	}
+
+	matrix_destroy(state->matrix);
 	matrix_global_cleanup();
 
 	memset(state, 0, sizeof(*state));
@@ -94,6 +116,58 @@ ui_cb(enum widget_type type, struct widget_points *points, void *userp) {
 static const char *
 tree_string_cb(void *data) {
 	return (char *) data;
+}
+
+static bool
+running(void *userp) {
+	struct state *state = userp;
+
+	pthread_mutex_lock(&state->mutex);
+	bool running = !state->done;
+	pthread_mutex_unlock(&state->mutex);
+
+	return running;
+}
+
+static void *
+syncer(void *arg) {
+	struct state *state = arg;
+
+	switch ((matrix_sync_forever(state->matrix, NULL, sync_timeout, running))) {
+	case MATRIX_NOMEM:
+	case MATRIX_CURL_FAILURE:
+	default:
+		break;
+	}
+
+	pthread_exit(NULL);
+}
+
+static void *
+queue_listener(void *arg) {
+	struct state *state = arg;
+
+#if 0
+	while ((running(state))) {
+	}
+#endif
+
+	pthread_exit(NULL);
+}
+
+static int
+threads_init(struct state *state) {
+	if ((pthread_mutex_init(&state->mutex, NULL)) != 0
+		|| !(state->mutex_is_init = true)
+		|| (pthread_create(&state->threads[THREAD_SYNC], NULL, syncer, state))
+			 != 0
+		|| (pthread_create(
+			 &state->threads[THREAD_QUEUE], NULL, queue_listener, state))
+			 != 0) {
+		return -1;
+	}
+
+	return 0;
 }
 
 static int
@@ -356,23 +430,12 @@ main() {
 		&& !ERRLOG(
 		  matrix_login(state.matrix, PASS, NULL, NULL) == MATRIX_SUCCESS,
 		  "Failed to login.\n")
-		&& !ERRLOG(tb_init() == TB_OK, "Failed to initialize termbox.\n")) {
+		&& !ERRLOG(tb_init() == TB_OK, "Failed to initialize termbox.\n")
+		&& !ERRLOG(
+		  threads_init(&state) == 0, "Failed to initialize threads.\n")) {
 		ui_loop(&state);
-
-#if 0
-		switch ((matrix_sync_forever(state.matrix, NULL, sync_timeout))) {
-		case MATRIX_NOMEM:
-			(void) ERRLOG(0, "Out of memory!\n");
-			break;
-		case MATRIX_CURL_FAILURE:
-			(void) ERRLOG(0, "Lost connection to homeserver.\n");
-			break;
-		default:
-			break;
-		}
-#endif
-
 		cleanup(&state);
+
 		return EXIT_SUCCESS;
 	}
 
