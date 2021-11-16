@@ -350,6 +350,9 @@ treeview_event(struct treeview *treeview, enum treeview_event event, ...) {
 
 			return WIDGET_REDRAW;
 		}
+	default:
+		assert(0);
+		break;
 	}
 
 	return WIDGET_NOOP;

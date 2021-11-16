@@ -24,7 +24,7 @@
 #define ERRLOG(cond, ...)                                                      \
 	(!(cond) ? (fprintf(stderr, __VA_ARGS__), true) : false)
 
-enum { THREAD_SYNC = 0, THREAD_QUEUE, THREAD_MAX } threads;
+enum { THREAD_SYNC = 0, THREAD_QUEUE, THREAD_MAX };
 
 struct state {
 #ifndef NDEBUG
@@ -330,8 +330,8 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 		while ((matrix_sync_next(&room, &sevent)) == MATRIX_SUCCESS) {
 			switch (sevent.type) {
 			case MATRIX_ROOM_MEMBER:
-				ERRLOG(0, "(%s) => Membership (%s)\n", sevent.member.base.sender,
-				  sevent.member.membership);
+				ERRLOG(0, "(%s) => Membership (%s)\n",
+				  sevent.member.base.sender, sevent.member.membership);
 				break;
 			case MATRIX_ROOM_POWER_LEVELS:
 				break;
@@ -341,7 +341,8 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 											   : "");
 				break;
 			case MATRIX_ROOM_CREATE:
-				ERRLOG(0, "Created => Creator (%s), Version (%s), Federate (%d)\n",
+				ERRLOG(0,
+				  "Created => Creator (%s), Version (%s), Federate (%d)\n",
 				  sevent.create.creator, sevent.create.room_version,
 				  sevent.create.federate);
 				break;
