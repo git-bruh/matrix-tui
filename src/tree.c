@@ -16,7 +16,7 @@ is_last(const struct treeview_node *node) {
 
 static struct treeview_node *
 leaf(struct treeview_node *node) {
-	if (node->is_expanded && node->nodes) {
+	if (node->is_expanded && (arrlenu(node->nodes)) > 0) {
 		size_t len = arrlenu(node->nodes);
 		return leaf(node->nodes[len > 0 ? len - 1 : 0]);
 	}
@@ -260,7 +260,8 @@ treeview_event(struct treeview *treeview, enum treeview_event event, ...) {
 			break;
 		}
 
-		if (treeview->selected->is_expanded && treeview->selected->nodes) {
+		if (treeview->selected->is_expanded
+			&& (arrlenu(treeview->selected->nodes)) > 0) {
 			treeview->selected = treeview->selected->nodes[0]; /* First node. */
 		} else {
 			/* Ensure that we don't create a loop between the end-most node of
