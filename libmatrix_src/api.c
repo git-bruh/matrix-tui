@@ -211,8 +211,8 @@ set_batch(char *url, char **new_url, size_t *new_len, const char *next_batch) {
 }
 
 enum matrix_code
-matrix_sync_forever(
-  struct matrix *matrix, const char *next_batch, unsigned timeout) {
+matrix_sync_forever(struct matrix *matrix, const char *next_batch,
+  unsigned timeout, bool (*should_stop)(void *)) {
 	if (!matrix->access_token) {
 		return MATRIX_NOT_LOGGED_IN;
 	}
@@ -245,7 +245,7 @@ matrix_sync_forever(
 					: true)
 		&& (response_init(GET, NULL, url, headers, &response))
 			 == MATRIX_SUCCESS) {
-		for (;;) {
+		while (should_stop ? !(should_stop(matrix->userp)) : true) {
 			if (new_buf
 				&& (curl_easy_setopt(response.easy, CURLOPT_URL, new_buf))
 					 != CURLE_OK) {

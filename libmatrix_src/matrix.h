@@ -261,10 +261,13 @@ matrix_login(struct matrix *matrix, const char *password, const char *device_id,
 /* timeout specifies the maximum time in milliseconds that the server will wait
  * for events to be received. The recommended minimum is 1000 == 1 second to
  * avoid burning CPU cycles. */
-/* nullable: next_batch */
+/* The should_stop function is called after each sync with the user pointer
+ * (userp) set during initialization, which makes the function return if it
+ * returns true. */
+/* nullable: next_batch, should_stop */
 enum matrix_code
-matrix_sync_forever(
-  struct matrix *matrix, const char *next_batch, unsigned timeout);
+matrix_sync_forever(struct matrix *matrix, const char *next_batch,
+  unsigned timeout, bool (*should_stop)(void *));
 
 /* These functions fill in the passed struct with the corresponding JSON item's
  * representation at the current index. */
