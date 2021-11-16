@@ -17,7 +17,6 @@ XCFLAGS = \
 	-Wunused-macros -Wredundant-decls \
 	-Werror=implicit-function-declaration \
 	-Werror=incompatible-pointer-types \
-	-DLOG_USE_COLOR \
 	-DCLIENT_NAME=\"matrix-client\"
 
 XLDLIBS = $(LDLIBS) `curl-config --libs` -lcjson -lpthread
