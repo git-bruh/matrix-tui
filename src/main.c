@@ -41,8 +41,6 @@ struct state {
 	struct treeview treeview;
 };
 
-enum { sync_timeout = 1000 };
-
 static void
 redraw(struct state *state) {
 	tb_clear();
@@ -123,15 +121,17 @@ running(void *userp) {
 	struct state *state = userp;
 
 	pthread_mutex_lock(&state->mutex);
-	bool running = !state->done;
+	bool stopped = state->done;
 	pthread_mutex_unlock(&state->mutex);
 
-	return running;
+	return stopped;
 }
 
 static void *
 syncer(void *arg) {
 	struct state *state = arg;
+
+	const unsigned sync_timeout = 1000;
 
 	switch ((matrix_sync_forever(state->matrix, NULL, sync_timeout, running))) {
 	case MATRIX_NOMEM:
@@ -323,39 +323,39 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 	struct matrix_room room;
 
 	while ((matrix_sync_next(response, &room)) == MATRIX_SUCCESS) {
-		printf("Events for room (%s)\n", room.id);
+		ERRLOG(0, "Events for room (%s)\n", room.id);
 
 		struct matrix_state_event sevent;
 
 		while ((matrix_sync_next(&room, &sevent)) == MATRIX_SUCCESS) {
 			switch (sevent.type) {
 			case MATRIX_ROOM_MEMBER:
-				printf("(%s) => Membership (%s)\n", sevent.member.base.sender,
+				ERRLOG(0, "(%s) => Membership (%s)\n", sevent.member.base.sender,
 				  sevent.member.membership);
 				break;
 			case MATRIX_ROOM_POWER_LEVELS:
 				break;
 			case MATRIX_ROOM_CANONICAL_ALIAS:
-				printf("Canonical Alias => (%s)\n",
+				ERRLOG(0, "Canonical Alias => (%s)\n",
 				  sevent.canonical_alias.alias ? sevent.canonical_alias.alias
 											   : "");
 				break;
 			case MATRIX_ROOM_CREATE:
-				printf("Created => Creator (%s), Version (%s), Federate (%d)\n",
+				ERRLOG(0, "Created => Creator (%s), Version (%s), Federate (%d)\n",
 				  sevent.create.creator, sevent.create.room_version,
 				  sevent.create.federate);
 				break;
 			case MATRIX_ROOM_JOIN_RULES:
-				printf("Join Rule => (%s)\n", sevent.join_rules.join_rule);
+				ERRLOG(0, "Join Rule => (%s)\n", sevent.join_rules.join_rule);
 				break;
 			case MATRIX_ROOM_NAME:
-				printf("Name => (%s)\n", sevent.name.name);
+				ERRLOG(0, "Name => (%s)\n", sevent.name.name);
 				break;
 			case MATRIX_ROOM_TOPIC:
-				printf("Topic => (%s)\n", sevent.topic.topic);
+				ERRLOG(0, "Topic => (%s)\n", sevent.topic.topic);
 				break;
 			case MATRIX_ROOM_AVATAR:
-				printf("Avatar => (%s)\n", sevent.avatar.url);
+				ERRLOG(0, "Avatar => (%s)\n", sevent.avatar.url);
 				break;
 			case MATRIX_ROOM_UNKNOWN_STATE:
 				break;
@@ -369,16 +369,16 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 		while ((matrix_sync_next(&room, &tevent)) == MATRIX_SUCCESS) {
 			switch (tevent.type) {
 			case MATRIX_ROOM_MESSAGE:
-				printf("(%s) => (%s)\n", tevent.message.base.sender,
+				ERRLOG(0, "(%s) => (%s)\n", tevent.message.base.sender,
 				  tevent.message.body);
 				break;
 			case MATRIX_ROOM_REDACTION:
-				printf("(%s) redacted by (%s) for (%s)\n",
+				ERRLOG(0, "(%s) redacted by (%s) for (%s)\n",
 				  tevent.redaction.redacts, tevent.redaction.base.event_id,
 				  tevent.redaction.reason ? tevent.redaction.reason : "");
 				break;
 			case MATRIX_ROOM_ATTACHMENT:
-				printf("File (%s), URL (%s), Msgtype (%s), Size (%u)\n",
+				ERRLOG(0, "File (%s), URL (%s), Msgtype (%s), Size (%u)\n",
 				  tevent.attachment.body, tevent.attachment.url,
 				  tevent.attachment.msgtype, tevent.attachment.info.size);
 				break;
@@ -399,7 +399,7 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 						char *uid = cJSON_GetStringValue(user_id);
 
 						if (uid) {
-							printf("(%s) => Typing\n", uid);
+							ERRLOG(0, "(%s) => Typing\n", uid);
 						}
 					}
 				}
