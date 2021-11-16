@@ -280,6 +280,8 @@ treeview_event(struct treeview *treeview, enum treeview_event event, ...) {
 
 			va_list vl = {0};
 			va_start(vl, event);
+			/* https://bugs.llvm.org/show_bug.cgi?id=41311
+			 * NOLINTNEXTLINE(clang-analyzer-valist.Uninitialized) */
 			struct treeview_node *nnode = va_arg(vl, struct treeview_node *);
 			va_end(vl);
 
@@ -296,6 +298,8 @@ treeview_event(struct treeview *treeview, enum treeview_event event, ...) {
 		{
 			va_list vl = {0};
 			va_start(vl, event);
+			/* https://bugs.llvm.org/show_bug.cgi?id=41311
+			 * NOLINTNEXTLINE(clang-analyzer-valist.Uninitialized) */
 			struct treeview_node *nnode = va_arg(vl, struct treeview_node *);
 			va_end(vl);
 

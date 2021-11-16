@@ -233,6 +233,8 @@ input_handle_event(struct input *input, enum input_event event, ...) {
 		{
 			va_list vl = {0};
 			va_start(vl, event);
+			/* https://bugs.llvm.org/show_bug.cgi?id=41311
+			 * NOLINTNEXTLINE(clang-analyzer-valist.Uninitialized) */
 			uint32_t ch = va_arg(vl, uint32_t);
 			va_end(vl);
 
