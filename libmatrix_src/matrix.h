@@ -13,6 +13,7 @@ enum matrix_code {
 	MATRIX_SUCCESS = 0,
 	MATRIX_NOMEM,
 	MATRIX_CURL_FAILURE,
+	MATRIX_BACKED_OFF,
 	MATRIX_MALFORMED_JSON,
 	MATRIX_INVALID_ARGUMENT,
 	MATRIX_NOT_LOGGED_IN,
@@ -277,11 +278,8 @@ matrix_login(struct matrix *matrix, const char *password, const char *device_id,
 enum matrix_code
 matrix_sync_forever(struct matrix *matrix, const char *next_batch,
   unsigned timeout, struct matrix_sync_callbacks callbacks);
-/* Cancel an ongoing matrix_sync_forever() call.
- * It might take around a full second for it to actually be cancelled, since
- * internally we just use the libcurl progress function to cancel the transfer.
- * An instant cancellation would require an implementation of the "multi"
- * interface. */
+/* Cancel an ongoing matrix_sync_forever() call. It might take a few
+ * milliseconds for the transfer to actually be cancelled. */
 void
 matrix_sync_cancel(struct matrix *matrix);
 

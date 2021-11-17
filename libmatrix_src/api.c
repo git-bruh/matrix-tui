@@ -34,24 +34,6 @@ write_cb(void *contents, size_t size, size_t nmemb, void *userp) {
 	return realsize;
 }
 
-static int
-progress_cb(void *userp, curl_off_t dltotal, curl_off_t dlnow,
-  curl_off_t ultotal, curl_off_t ulnow) {
-	/* TODO maybe expose this information ? */
-	(void) dltotal;
-	(void) dlnow;
-	(void) ultotal;
-	(void) ulnow;
-
-	struct matrix *matrix = userp;
-
-	pthread_mutex_lock(&matrix->mutex);
-	bool stopped = matrix->sync_stopped;
-	pthread_mutex_unlock(&matrix->mutex);
-
-	return (int) stopped;
-}
-
 static bool
 http_code_is_success(long code) {
 	const long success = 200;
@@ -159,17 +141,63 @@ response_init(enum method method, const char *data, const char *url,
 }
 
 static enum matrix_code
+response_set_code(struct response *response) {
+	CURLcode code = curl_easy_getinfo(
+	  response->easy, CURLINFO_RESPONSE_CODE, &response->http_code);
+
+	return (code == CURLE_OK && (http_code_is_success(response->http_code)))
+		   ? MATRIX_SUCCESS
+		   : MATRIX_CURL_FAILURE;
+}
+
+static enum matrix_code
 response_perform(struct response *response) {
 	if ((curl_easy_perform(response->easy)) == CURLE_OK) {
-		curl_easy_getinfo(
-		  response->easy, CURLINFO_RESPONSE_CODE, &response->http_code);
-
-		if ((http_code_is_success(response->http_code))) {
-			return MATRIX_SUCCESS;
-		}
+		return response_set_code(response);
 	}
 
 	return MATRIX_CURL_FAILURE;
+}
+
+static enum matrix_code
+response_perform_sync(struct response *response, CURLM *multi,
+  struct matrix *matrix, const struct matrix_sync_callbacks *callbacks) {
+	int still_running = 0;
+	const int timeout_multi
+	  = 10; /* 10ms so that we check 'sync_stopped' fast enough. */
+	CURLMcode code = CURLM_OK;
+
+	do {
+		pthread_mutex_lock(&matrix->mutex);
+		bool should_break = matrix->sync_stopped;
+		pthread_mutex_unlock(&matrix->mutex);
+
+		if (should_break) {
+			break;
+		}
+
+		int nfds = 0;
+		code = curl_multi_perform(multi, &still_running);
+
+		if (code == CURLM_OK) {
+			curl_multi_poll(multi, NULL, 0, timeout_multi, &nfds);
+		}
+	} while (still_running);
+
+	if (code != CURLM_OK || (response_set_code(response)) != MATRIX_SUCCESS) {
+		int backoff
+		  = callbacks->backoff_cb ? (callbacks->backoff_cb(matrix)) : -1;
+
+		if (backoff >= 0) {
+			poll(NULL, 0, backoff);
+		} else {
+			return MATRIX_CURL_FAILURE;
+		}
+
+		return MATRIX_BACKED_OFF;
+	}
+
+	return MATRIX_SUCCESS;
 }
 
 static void
@@ -264,17 +292,15 @@ matrix_sync_forever(struct matrix *matrix, const char *next_batch,
 	char *new_buf = NULL; /* We fill in this buf with the new batch token on
 							 every successful response. */
 
-	if ((next_batch ? ((code = set_batch(url, &new_buf, &new_len, next_batch))
-					   == MATRIX_SUCCESS)
-					: true)
+	CURLM *multi = curl_multi_init();
+
+	if (multi
+		&& (next_batch
+			  ? ((code = set_batch(url, &new_buf, &new_len, next_batch))
+				 == MATRIX_SUCCESS)
+			  : true)
 		&& (response_init(GET, NULL, url, headers, &response)) == MATRIX_SUCCESS
-		&& (curl_easy_setopt(
-			 response.easy, CURLOPT_XFERINFOFUNCTION, progress_cb))
-			 == CURLE_OK
-		&& (curl_easy_setopt(response.easy, CURLOPT_XFERINFODATA, matrix))
-			 == CURLE_OK
-		&& (curl_easy_setopt(response.easy, CURLOPT_NOPROGRESS, 0L))
-			 == CURLE_OK) {
+		&& (curl_multi_add_handle(multi, response.easy)) == CURLM_OK) {
 		for (bool backed_off = false;;) {
 			if (new_buf
 				&& (curl_easy_setopt(response.easy, CURLOPT_URL, new_buf))
@@ -283,26 +309,36 @@ matrix_sync_forever(struct matrix *matrix, const char *next_batch,
 				break;
 			}
 
-			if ((code = response_perform(&response)) != MATRIX_SUCCESS) {
-				backed_off = true;
-
-				int backoff
-				  = callbacks.backoff_cb ? (callbacks.backoff_cb(matrix)) : -1;
-
-				if (backoff < 0) {
+			if ((code
+				  = response_perform_sync(&response, multi, matrix, &callbacks))
+				!= MATRIX_CURL_FAILURE) {
+				/* Restart the transfer. */
+				curl_multi_remove_handle(multi, response.easy);
+				if ((curl_multi_add_handle(multi, response.easy)) != CURLM_OK) {
+					code = MATRIX_CURL_FAILURE;
 					break;
 				}
 
-				poll(NULL, 0, backoff);
+				switch (code) {
+				case MATRIX_SUCCESS:
+					if (backed_off) {
+						backed_off = false;
 
-				continue;
+						if (callbacks.backoff_reset_cb) {
+							callbacks.backoff_reset_cb(matrix);
+						}
+					}
+
+					break;
+				case MATRIX_BACKED_OFF:
+					backed_off = true;
+					continue;
+				default:
+					assert(0);
+				}
+			} else {
+				break;
 			}
-
-			if (backed_off && callbacks.backoff_reset_cb) {
-				callbacks.backoff_reset_cb(matrix);
-			}
-
-			backed_off = false;
 
 			cJSON *parsed = cJSON_Parse(response.data);
 
@@ -323,6 +359,8 @@ matrix_sync_forever(struct matrix *matrix, const char *next_batch,
 	}
 
 	curl_slist_free_all(headers);
+	curl_multi_remove_handle(multi, response.easy);
+	curl_multi_cleanup(multi);
 	response_finish(&response);
 	free(url);
 	free(new_buf);
