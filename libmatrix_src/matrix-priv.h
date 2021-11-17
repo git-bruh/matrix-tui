@@ -9,6 +9,7 @@
 #include <cjson/cJSON.h>
 #include <curl/curl.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -25,10 +26,13 @@
 #define ADDVARSTR(obj, var) (ADDSTR(obj, #var, var))
 
 struct matrix {
+	bool sync_stopped;
+	bool mutex_init;
 	char *access_token;
 	char *homeserver;
 	char *mxid;
 	void *userp;
+	pthread_mutex_t mutex;
 };
 
 int

@@ -240,9 +240,6 @@ struct matrix_sync_callbacks {
 	/* Optional, called once after the first successful request after a failed
 	 * one. Can be used to reset the internal timeout. */
 	void (*backoff_reset_cb)(struct matrix *);
-	/* Optional, called once almost every second. Breaks the sync loop if it
-	 * returns true. */
-	bool (*stop_cb)(struct matrix *);
 };
 
 /* Functions returning int (Except enums) return -1 on failure and 0 on success.
@@ -280,6 +277,13 @@ matrix_login(struct matrix *matrix, const char *password, const char *device_id,
 enum matrix_code
 matrix_sync_forever(struct matrix *matrix, const char *next_batch,
   unsigned timeout, struct matrix_sync_callbacks callbacks);
+/* Cancel an ongoing matrix_sync_forever() call.
+ * It might take around a full second for it to actually be cancelled, since
+ * internally we just use the libcurl progress function to cancel the transfer.
+ * An instant cancellation would require an implementation of the "multi"
+ * interface. */
+void
+matrix_sync_cancel(struct matrix *matrix);
 
 /* These functions fill in the passed struct with the corresponding JSON item's
  * representation at the current index. */

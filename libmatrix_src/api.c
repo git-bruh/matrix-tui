@@ -34,6 +34,24 @@ write_cb(void *contents, size_t size, size_t nmemb, void *userp) {
 	return realsize;
 }
 
+static int
+progress_cb(void *userp, curl_off_t dltotal, curl_off_t dlnow,
+  curl_off_t ultotal, curl_off_t ulnow) {
+	/* TODO maybe expose this information ? */
+	(void) dltotal;
+	(void) dlnow;
+	(void) ultotal;
+	(void) ulnow;
+
+	struct matrix *matrix = userp;
+
+	pthread_mutex_lock(&matrix->mutex);
+	bool stopped = matrix->sync_stopped;
+	pthread_mutex_unlock(&matrix->mutex);
+
+	return (int) stopped;
+}
+
 static bool
 http_code_is_success(long code) {
 	const long success = 200;
@@ -215,6 +233,10 @@ set_batch(char *url, char **new_url, size_t *new_len, const char *next_batch) {
 enum matrix_code
 matrix_sync_forever(struct matrix *matrix, const char *next_batch,
   unsigned timeout, struct matrix_sync_callbacks callbacks) {
+	if (!matrix) {
+		return MATRIX_INVALID_ARGUMENT;
+	}
+
 	if (!matrix->access_token) {
 		return MATRIX_NOT_LOGGED_IN;
 	}
@@ -245,8 +267,14 @@ matrix_sync_forever(struct matrix *matrix, const char *next_batch,
 	if ((next_batch ? ((code = set_batch(url, &new_buf, &new_len, next_batch))
 					   == MATRIX_SUCCESS)
 					: true)
-		&& (response_init(GET, NULL, url, headers, &response))
-			 == MATRIX_SUCCESS) {
+		&& (response_init(GET, NULL, url, headers, &response)) == MATRIX_SUCCESS
+		&& (curl_easy_setopt(
+			 response.easy, CURLOPT_XFERINFOFUNCTION, progress_cb))
+			 == CURLE_OK
+		&& (curl_easy_setopt(response.easy, CURLOPT_XFERINFODATA, matrix))
+			 == CURLE_OK
+		&& (curl_easy_setopt(response.easy, CURLOPT_NOPROGRESS, 0L))
+			 == CURLE_OK) {
 		for (bool backed_off = false;;) {
 			if (new_buf
 				&& (curl_easy_setopt(response.easy, CURLOPT_URL, new_buf))
@@ -299,12 +327,23 @@ matrix_sync_forever(struct matrix *matrix, const char *next_batch,
 	free(url);
 	free(new_buf);
 
+	pthread_mutex_lock(&matrix->mutex);
+	matrix->sync_stopped = false;
+	pthread_mutex_unlock(&matrix->mutex);
+
 	return code;
+}
+
+void
+matrix_sync_cancel(struct matrix *matrix) {
+	pthread_mutex_lock(&matrix->mutex);
+	matrix->sync_stopped = true;
+	pthread_mutex_unlock(&matrix->mutex);
 }
 
 enum matrix_code
 matrix_login_with_token(struct matrix *matrix, const char *access_token) {
-	if (!access_token) {
+	if (!matrix || !access_token) {
 		return MATRIX_INVALID_ARGUMENT;
 	}
 
@@ -318,7 +357,7 @@ matrix_login_with_token(struct matrix *matrix, const char *access_token) {
 enum matrix_code
 matrix_login(struct matrix *matrix, const char *password, const char *device_id,
   const char *initial_device_display_name) {
-	if (!password) {
+	if (!matrix || !password) {
 		return MATRIX_INVALID_ARGUMENT;
 	}
 
@@ -362,7 +401,7 @@ matrix_login(struct matrix *matrix, const char *password, const char *device_id,
 enum matrix_code
 matrix_send_message(struct matrix *matrix, char **event_id, const char *room_id,
   const char *msgtype, const char *body, const char *formatted_body) {
-	if (!event_id || !msgtype || !body) {
+	if (!matrix || !event_id || !msgtype || !body) {
 		return MATRIX_INVALID_ARGUMENT;
 	}
 
