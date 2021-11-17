@@ -67,6 +67,7 @@ cleanup(struct state *state) {
 	}
 
 	if (state->threads[THREAD_SYNC]) {
+		matrix_sync_cancel(state->matrix);
 		pthread_join(state->threads[THREAD_SYNC], NULL);
 	}
 
@@ -116,17 +117,6 @@ tree_string_cb(void *data) {
 	return (char *) data;
 }
 
-static bool
-stopped(struct matrix *matrix) {
-	struct state *state = matrix_userp(matrix);
-
-	pthread_mutex_lock(&state->mutex);
-	bool stop = state->done;
-	pthread_mutex_unlock(&state->mutex);
-
-	return stop;
-}
-
 static void
 sync_cb(struct matrix *matrix, struct matrix_sync_response *response);
 
@@ -140,7 +130,6 @@ syncer(void *arg) {
 	  .sync_cb = sync_cb,
 	  .backoff_cb = NULL,		/* TODO */
 	  .backoff_reset_cb = NULL, /* TODO */
-	  .stop_cb = stopped,
 	};
 
 	switch (
