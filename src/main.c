@@ -117,15 +117,18 @@ tree_string_cb(void *data) {
 }
 
 static bool
-running(void *userp) {
-	struct state *state = userp;
+stopped(struct matrix *matrix) {
+	struct state *state = matrix_userp(matrix);
 
 	pthread_mutex_lock(&state->mutex);
-	bool stopped = state->done;
+	bool stop = state->done;
 	pthread_mutex_unlock(&state->mutex);
 
-	return stopped;
+	return stop;
 }
+
+static void
+sync_cb(struct matrix *matrix, struct matrix_sync_response *response);
 
 static void *
 syncer(void *arg) {
@@ -133,7 +136,15 @@ syncer(void *arg) {
 
 	const unsigned sync_timeout = 1000;
 
-	switch ((matrix_sync_forever(state->matrix, NULL, sync_timeout, running))) {
+	const struct matrix_sync_callbacks callbacks = {
+	  .sync_cb = sync_cb,
+	  .backoff_cb = NULL,		/* TODO */
+	  .backoff_reset_cb = NULL, /* TODO */
+	  .stop_cb = stopped,
+	};
+
+	switch (
+	  (matrix_sync_forever(state->matrix, NULL, sync_timeout, callbacks))) {
 	case MATRIX_NOMEM:
 	case MATRIX_CURL_FAILURE:
 	default:
@@ -148,7 +159,7 @@ queue_listener(void *arg) {
 	struct state *state = arg;
 
 #if 0
-	while ((running(state))) {
+	while ((stopped(state))) {
 	}
 #endif
 
@@ -425,8 +436,7 @@ main() {
 	if (!ERRLOG(
 		  matrix_global_init() == 0, "Failed to initialize matrix globals.\n")
 		&& !ERRLOG(ui_init(&state) == 0, "Failed to initialize UI.\n")
-		&& !ERRLOG(
-		  state.matrix = matrix_alloc(sync_cb, MXID, HOMESERVER, &state),
+		&& !ERRLOG(state.matrix = matrix_alloc(MXID, HOMESERVER, &state),
 		  "Failed to initialize libmatrix.\n")
 		&& !ERRLOG(
 		  matrix_login(state.matrix, PASS, NULL, NULL) == MATRIX_SUCCESS,
