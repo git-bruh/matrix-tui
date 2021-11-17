@@ -365,8 +365,9 @@ matrix_sync_ephemeral_next(
 #undef TYPE
 
 int
-matrix_dispatch_sync(struct matrix *matrix, const cJSON *sync) {
-	if (!sync || !matrix->sync_cb) {
+matrix_dispatch_sync(struct matrix *matrix,
+  const struct matrix_sync_callbacks *callbacks, const cJSON *sync) {
+	if (!sync || !callbacks->sync_cb) {
 		return -1;
 	}
 
@@ -382,7 +383,7 @@ matrix_dispatch_sync(struct matrix *matrix, const cJSON *sync) {
 		},
 	};
 
-	matrix->sync_cb(matrix, &response);
+	callbacks->sync_cb(matrix, &response);
 
 	return 0;
 }

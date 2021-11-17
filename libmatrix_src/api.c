@@ -3,6 +3,8 @@
 
 #include "matrix-priv.h"
 
+#include <poll.h>
+
 enum method { GET = 0, POST, PUT };
 
 struct response {
@@ -212,7 +214,7 @@ set_batch(char *url, char **new_url, size_t *new_len, const char *next_batch) {
 
 enum matrix_code
 matrix_sync_forever(struct matrix *matrix, const char *next_batch,
-  unsigned timeout, bool (*should_stop)(void *)) {
+  unsigned timeout, struct matrix_sync_callbacks callbacks) {
 	if (!matrix->access_token) {
 		return MATRIX_NOT_LOGGED_IN;
 	}
@@ -245,7 +247,7 @@ matrix_sync_forever(struct matrix *matrix, const char *next_batch,
 					: true)
 		&& (response_init(GET, NULL, url, headers, &response))
 			 == MATRIX_SUCCESS) {
-		while (should_stop ? !(should_stop(matrix->userp)) : true) {
+		for (bool backed_off = false;;) {
 			if (new_buf
 				&& (curl_easy_setopt(response.easy, CURLOPT_URL, new_buf))
 					 != CURLE_OK) {
@@ -253,10 +255,26 @@ matrix_sync_forever(struct matrix *matrix, const char *next_batch,
 				break;
 			}
 
-			/* TODO add error callback to allow implementing backoff */
 			if ((code = response_perform(&response)) != MATRIX_SUCCESS) {
-				break;
+				backed_off = true;
+
+				int backoff
+				  = callbacks.backoff_cb ? (callbacks.backoff_cb(matrix)) : -1;
+
+				if (backoff < 0) {
+					break;
+				}
+
+				poll(NULL, 0, backoff);
+
+				continue;
 			}
+
+			if (backed_off && callbacks.backoff_reset_cb) {
+				callbacks.backoff_reset_cb(matrix);
+			}
+
+			backed_off = false;
 
 			cJSON *parsed = cJSON_Parse(response.data);
 
@@ -271,7 +289,7 @@ matrix_sync_forever(struct matrix *matrix, const char *next_batch,
 			write the new contents after the old NUL terminator, making us read
 			the old data. See "&(response->data[response->len])" in write_cb. */
 
-			matrix_dispatch_sync(matrix, parsed);
+			matrix_dispatch_sync(matrix, &callbacks, parsed);
 			cJSON_Delete(parsed);
 		}
 	}

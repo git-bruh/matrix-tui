@@ -29,11 +29,11 @@ struct matrix {
 	char *homeserver;
 	char *mxid;
 	void *userp;
-	matrix_sync_cb sync_cb;
 };
 
 int
-matrix_dispatch_sync(struct matrix *matrix, const cJSON *sync);
+matrix_dispatch_sync(struct matrix *matrix,
+  const struct matrix_sync_callbacks *callbacks, const cJSON *sync);
 int
 matrix_double_to_int(double x);
 char *

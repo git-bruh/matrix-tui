@@ -230,7 +230,20 @@ struct matrix_ephemeral_event {
 	};
 };
 
-typedef void (*matrix_sync_cb)(struct matrix *, struct matrix_sync_response *);
+struct matrix_sync_callbacks {
+	/* Called on each successful sync response. */
+	void (*sync_cb)(struct matrix *, struct matrix_sync_response *);
+	/* Optional, called once for each failed sync request, makes the sync
+	 * function wait for the returned amount of milliseconds before retrying the
+	 * request. Returning a negative value breaks the sync loop. */
+	int (*backoff_cb)(struct matrix *);
+	/* Optional, called once after the first successful request after a failed
+	 * one. Can be used to reset the internal timeout. */
+	void (*backoff_reset_cb)(struct matrix *);
+	/* Optional, called once almost every second. Breaks the sync loop if it
+	 * returns true. */
+	bool (*stop_cb)(struct matrix *);
+};
 
 /* Functions returning int (Except enums) return -1 on failure and 0 on success.
  * Functions returning pointers return NULL on failure. */
@@ -241,8 +254,10 @@ typedef void (*matrix_sync_cb)(struct matrix *, struct matrix_sync_response *);
 int
 matrix_global_init(void);
 struct matrix *
-matrix_alloc(matrix_sync_cb sync_cb, const char *mxid, const char *homeserver,
-  void *userp);
+matrix_alloc(const char *mxid, const char *homeserver, void *userp);
+/* Get the user pointer set in matrix_alloc(). */
+void *
+matrix_userp(struct matrix *matrix);
 void
 matrix_destroy(struct matrix *matrix);
 /* Must be the last function called only a single time. */
@@ -260,14 +275,11 @@ matrix_login(struct matrix *matrix, const char *password, const char *device_id,
 
 /* timeout specifies the maximum time in milliseconds that the server will wait
  * for events to be received. The recommended minimum is 1000 == 1 second to
- * avoid burning CPU cycles. */
-/* The should_stop function is called after each sync with the user pointer
- * (userp) set during initialization, which makes the function return if it
- * returns true. */
-/* nullable: next_batch, should_stop */
+ * avoid burning CPU cycles.
+ * nullable: next_batch, should_stop */
 enum matrix_code
 matrix_sync_forever(struct matrix *matrix, const char *next_batch,
-  unsigned timeout, bool (*should_stop)(void *));
+  unsigned timeout, struct matrix_sync_callbacks callbacks);
 
 /* These functions fill in the passed struct with the corresponding JSON item's
  * representation at the current index. */
