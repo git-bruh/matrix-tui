@@ -167,14 +167,16 @@ treeview_node_destroy(struct treeview_node *node) {
 }
 
 int
-treeview_init(struct treeview *treeview, struct treeview_node *root,
-  struct widget_callback cb) {
+treeview_init(struct treeview *treeview, struct treeview_node *root) {
+	if (!treeview || !root) {
+		return -1;
+	}
+
 	*treeview = (struct treeview) {
 	  .root = root,
-	  .cb = cb,
 	};
 
-	return treeview->root ? 0 : -1;
+	return 0;
 }
 
 void
@@ -186,14 +188,10 @@ treeview_finish(struct treeview *treeview) {
 }
 
 void
-treeview_redraw(struct treeview *treeview) {
-	if (!treeview || !treeview->cb.cb) {
+treeview_redraw(struct treeview *treeview, struct widget_points *points) {
+	if (!treeview || !points) {
 		return;
 	}
-
-	struct widget_points points = {0};
-	treeview->cb.cb(WIDGET_TREEVIEW, &points, treeview->cb.userp);
-	widget_points_normalize(&points);
 
 	int tmp = 0;
 	int selected_height
@@ -204,7 +202,7 @@ treeview_redraw(struct treeview *treeview) {
 	}
 
 	int diff_forward
-	  = selected_height - (treeview->start_y + (points.y2 - points.y1));
+	  = selected_height - (treeview->start_y + (points->y2 - points->y1));
 	int diff_backward = treeview->start_y - (selected_height - 1);
 
 	if (diff_backward > 0) {
@@ -216,7 +214,7 @@ treeview_redraw(struct treeview *treeview) {
 	assert(treeview->start_y >= 0);
 	assert(treeview->start_y < selected_height);
 
-	redraw(treeview, treeview->root, &points, points.x1, points.y1);
+	redraw(treeview, treeview->root, points, points->x1, points->y1);
 
 	/* Reset the number of skipped lines. */
 	treeview->skipped = 0;

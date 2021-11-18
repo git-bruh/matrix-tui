@@ -44,8 +44,19 @@ struct state {
 static void
 redraw(struct state *state) {
 	tb_clear();
-	input_redraw(&state->input);
-	treeview_redraw(&state->treeview);
+
+	int height = tb_height();
+	int width = tb_width();
+
+	enum { input_height = 5 };
+	struct widget_points points = {0};
+
+	widget_points_set(&points, 0, width, height - input_height, height);
+	input_redraw(&state->input, &points);
+
+	widget_points_set(&points, 0, width, 0, height);
+	treeview_redraw(&state->treeview, &points);
+
 	tb_present();
 }
 
@@ -83,33 +94,6 @@ cleanup(struct state *state) {
 	matrix_global_cleanup();
 
 	memset(state, 0, sizeof(*state));
-}
-
-static void
-ui_cb(enum widget_type type, struct widget_points *points, void *userp) {
-	(void) userp;
-
-	enum { input_height = 5 };
-
-	int height = tb_height();
-	int width = tb_width();
-
-	switch (type) {
-	case WIDGET_INPUT:
-		points->x1 = 0;
-		points->x2 = width;
-		points->y1 = height - input_height;
-		points->y2 = height;
-		break;
-	case WIDGET_TREEVIEW:
-		points->x1 = 0;
-		points->x2 = width;
-		points->y1 = 0;
-		points->y2 = height;
-		break;
-	default:
-		break;
-	}
 }
 
 static const char *
@@ -172,18 +156,13 @@ threads_init(struct state *state) {
 
 static int
 ui_init(struct state *state) {
-	struct widget_callback cb = {
-	  .userp = state,
-	  .cb = ui_cb,
-	};
-
 	static char name[] = "Root";
 
 	struct treeview_node *root
 	  = treeview_node_alloc(name, tree_string_cb, NULL);
 
-	if ((input_init(&state->input, cb)) == -1
-		|| (treeview_init(&state->treeview, root, cb)) == -1) {
+	if ((input_init(&state->input)) == -1
+		|| (treeview_init(&state->treeview, root)) == -1) {
 		treeview_node_destroy(root);
 		return -1;
 	}

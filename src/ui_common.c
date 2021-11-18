@@ -43,14 +43,19 @@ widget_points_in_bounds(const struct widget_points *points, int x, int y) {
 
 /* Ensure that no point is negative or out of bounds. */
 void
-widget_points_normalize(struct widget_points *points) {
+widget_points_set(
+  struct widget_points *points, int x1, int x2, int y1, int y2) {
+	if (!points) {
+		return;
+	}
+
 	int height = tb_height();
 	int width = tb_width();
 
-	points->x1 = min(max(0, points->x1), width);
-	points->x2 = min(max(0, points->x2), width);
-	points->y1 = min(max(0, points->y1), height);
-	points->y2 = min(max(0, points->y2), height);
+	*points = (struct widget_points) {.x1 = min(max(0, x1), width),
+	  .x2 = min(max(0, x2), width),
+	  .y1 = min(max(0, y1), height),
+	  .y2 = min(max(0, y2), height)};
 }
 
 bool

@@ -9,8 +9,6 @@
 
 enum { WIDGET_CH_MAX = 2 }; /* Max width. */
 
-enum widget_type { WIDGET_INPUT = 0, WIDGET_TREEVIEW };
-
 enum widget_error { WIDGET_NOOP = 0, WIDGET_REDRAW };
 
 /* The rectangle in which the widget will be drawn. */
@@ -21,17 +19,12 @@ struct widget_points {
 	int y2; /* y of bottom-right corner. */
 };
 
-struct widget_callback {
-	void *userp;
-	void (*cb)(enum widget_type, struct widget_points *, void *);
-};
-
 uint32_t
 widget_uc_sanitize(uint32_t uc, int *width);
 bool
 widget_points_in_bounds(const struct widget_points *points, int x, int y);
 void
-widget_points_normalize(struct widget_points *points);
+widget_points_set(struct widget_points *points, int x1, int x2, int y1, int y2);
 bool
 widget_should_forcebreak(int width);
 bool
@@ -61,15 +54,14 @@ struct input {
 					 * list of small arrays  or a gap buffer as pretty much all
 					 * messages are small enough that array
 					 * insertion / deletion performance isn't an issue. */
-	struct widget_callback cb;
 };
 
 int
-input_init(struct input *input, struct widget_callback cb);
+input_init(struct input *input);
 void
 input_finish(struct input *input);
 void
-input_redraw(struct input *input);
+input_redraw(struct input *input, struct widget_points *points);
 enum widget_error
 input_handle_event(struct input *input, enum input_event event, ...);
 
@@ -108,7 +100,6 @@ struct treeview {
 	int start_y;
 	struct treeview_node *root;
 	struct treeview_node *selected;
-	struct widget_callback cb;
 };
 
 /* Pass NULL as the free_cb if the data is stack allocated. */
@@ -118,12 +109,11 @@ treeview_node_alloc(
 void
 treeview_node_destroy(struct treeview_node *node);
 int
-treeview_init(struct treeview *treeview, struct treeview_node *root,
-  struct widget_callback cb);
+treeview_init(struct treeview *treeview, struct treeview_node *root);
 void
 treeview_finish(struct treeview *treeview);
 void
-treeview_redraw(struct treeview *treeview);
+treeview_redraw(struct treeview *treeview, struct widget_points *points);
 enum widget_error
 treeview_event(struct treeview *treeview, enum treeview_event event, ...);
 #endif /* !WIDGETS_H */

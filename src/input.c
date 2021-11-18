@@ -109,8 +109,12 @@ buf_delword(struct input *input) {
 }
 
 int
-input_init(struct input *input, struct widget_callback cb) {
-	*input = (struct input) {.cb = cb};
+input_init(struct input *input) {
+	if (!input) {
+		return -1;
+	}
+
+	*input = (struct input) {0};
 
 	return 0;
 }
@@ -126,31 +130,27 @@ input_finish(struct input *input) {
 }
 
 void
-input_redraw(struct input *input) {
-	if (!input->cb.cb) {
+input_redraw(struct input *input, struct widget_points *points) {
+	if (!input || !points) {
 		return;
 	}
 
 	size_t buf_len = arrlenu(input->buf);
 
-	struct widget_points points = {0};
-	input->cb.cb(WIDGET_INPUT, &points, input->cb.userp);
-	widget_points_normalize(&points);
-
-	int max_height = points.y2 - points.y1;
-	int cur_x = points.x1;
+	int max_height = points->y2 - points->y1;
+	int cur_x = points->x1;
 	int cur_line = 1;
 	int lines = 1;
 
 	{
-		int x = points.x1;
+		int x = points->x1;
 		int y = 0;
 		int width = 0;
 
 		for (size_t written = 0; written < buf_len; written++) {
 			widget_uc_sanitize(input->buf[written], &width);
 
-			lines += widget_adjust_xy(width, &points, &x, &y);
+			lines += widget_adjust_xy(width, points, &x, &y);
 
 			if ((written + 1) == input->cur_buf) {
 				cur_x = x;
@@ -178,30 +178,30 @@ input_redraw(struct input *input) {
 	bool lines_fit_in_height = (lines < max_height);
 
 	/* Calculate starting index. */
-	int y = lines_fit_in_height ? (points.y2 - lines) : points.y1;
+	int y = lines_fit_in_height ? (points->y2 - lines) : points->y1;
 
-	for (int x = points.x1; written < buf_len; written++) {
+	for (int x = points->x1; written < buf_len; written++) {
 		if (line >= input->start_y) {
 			break;
 		}
 
 		widget_uc_sanitize(input->buf[written], &width);
 
-		line += widget_adjust_xy(width, &points, &x, &y);
+		line += widget_adjust_xy(width, points, &x, &y);
 	}
 
-	int x = points.x1;
+	int x = points->x1;
 
 	tb_set_cursor(cur_x, lines_fit_in_height
 						   ? (y + cur_line - 1)
-						   : (points.y1 + (cur_line - (input->start_y + 1))));
+						   : (points->y1 + (cur_line - (input->start_y + 1))));
 
 	while (written < buf_len) {
-		if (line >= lines || (y - input->start_y) >= points.y2) {
+		if (line >= lines || (y - input->start_y) >= points->y2) {
 			break;
 		}
 
-		assert((widget_points_in_bounds(&points, x, y - input->start_y)));
+		assert((widget_points_in_bounds(points, x, y - input->start_y)));
 
 		uint32_t uc = widget_uc_sanitize(input->buf[written++], &width);
 
@@ -210,7 +210,7 @@ input_redraw(struct input *input) {
 			tb_set_cell(x, y - input->start_y, uc, TB_DEFAULT, TB_DEFAULT);
 		}
 
-		line += widget_adjust_xy(width, &points, &x, &y);
+		line += widget_adjust_xy(width, points, &x, &y);
 	}
 }
 
