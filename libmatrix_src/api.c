@@ -261,7 +261,7 @@ set_batch(char *url, char **new_url, size_t *new_len, const char *next_batch) {
 enum matrix_code
 matrix_sync_forever(struct matrix *matrix, const char *next_batch,
   unsigned timeout, struct matrix_sync_callbacks callbacks) {
-	if (!matrix) {
+	if (!matrix || !callbacks.sync_cb) {
 		return MATRIX_INVALID_ARGUMENT;
 	}
 
