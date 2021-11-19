@@ -168,11 +168,7 @@ response_perform_sync(struct response *response, CURLM *multi,
 	CURLMcode code = CURLM_OK;
 
 	do {
-		pthread_mutex_lock(&matrix->mutex);
-		bool should_break = matrix->sync_stopped;
-		pthread_mutex_unlock(&matrix->mutex);
-
-		if (should_break) {
+		if (matrix->sync_stopped) {
 			break;
 		}
 
@@ -204,6 +200,13 @@ static void
 response_finish(struct response *response) {
 	curl_easy_cleanup(response->easy);
 	free(response->data);
+}
+
+static unsigned
+txn_id(struct matrix *matrix) {
+	assert(matrix);
+
+	return ++matrix->txn_id;
 }
 
 /* The caller must response_finish() the response. */
@@ -365,18 +368,14 @@ matrix_sync_forever(struct matrix *matrix, const char *next_batch,
 	free(url);
 	free(new_buf);
 
-	pthread_mutex_lock(&matrix->mutex);
 	matrix->sync_stopped = false;
-	pthread_mutex_unlock(&matrix->mutex);
 
 	return code;
 }
 
 void
 matrix_sync_cancel(struct matrix *matrix) {
-	pthread_mutex_lock(&matrix->mutex);
 	matrix->sync_stopped = true;
-	pthread_mutex_unlock(&matrix->mutex);
 }
 
 enum matrix_code
@@ -452,8 +451,8 @@ matrix_send_message(struct matrix *matrix, char **event_id, const char *room_id,
 
 	struct response response = {0};
 
-	if ((asprintf(
-		  &endpoint, "/rooms/%s/send/%s/%s", room_id, "m.room.message", "txn"))
+	if ((asprintf(&endpoint, "/rooms/%s/send/%s/%u", room_id, "m.room.message",
+		  txn_id(matrix)))
 		  != -1
 		&& (json = cJSON_CreateObject()) && (ADDVARSTR(json, body))
 		&& (ADDVARSTR(json, format)) && (ADDVARSTR(json, formatted_body))

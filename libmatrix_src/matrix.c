@@ -26,9 +26,7 @@ matrix_alloc(const char *mxid, const char *homeserver, void *userp) {
 		  .mxid = strdup(mxid),
 		  .userp = userp};
 
-		if (matrix->homeserver && matrix->mxid
-			&& (pthread_mutex_init(&matrix->mutex, NULL)) == 0
-			&& (matrix->mutex_init = true)) {
+		if (matrix->homeserver && matrix->mxid) {
 			return matrix;
 		}
 	}
@@ -46,10 +44,6 @@ void
 matrix_destroy(struct matrix *matrix) {
 	if (!matrix) {
 		return;
-	}
-
-	if (matrix->mutex_init) {
-		pthread_mutex_destroy(&matrix->mutex);
 	}
 
 	free(matrix->access_token);
