@@ -19,7 +19,7 @@ queue_push_tail(struct queue *queue, void *data) {
 
 	/* We cycled back to the start but the data has still not been
 	 * consumed by queue_pop_head(). */
-	if (!!queue->data[queue->tail]) {
+	if (queue->data[queue->tail]) {
 		return -1;
 	}
 
