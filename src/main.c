@@ -264,7 +264,17 @@ ui_loop(struct state *state) {
 
 	state->active_widget = TREE;
 
-	while ((tb_poll_event(&event)) != TB_ERR) {
+	for (;;) {
+		switch ((tb_poll_event(&event))) {
+		case TB_OK:
+			break;
+		/* TODO termbox2 bug, resize event is sent after this. */
+		case TB_ERR_SELECT:
+			continue;
+		default:
+			return;
+		}
+
 		enum widget_error ret = WIDGET_NOOP;
 
 		if (event.type == TB_EVENT_RESIZE) {
