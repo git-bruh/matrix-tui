@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "matrix.h"
+#include "queue.h"
 #include "widgets.h"
 
 #include <assert.h>
@@ -10,6 +11,7 @@
 #include <langinfo.h>
 #include <locale.h>
 #include <pthread.h>
+#include <stdatomic.h>
 
 #if 1
 #define MXID "@testuser:localhost"
@@ -28,11 +30,12 @@ enum { THREAD_SYNC = 0, THREAD_QUEUE, THREAD_MAX };
 
 struct state {
 	enum { INPUT = 0, TREE } active_widget;
-	bool done;
-	bool mutex_is_init;
+	_Atomic bool done;
 	char *current_room;
 	pthread_t threads[THREAD_MAX];
 	pthread_mutex_t mutex;
+	pthread_cond_t cond;
+	struct queue queue;
 	struct matrix *matrix;
 	struct input input;
 	struct treeview treeview;
@@ -63,11 +66,7 @@ cleanup(struct state *state) {
 	treeview_finish(&state->treeview);
 	tb_shutdown();
 
-	if (state->mutex_is_init) {
-		pthread_mutex_lock(&state->mutex);
-		state->done = true;
-		pthread_mutex_unlock(&state->mutex);
-	}
+	state->done = true;
 
 	if (state->threads[THREAD_SYNC]) {
 		matrix_sync_cancel(state->matrix);
@@ -75,12 +74,12 @@ cleanup(struct state *state) {
 	}
 
 	if (state->threads[THREAD_QUEUE]) {
+		pthread_cond_signal(&state->cond);
 		pthread_join(state->threads[THREAD_QUEUE], NULL);
 	}
 
-	if (state->mutex_is_init) {
-		pthread_mutex_destroy(&state->mutex);
-	}
+	pthread_cond_destroy(&state->cond);
+	pthread_mutex_destroy(&state->mutex);
 
 	matrix_destroy(state->matrix);
 	matrix_global_cleanup();
@@ -123,27 +122,34 @@ static void *
 queue_listener(void *arg) {
 	struct state *state = arg;
 
-#if 0
-	while ((stopped(state))) {
+	while (!state->done) {
+		pthread_mutex_lock(&state->mutex);
+		/* Sleep until notified and relock mutex. */
+		pthread_cond_wait(&state->cond, &state->mutex);
+
+		struct queue_item *item = NULL;
+
+		/* We must check the "running" variable here as each operation
+		 * can take a couple hundred milliseconds to complete. */
+		while (!state->done && (item = queue_pop_head(&state->queue))) {
+		}
+
+		pthread_mutex_unlock(&state->mutex);
 	}
-#endif
 
 	pthread_exit(NULL);
 }
 
 static int
 threads_init(struct state *state) {
-	if ((pthread_mutex_init(&state->mutex, NULL)) != 0
-		|| !(state->mutex_is_init = true)
-		|| (pthread_create(&state->threads[THREAD_SYNC], NULL, syncer, state))
-			 != 0
-		|| (pthread_create(
+	if ((pthread_create(&state->threads[THREAD_SYNC], NULL, syncer, state)) == 0
+		&& (pthread_create(
 			 &state->threads[THREAD_QUEUE], NULL, queue_listener, state))
-			 != 0) {
-		return -1;
+			 == 0) {
+		return 0;
 	}
 
-	return 0;
+	return -1;
 }
 
 static int
@@ -391,7 +397,8 @@ main() {
 		return EXIT_FAILURE;
 	}
 
-	struct state state = {0};
+	struct state state
+	  = {.cond = PTHREAD_COND_INITIALIZER, .mutex = PTHREAD_MUTEX_INITIALIZER};
 
 	if (!ERRLOG(
 		  matrix_global_init() == 0, "Failed to initialize matrix globals.\n")

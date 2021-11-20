@@ -31,6 +31,7 @@ OBJ = \
 	src/input.o \
 	src/tree.o \
 	src/ui_common.o \
+	src/queue.o \
 	src/main.o \
 	libmatrix_src/api.o \
 	libmatrix_src/matrix.o \

@@ -1,17 +1,9 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
+#include "queue.h"
+
 #include <assert.h>
-#include <stdio.h>
 #include <stdlib.h>
-
-enum { QUEUE_SIZE = 10 };
-
-/* Fixed-size FIFO */
-struct queue {
-	size_t head;
-	size_t tail;
-	void *data[QUEUE_SIZE];
-};
 
 int
 queue_push_tail(struct queue *queue, void *data) {
