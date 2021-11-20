@@ -27,9 +27,6 @@
 enum { THREAD_SYNC = 0, THREAD_QUEUE, THREAD_MAX };
 
 struct state {
-#ifndef NDEBUG
-	bool cleaned_up;
-#endif
 	enum { INPUT = 0, TREE } active_widget;
 	bool done;
 	bool mutex_is_init;
@@ -62,11 +59,6 @@ redraw(struct state *state) {
 
 static void
 cleanup(struct state *state) {
-#ifndef NDEBUG
-	assert(!state->cleaned_up);
-	state->cleaned_up = true;
-#endif
-
 	input_finish(&state->input);
 	treeview_finish(&state->treeview);
 	tb_shutdown();
