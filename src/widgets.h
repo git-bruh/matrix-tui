@@ -64,6 +64,8 @@ void
 input_redraw(struct input *input, struct widget_points *points);
 enum widget_error
 input_handle_event(struct input *input, enum input_event event, ...);
+char *
+input_buf(struct input *input);
 
 /* Treeview. */
 

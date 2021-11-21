@@ -246,3 +246,26 @@ input_handle_event(struct input *input, enum input_event event, ...) {
 
 	return WIDGET_NOOP;
 }
+
+char *
+input_buf(struct input *input) {
+	const size_t max_codepoint_len = 7;
+	char *buf = NULL;
+
+	size_t size
+	  = ((max_codepoint_len * arrlenu(input->buf)) + 1) * sizeof(*buf);
+
+	if (!(buf = malloc(size))) {
+		return NULL;
+	}
+
+	for (size_t i = 0, buf_index = 0, len = arrlenu(input->buf); i < len; i++) {
+		buf_index
+		  += (size_t) tb_utf8_unicode_to_char(&buf[buf_index], input->buf[i]);
+		assert(buf_index < (size - 1));
+	}
+
+	buf[size - 1] = '\0';
+
+	return buf;
+}
