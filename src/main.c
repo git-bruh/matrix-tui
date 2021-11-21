@@ -35,11 +35,43 @@ struct state {
 	pthread_t threads[THREAD_MAX];
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
-	struct queue queue;
 	struct matrix *matrix;
+	struct queue queue;
 	struct input input;
 	struct treeview treeview;
 };
+
+struct queue_item {
+	enum queue_item_type { QUEUE_ITEM_COMMAND = 0, QUEUE_ITEM_MAX } type;
+	void *data;
+};
+
+void
+handle_command(struct state *state, void *data) {
+	char *buf = data;
+	fprintf(stderr, "%s\n", buf);
+	free(buf);
+}
+
+static void (*queue_item_cb[QUEUE_ITEM_MAX])(struct state *, void *) = {
+  [QUEUE_ITEM_COMMAND] = handle_command,
+};
+
+static struct queue_item *
+queue_item_alloc(enum queue_item_type type, void *data) {
+	struct queue_item *item = (type < QUEUE_ITEM_MAX && data)
+							  ? malloc(sizeof(struct queue_item))
+							  : NULL;
+
+	if (item) {
+		*item = (struct queue_item) {
+		  .type = type,
+		  .data = data,
+		};
+	}
+
+	return item;
+}
 
 static void
 redraw(struct state *state) {
@@ -118,23 +150,41 @@ syncer(void *arg) {
 	pthread_exit(NULL);
 }
 
+static int
+lock_and_push(struct state *state, struct queue_item *item) {
+	if (!item) {
+		return -1;
+	}
+
+	pthread_mutex_lock(&state->mutex);
+	queue_push_tail(&state->queue, item);
+	pthread_cond_broadcast(&state->cond);
+	pthread_mutex_unlock(&state->mutex);
+
+	return 0;
+}
+
 static void *
 queue_listener(void *arg) {
 	struct state *state = arg;
 
+	/* TODO cleanup somehow when loop breaks and items still in queue. */
 	while (!state->done) {
 		pthread_mutex_lock(&state->mutex);
-		/* Sleep until notified and relock mutex. */
-		pthread_cond_wait(&state->cond, &state->mutex);
 
 		struct queue_item *item = NULL;
 
-		/* We must check the "running" variable here as each operation
-		 * can take a couple hundred milliseconds to complete. */
-		while (!state->done && (item = queue_pop_head(&state->queue))) {
+		while (!(item = queue_pop_head(&state->queue)) && !state->done) {
+			/* Sleep until notified and relock mutex. */
+			pthread_cond_wait(&state->cond, &state->mutex);
 		}
 
 		pthread_mutex_unlock(&state->mutex);
+
+		if (item) {
+			queue_item_cb[item->type](state, item->data);
+			free(item);
+		}
 	}
 
 	pthread_exit(NULL);
@@ -235,6 +285,13 @@ handle_input(struct state *state, struct tb_event *event) {
 		if (mod_enter) {
 			return input_handle_event(&state->input, INPUT_ADD, '\n');
 		}
+
+		char *buf = input_buf(&state->input);
+
+		if ((lock_and_push(state, queue_item_alloc(QUEUE_ITEM_COMMAND, buf)))
+			== -1) {
+			free(buf);
+		}
 		break;
 	case TB_KEY_BACKSPACE:
 	case TB_KEY_BACKSPACE2:
@@ -262,7 +319,7 @@ ui_loop(struct state *state) {
 
 	redraw(state);
 
-	state->active_widget = TREE;
+	state->active_widget = INPUT;
 
 	for (;;) {
 		switch ((tb_poll_event(&event))) {
