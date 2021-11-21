@@ -53,7 +53,7 @@ handle_command(struct state *state, void *data) {
 	free(buf);
 }
 
-static void (*queue_item_cb[QUEUE_ITEM_MAX])(struct state *, void *) = {
+static void (*const queue_item_cb[QUEUE_ITEM_MAX])(struct state *, void *) = {
   [QUEUE_ITEM_COMMAND] = handle_command,
 };
 
