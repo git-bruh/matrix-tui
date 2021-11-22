@@ -255,17 +255,19 @@ input_buf(struct input *input) {
 	size_t size
 	  = ((max_codepoint_len * arrlenu(input->buf)) + 1) * sizeof(*buf);
 
-	if (!(buf = malloc(size))) {
+	if ((arrlenu(input->buf)) == 0 || !(buf = malloc(size))) {
 		return NULL;
 	}
 
-	for (size_t i = 0, buf_index = 0, len = arrlenu(input->buf); i < len; i++) {
+	size_t buf_index = 0;
+
+	for (size_t i = 0, len = arrlenu(input->buf); i < len; i++) {
 		buf_index
 		  += (size_t) tb_utf8_unicode_to_char(&buf[buf_index], input->buf[i]);
-		assert(buf_index < (size - 1));
+		assert(buf_index < size);
 	}
 
-	buf[size - 1] = '\0';
+	buf[buf_index] = '\0';
 
 	return buf;
 }
