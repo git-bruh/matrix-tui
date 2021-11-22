@@ -49,12 +49,19 @@ struct queue_item {
 void
 handle_command(struct state *state, void *data) {
 	char *buf = data;
-	fprintf(stderr, "%s\n", buf);
-	free(buf);
+	assert(buf);
+
+	char *event_id = NULL;
+	matrix_send_message(state->matrix, &event_id, "!7oDrRRJK2v0eapPf:localhost",
+	  "m.text", buf, NULL);
+	free(event_id);
 }
 
-static void (*const queue_item_cb[QUEUE_ITEM_MAX])(struct state *, void *) = {
-  [QUEUE_ITEM_COMMAND] = handle_command,
+static struct {
+	void (*cb)(struct state *state, void *);
+	void (*free)(void *);
+} queue_callbacks[QUEUE_ITEM_MAX] = {
+  [QUEUE_ITEM_COMMAND] = {handle_command, free},
 };
 
 static struct queue_item *
@@ -113,6 +120,14 @@ cleanup(struct state *state) {
 	pthread_cond_destroy(&state->cond);
 	pthread_mutex_destroy(&state->mutex);
 
+	struct queue_item *item = NULL;
+
+	/* Free any unconsumed items. */
+	while ((item = queue_pop_head(&state->queue))) {
+		queue_callbacks[item->type].free(item->data);
+		free(item);
+	}
+
 	matrix_destroy(state->matrix);
 	matrix_global_cleanup();
 
@@ -157,8 +172,14 @@ lock_and_push(struct state *state, struct queue_item *item) {
 	}
 
 	pthread_mutex_lock(&state->mutex);
-	queue_push_tail(&state->queue, item);
+	if ((queue_push_tail(&state->queue, item)) == -1) {
+		free(item); /* TODO maybe don't free the caller's pointers... */
+		pthread_mutex_unlock(&state->mutex);
+		return -1;
+	}
 	pthread_cond_broadcast(&state->cond);
+	/* pthread_cond_wait in queue thread blocks until we unlock the mutex here
+	 * before relocking it. */
 	pthread_mutex_unlock(&state->mutex);
 
 	return 0;
@@ -168,21 +189,20 @@ static void *
 queue_listener(void *arg) {
 	struct state *state = arg;
 
-	/* TODO cleanup somehow when loop breaks and items still in queue. */
 	while (!state->done) {
 		pthread_mutex_lock(&state->mutex);
 
 		struct queue_item *item = NULL;
 
 		while (!(item = queue_pop_head(&state->queue)) && !state->done) {
-			/* Sleep until notified and relock mutex. */
 			pthread_cond_wait(&state->cond, &state->mutex);
 		}
 
 		pthread_mutex_unlock(&state->mutex);
 
 		if (item) {
-			queue_item_cb[item->type](state, item->data);
+			queue_callbacks[item->type].cb(state, item->data);
+			queue_callbacks[item->type].free(item->data);
 			free(item);
 		}
 	}
