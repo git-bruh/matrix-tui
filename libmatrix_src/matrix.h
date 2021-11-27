@@ -52,12 +52,10 @@ struct matrix_file_info {
 
 struct matrix_room_typing {
 	matrix_json_t *user_ids;
-	struct matrix_ephemeral_base base;
 };
 
 struct matrix_room_canonical_alias {
 	char *alias; /* nullable. */
-	struct matrix_state_base base;
 };
 
 struct matrix_room_create {
@@ -66,12 +64,10 @@ struct matrix_room_create {
 	const char
 	  *room_version; /* This is marked const as we assign a string literal to
 						it if the room_version key is not present. */
-	struct matrix_state_base base;
 };
 
 struct matrix_room_join_rules {
 	char *join_rule;
-	struct matrix_state_base base;
 };
 
 struct matrix_room_member {
@@ -80,7 +76,6 @@ struct matrix_room_member {
 	char *prev_membership; /* nullable. */
 	char *avatar_url;	   /* nullable. */
 	char *displayname;	   /* nullable. */
-	struct matrix_state_base base;
 };
 
 struct matrix_room_power_levels {
@@ -94,29 +89,24 @@ struct matrix_room_power_levels {
 	matrix_json_t *events;		  /* nullable. */
 	matrix_json_t *users;		  /* nullable. */
 	matrix_json_t *notifications; /* nullable. */
-	struct matrix_state_base base;
 };
 
 struct matrix_room_name {
 	char *name;
-	struct matrix_state_base base;
 };
 
 struct matrix_room_topic {
 	char *topic;
-	struct matrix_state_base base;
 };
 
 struct matrix_room_avatar {
 	char *url;
 	struct matrix_file_info info;
-	struct matrix_state_base base;
 };
 
 struct matrix_unknown_state {
 	matrix_json_t *content;
 	matrix_json_t *prev_content; /* nullable. */
-	struct matrix_state_base base;
 };
 
 struct matrix_room_message {
@@ -124,13 +114,11 @@ struct matrix_room_message {
 	char *msgtype;
 	char *format;		  /* nullable. */
 	char *formatted_body; /* nullable. */
-	struct matrix_room_base base;
 };
 
 struct matrix_room_redaction {
 	char *redacts;
 	char *reason; /* nullable. */
-	struct matrix_room_base base;
 };
 
 struct matrix_room_attachment {
@@ -139,7 +127,6 @@ struct matrix_room_attachment {
 	char *url; /* nullable. */
 	char *filename;
 	struct matrix_file_info info;
-	struct matrix_room_base base;
 };
 
 struct matrix_room_summary {
@@ -196,6 +183,9 @@ struct matrix_state_event {
 		MATRIX_ROOM_AVATAR,
 		MATRIX_ROOM_UNKNOWN_STATE,
 	} type;
+	matrix_json_t *json;
+	struct matrix_state_base base;
+	char *state_key;
 	union {
 		struct matrix_room_member member;
 		struct matrix_room_power_levels power_levels;
@@ -215,6 +205,8 @@ struct matrix_timeline_event {
 		MATRIX_ROOM_REDACTION,
 		MATRIX_ROOM_ATTACHMENT,
 	} type;
+	matrix_json_t *json;
+	struct matrix_room_base base;
 	union {
 		struct matrix_room_message message;
 		struct matrix_room_redaction redaction;
@@ -226,6 +218,8 @@ struct matrix_ephemeral_event {
 	enum matrix_ephemeral_type {
 		MATRIX_ROOM_TYPING = 0,
 	} type;
+	matrix_json_t *json;
+	struct matrix_ephemeral_base base;
 	union {
 		struct matrix_room_typing typing;
 	};
@@ -306,6 +300,9 @@ matrix_sync_ephemeral_next(
 			 : matrix_sync_state_next, struct matrix_timeline_event *          \
 			 : matrix_sync_timeline_next, struct matrix_ephemeral_event *      \
 			 : matrix_sync_ephemeral_next)(response_or_room, result)
+/* MISC */
+char *
+matrix_json_print(matrix_json_t *json);
 
 /* API */
 enum matrix_code

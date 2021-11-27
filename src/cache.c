@@ -1,0 +1,340 @@
+/* SPDX-FileCopyrightText: 2021 git-bruh
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+/* Uses Nheko's cache as reference:
+ * https://github.com/Nheko-Reborn/nheko/blob/master/src/Cache.cpp */
+#include "cache.h"
+
+#include <assert.h>
+#include <errno.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+
+#define STREQ(s1, s2) ((strcmp(s1, s2)) == 0)
+
+enum room_db {
+	/* Event ID => JSON */
+	ROOM_DB_EVENTS = 0,
+	/* [1, 2, 3, ...] => Event ID */
+	ROOM_DB_ORDER_TO_EVENTS,
+	/* Event ID => [1, 2, 3, ...] */
+	ROOM_DB_EVENTS_TO_ORDER,
+	/* "@username:server.tld" => JSON */
+	ROOM_DB_MEMBERS,
+	/* "m.room.type" => JSON */
+	ROOM_DB_STATE,
+	ROOM_DB_MAX,
+};
+
+static const char *const db_names[DB_MAX] = {
+  [DB_SYNC] = "sync_state",
+  [DB_ROOMS] = "rooms",
+};
+
+static const char *const room_db_names[ROOM_DB_MAX] = {
+  [ROOM_DB_EVENTS] = "events",
+  [ROOM_DB_ORDER_TO_EVENTS] = "order2event",
+  [ROOM_DB_EVENTS_TO_ORDER] = "event2order",
+  [ROOM_DB_MEMBERS] = "members",
+  [ROOM_DB_STATE] = "state",
+};
+
+/* Modifies path[] in-place but restores it. */
+static int
+mkdir_parents(char path[], mode_t mode) {
+	for (size_t i = 0; path[i] != '\0'; i++) {
+		/* Create the directory even if no trailing slash is provided. */
+		if (path[i] == '/' || path[i + 1] == '\0') {
+			char tmp = path[i + 1];
+
+			path[i + 1] = '\0';
+			int ret = mkdir(path, mode);
+			path[i + 1] = tmp;
+
+			if (ret == -1 && errno != EEXIST) {
+				return -1;
+			}
+		}
+	}
+
+	return 0;
+}
+
+static int
+get_dbi(enum room_db db, MDB_txn *txn, MDB_dbi *dbi, const char *room_id) {
+	unsigned flags = MDB_CREATE;
+
+	if (db == ROOM_DB_ORDER_TO_EVENTS) {
+		flags |= MDB_INTEGERKEY;
+	}
+
+	char *room = NULL;
+
+	if ((asprintf(&room, "%s/%s", room_id, room_db_names[db])) == -1) {
+		return -1;
+	}
+
+	int ret = mdb_dbi_open(txn, room, flags, dbi);
+
+	free(room);
+
+	return ret;
+}
+
+static int
+del_str(MDB_txn *txn, MDB_dbi dbi, char *key) {
+	if (!key) {
+		return -1;
+	}
+
+	return (mdb_del(txn, dbi, &(MDB_val) {strlen(key) + 1, key}, NULL)
+			 == MDB_SUCCESS)
+		   ? 0
+		   : -1;
+}
+
+static int
+put_str(MDB_txn *txn, MDB_dbi dbi, char *key, char *data, unsigned flags) {
+	if (!key || !data) {
+		return -1;
+	}
+
+	return (mdb_put(txn, dbi, &(MDB_val) {strlen(key) + 1, key},
+			  &(MDB_val) {strlen(data) + 1, data}, flags)
+			 == MDB_SUCCESS)
+		   ? 0
+		   : -1;
+}
+
+static int
+put_int(MDB_txn *txn, MDB_dbi dbi, uint64_t key, char *data, unsigned flags) {
+	if (!data) {
+		return -1;
+	}
+
+	return (mdb_put(txn, dbi, &(MDB_val) {sizeof(key), &key},
+			  &(MDB_val) {strlen(data) + 1, data}, flags)
+			 == MDB_SUCCESS)
+		   ? 0
+		   : -1;
+}
+
+static int
+put_str_int(
+  MDB_txn *txn, MDB_dbi dbi, char *key, uint64_t data, unsigned flags) {
+	if (!key) {
+		return -1;
+	}
+
+	return (mdb_put(txn, dbi, &(MDB_val) {strlen(key) + 1, key},
+			  &(MDB_val) {sizeof(data), &data}, flags)
+			 == MDB_SUCCESS)
+		   ? 0
+		   : -1;
+}
+
+int
+cache_init(struct cache *cache) {
+	if (!cache) {
+		return -1;
+	}
+
+	*cache = (struct cache) {0};
+
+	const mode_t dir_perms = 0755;
+	const mode_t db_perms = 0600;
+
+	enum {
+		max_dbs = 4096,
+		db_size = 1 * 1024 * 1024 * 1024, /* 1 GB */
+	};
+
+	char dir[] = "/tmp/db";
+
+	if ((mkdir_parents(dir, dir_perms)) == -1) {
+		return -1;
+	}
+
+	MDB_txn *txn = NULL;
+
+	if ((mdb_env_create(&cache->env)) == MDB_SUCCESS
+		&& (mdb_env_set_maxdbs(cache->env, max_dbs)) == MDB_SUCCESS
+		&& (mdb_env_open(cache->env, dir, 0, db_perms)) == MDB_SUCCESS
+		&& (mdb_txn_begin(cache->env, NULL, 0, &txn)) == MDB_SUCCESS) {
+		for (size_t i = 0; i < DB_MAX; i++) {
+			if ((mdb_dbi_open(txn, db_names[i], MDB_CREATE, &cache->dbs[i]))
+				!= MDB_SUCCESS) {
+				cache_finish(cache);
+				mdb_txn_commit(txn);
+				return -1;
+			}
+		}
+
+		mdb_txn_commit(txn);
+		return 0;
+	}
+
+	cache_finish(cache);
+	mdb_txn_commit(txn);
+	return -1;
+}
+
+void
+cache_finish(struct cache *cache) {
+	if (!cache) {
+		return;
+	}
+
+	mdb_env_close(cache->env);
+	memset(cache, 0, sizeof(*cache));
+}
+
+void
+cache_save(struct cache *cache, struct matrix_sync_response *response) {
+	if (!cache || !response) {
+		return;
+	}
+
+	assert(cache->env);
+
+	MDB_txn *txn = NULL;
+
+	char next_batch_key[] = "next_batch";
+
+	if ((mdb_txn_begin(cache->env, NULL, 0, &txn)) == MDB_SUCCESS
+		&& (put_str(
+			 txn, cache->dbs[DB_SYNC], next_batch_key, response->next_batch, 0))
+			 == MDB_SUCCESS) {
+		struct matrix_room room;
+
+		while ((matrix_sync_next(response, &room)) == MATRIX_SUCCESS) {
+			bool fail = false;
+			MDB_dbi dbs[ROOM_DB_MAX] = {0};
+
+			for (enum room_db i = 0; i < ROOM_DB_MAX; i++) {
+				if ((get_dbi(i, txn, &dbs[i], room.id)) == -1) {
+					fail = true;
+					break;
+				}
+			}
+
+			if (fail) {
+				continue;
+			}
+
+			if (room.type == MATRIX_ROOM_LEAVE) {
+				for (enum room_db i = 0; i < ROOM_DB_MAX; i++) {
+					mdb_drop(txn, dbs[i], true);
+				}
+
+				continue;
+			}
+
+			struct matrix_state_event sevent;
+
+			while ((matrix_sync_next(&room, &sevent)) == MATRIX_SUCCESS) {
+				if (sevent.type == MATRIX_ROOM_MEMBER) {
+					assert(sevent.state_key);
+
+					if (!sevent.state_key) {
+						continue;
+					}
+
+					if ((STREQ(sevent.member.membership, "leave"))) {
+						del_str(txn, dbs[ROOM_DB_MEMBERS], sevent.state_key);
+					} else {
+						char *data = matrix_json_print(sevent.json);
+						put_str(
+						  txn, dbs[ROOM_DB_MEMBERS], sevent.state_key, data, 0);
+						free(data);
+					}
+				} else if (!sevent.state_key) {
+					char *data = matrix_json_print(sevent.json);
+					put_str(txn, dbs[ROOM_DB_STATE], sevent.base.type, data, 0);
+					free(data);
+				}
+			}
+
+			struct room_info info = {0};
+			/* .name = m.room.name or m.room.canonical_alias from state, else
+			 * first member .topic = m.room.topic .version = m.room.version or
+			 * "1" */
+			(void) info;
+
+			/* Start in the middle so we can easily backfill while filling in
+			 * events forward aswell. */
+			uint64_t index = UINT64_MAX / 2;
+
+			MDB_cursor *cursor = NULL;
+
+			if ((mdb_cursor_open(txn, dbs[ROOM_DB_ORDER_TO_EVENTS], &cursor))
+				== MDB_SUCCESS) {
+				MDB_val key = {0};
+				MDB_val val = {0};
+
+				if ((mdb_cursor_get(cursor, &key, &val, MDB_LAST))
+					== MDB_SUCCESS) {
+					assert(key.mv_size == sizeof(index));
+					if (key.mv_size == sizeof(index)) {
+						memcpy(&index, key.mv_data, sizeof(index));
+					} else {
+						/* TODO what to do here? */
+						mdb_cursor_close(cursor);
+						continue;
+					}
+					index++; /* Don't overwrite the last event. */
+				}
+
+				mdb_cursor_close(cursor);
+			}
+
+			struct matrix_timeline_event tevent;
+
+			while ((matrix_sync_next(&room, &tevent)) == MATRIX_SUCCESS) {
+				if (tevent.type == MATRIX_ROOM_REDACTION) {
+					MDB_val del_key = {
+					  strlen(tevent.base.event_id) + 1, tevent.base.event_id};
+					MDB_val del_index = {0};
+
+					if ((mdb_get(txn, dbs[ROOM_DB_EVENTS_TO_ORDER], &del_key,
+						  &del_index))
+						== MDB_SUCCESS) {
+						mdb_del(
+						  txn, dbs[ROOM_DB_ORDER_TO_EVENTS], &del_index, NULL);
+					}
+
+					del_str(
+					  txn, dbs[ROOM_DB_EVENTS_TO_ORDER], tevent.base.event_id);
+					del_str(txn, dbs[ROOM_DB_EVENTS], tevent.base.event_id);
+				} else {
+					MDB_val key = {
+					  strlen(tevent.base.event_id) + 1, tevent.base.event_id};
+					MDB_val value = {0};
+
+					if ((mdb_get(txn, dbs[ROOM_DB_EVENTS], &key, &value))
+						== MDB_SUCCESS) {
+						(void) value;
+						/* WARN */
+						continue;
+					}
+
+					char *data = matrix_json_print(tevent.json);
+
+					put_int(txn, dbs[ROOM_DB_ORDER_TO_EVENTS], index,
+					  tevent.base.event_id, 0);
+					put_str_int(txn, dbs[ROOM_DB_EVENTS_TO_ORDER],
+					  tevent.base.event_id, index, 0);
+					put_str(
+					  txn, dbs[ROOM_DB_EVENTS], tevent.base.event_id, data, 0);
+					index++;
+
+					free(data);
+				}
+			}
+		}
+	}
+
+	mdb_txn_commit(txn);
+}

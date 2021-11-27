@@ -61,3 +61,8 @@ void *
 matrix_userdata(struct matrix *matrix) {
 	return matrix->userp;
 }
+
+char *
+matrix_json_print(matrix_json_t *json) {
+	return cJSON_Print(json);
+}

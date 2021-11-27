@@ -1,6 +1,7 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
+#include "cache.h"
 #include "matrix.h"
 #include "queue.h"
 #include "widgets.h"
@@ -29,13 +30,15 @@
 enum { THREAD_SYNC = 0, THREAD_QUEUE, THREAD_MAX };
 
 struct state {
-	enum { INPUT = 0, TREE } active_widget;
+	enum { WIDGET_INPUT = 0, WIDGET_TREE } active_widget;
+	enum { TAB_HOME = 0, TAB_CHANNEL } active_tab;
 	_Atomic bool done;
 	char *current_room;
 	pthread_t threads[THREAD_MAX];
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
 	struct matrix *matrix;
+	struct cache cache;
 	struct queue queue;
 	struct input input;
 	struct treeview treeview;
@@ -60,7 +63,7 @@ handle_command(struct state *state, void *data) {
 static struct {
 	void (*cb)(struct state *state, void *);
 	void (*free)(void *);
-} queue_callbacks[QUEUE_ITEM_MAX] = {
+} const queue_callbacks[QUEUE_ITEM_MAX] = {
   [QUEUE_ITEM_COMMAND] = {handle_command, free},
 };
 
@@ -87,13 +90,13 @@ redraw(struct state *state) {
 	int height = tb_height();
 	int width = tb_width();
 
-	enum { input_height = 5 };
+	enum { bar_height = 1, input_height = 5 };
 	struct widget_points points = {0};
 
 	widget_points_set(&points, 0, width, height - input_height, height);
 	input_redraw(&state->input, &points);
 
-	widget_points_set(&points, 0, width, 0, height);
+	widget_points_set(&points, 0, width, bar_height, height);
 	treeview_redraw(&state->treeview, &points);
 
 	tb_present();
@@ -127,6 +130,8 @@ cleanup(struct state *state) {
 		queue_callbacks[item->type].free(item->data);
 		free(item);
 	}
+
+	cache_finish(&state->cache);
 
 	matrix_destroy(state->matrix);
 	matrix_global_cleanup();
@@ -240,7 +245,7 @@ ui_init(struct state *state) {
 
 static enum widget_error
 handle_tree(struct state *state, struct tb_event *event) {
-	assert(state->active_widget == TREE);
+	assert(state->active_widget == WIDGET_TREE);
 	static char hello[] = "Hello!";
 
 	if (!event->key && event->ch) {
@@ -291,7 +296,7 @@ handle_tree(struct state *state, struct tb_event *event) {
 
 static enum widget_error
 handle_input(struct state *state, struct tb_event *event) {
-	assert(state->active_widget == INPUT);
+	assert(state->active_widget == WIDGET_INPUT);
 
 	if (!event->key && event->ch) {
 		return input_handle_event(&state->input, INPUT_ADD, event->ch);
@@ -339,7 +344,7 @@ ui_loop(struct state *state) {
 
 	redraw(state);
 
-	state->active_widget = INPUT;
+	state->active_widget = WIDGET_INPUT;
 
 	for (;;) {
 		switch ((tb_poll_event(&event))) {
@@ -364,10 +369,10 @@ ui_loop(struct state *state) {
 		}
 
 		switch (state->active_widget) {
-		case INPUT:
+		case WIDGET_INPUT:
 			ret = handle_input(state, &event);
 			break;
-		case TREE:
+		case WIDGET_TREE:
 			ret = handle_tree(state, &event);
 			break;
 		default:
@@ -382,98 +387,9 @@ ui_loop(struct state *state) {
 
 static void
 sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
-	(void) matrix;
+	struct state *state = matrix_userp(matrix);
 
-	struct matrix_room room;
-
-	while ((matrix_sync_next(response, &room)) == MATRIX_SUCCESS) {
-		ERRLOG(0, "Events for room (%s)\n", room.id);
-
-		struct matrix_state_event sevent;
-
-		while ((matrix_sync_next(&room, &sevent)) == MATRIX_SUCCESS) {
-			switch (sevent.type) {
-			case MATRIX_ROOM_MEMBER:
-				ERRLOG(0, "(%s) => Membership (%s)\n",
-				  sevent.member.base.sender, sevent.member.membership);
-				break;
-			case MATRIX_ROOM_POWER_LEVELS:
-				break;
-			case MATRIX_ROOM_CANONICAL_ALIAS:
-				ERRLOG(0, "Canonical Alias => (%s)\n",
-				  sevent.canonical_alias.alias ? sevent.canonical_alias.alias
-											   : "");
-				break;
-			case MATRIX_ROOM_CREATE:
-				ERRLOG(0,
-				  "Created => Creator (%s), Version (%s), Federate (%d)\n",
-				  sevent.create.creator, sevent.create.room_version,
-				  sevent.create.federate);
-				break;
-			case MATRIX_ROOM_JOIN_RULES:
-				ERRLOG(0, "Join Rule => (%s)\n", sevent.join_rules.join_rule);
-				break;
-			case MATRIX_ROOM_NAME:
-				ERRLOG(0, "Name => (%s)\n", sevent.name.name);
-				break;
-			case MATRIX_ROOM_TOPIC:
-				ERRLOG(0, "Topic => (%s)\n", sevent.topic.topic);
-				break;
-			case MATRIX_ROOM_AVATAR:
-				ERRLOG(0, "Avatar => (%s)\n", sevent.avatar.url);
-				break;
-			case MATRIX_ROOM_UNKNOWN_STATE:
-				break;
-			default:
-				assert(0);
-			}
-		}
-
-		struct matrix_timeline_event tevent;
-
-		while ((matrix_sync_next(&room, &tevent)) == MATRIX_SUCCESS) {
-			switch (tevent.type) {
-			case MATRIX_ROOM_MESSAGE:
-				ERRLOG(0, "(%s) => (%s)\n", tevent.message.base.sender,
-				  tevent.message.body);
-				break;
-			case MATRIX_ROOM_REDACTION:
-				ERRLOG(0, "(%s) redacted by (%s) for (%s)\n",
-				  tevent.redaction.redacts, tevent.redaction.base.event_id,
-				  tevent.redaction.reason ? tevent.redaction.reason : "");
-				break;
-			case MATRIX_ROOM_ATTACHMENT:
-				ERRLOG(0, "File (%s), URL (%s), Msgtype (%s), Size (%u)\n",
-				  tevent.attachment.body, tevent.attachment.url,
-				  tevent.attachment.msgtype, tevent.attachment.info.size);
-				break;
-			default:
-				assert(0);
-			}
-		}
-
-		struct matrix_ephemeral_event eevent;
-
-		while ((matrix_sync_next(&room, &eevent)) == MATRIX_SUCCESS) {
-			switch (eevent.type) {
-			case MATRIX_ROOM_TYPING:
-				{
-					cJSON *user_id = NULL;
-
-					cJSON_ArrayForEach(user_id, eevent.typing.user_ids) {
-						char *uid = cJSON_GetStringValue(user_id);
-
-						if (uid) {
-							ERRLOG(0, "(%s) => Typing\n", uid);
-						}
-					}
-				}
-				break;
-			default:
-				assert(0);
-			}
-		}
-	}
+	cache_save(&state->cache, response);
 }
 
 int
@@ -489,6 +405,8 @@ main() {
 
 	if (!ERRLOG(
 		  matrix_global_init() == 0, "Failed to initialize matrix globals.\n")
+		&& !ERRLOG(
+		  cache_init(&state.cache) == 0, "Failed to initialize database.\n")
 		&& !ERRLOG(ui_init(&state) == 0, "Failed to initialize UI.\n")
 		&& !ERRLOG(state.matrix = matrix_alloc(MXID, HOMESERVER, &state),
 		  "Failed to initialize libmatrix.\n")

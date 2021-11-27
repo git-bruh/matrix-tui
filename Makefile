@@ -19,7 +19,7 @@ XCFLAGS = \
 	-Werror=incompatible-pointer-types \
 	-DCLIENT_NAME=\"matrix-client\"
 
-XLDLIBS = $(LDLIBS) `curl-config --libs` -lcjson -lpthread
+XLDLIBS = $(LDLIBS) `curl-config --libs` -lcjson -llmdb -lpthread
 
 INCLUDES = \
 	-I libmatrix_src \
@@ -32,6 +32,7 @@ OBJ = \
 	src/tree.o \
 	src/ui_common.o \
 	src/queue.o \
+	src/cache.o \
 	src/main.o \
 	libmatrix_src/api.o \
 	libmatrix_src/matrix.o \
