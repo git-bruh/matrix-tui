@@ -28,5 +28,11 @@ int
 cache_init(struct cache *cache);
 void
 cache_finish(struct cache *cache);
+char *
+cache_room_name(struct cache *cache, MDB_txn *txn, const char *room_id);
+char *
+cache_room_topic(struct cache *cache, MDB_txn *txn, const char *room_id);
+char *
+cache_next_batch(struct cache *cache);
 void
 cache_save(struct cache *cache, struct matrix_sync_response *response);

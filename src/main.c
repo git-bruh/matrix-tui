@@ -30,8 +30,6 @@
 enum { THREAD_SYNC = 0, THREAD_QUEUE, THREAD_MAX };
 
 struct state {
-	enum { WIDGET_INPUT = 0, WIDGET_TREE } active_widget;
-	enum { TAB_HOME = 0, TAB_CHANNEL } active_tab;
 	_Atomic bool done;
 	char *current_room;
 	pthread_t threads[THREAD_MAX];
@@ -42,6 +40,10 @@ struct state {
 	struct queue queue;
 	struct input input;
 	struct treeview treeview;
+	struct {
+		enum { WIDGET_INPUT = 0, WIDGET_TREE } active_widget;
+		enum { TAB_HOME = 0, TAB_CHANNEL } active_tab;
+	} ui_data;
 };
 
 struct queue_item {
@@ -69,9 +71,8 @@ static struct {
 
 static struct queue_item *
 queue_item_alloc(enum queue_item_type type, void *data) {
-	struct queue_item *item = (type < QUEUE_ITEM_MAX && data)
-							  ? malloc(sizeof(struct queue_item))
-							  : NULL;
+	struct queue_item *item
+	  = (type < QUEUE_ITEM_MAX && data) ? malloc(sizeof(*item)) : NULL;
 
 	if (item) {
 		*item = (struct queue_item) {
@@ -159,6 +160,8 @@ syncer(void *arg) {
 	  .backoff_reset_cb = NULL, /* TODO */
 	};
 
+	char *next_batch = cache_next_batch(&state->cache);
+
 	switch (
 	  (matrix_sync_forever(state->matrix, NULL, sync_timeout, callbacks))) {
 	case MATRIX_NOMEM:
@@ -166,6 +169,8 @@ syncer(void *arg) {
 	default:
 		break;
 	}
+
+	free(next_batch);
 
 	pthread_exit(NULL);
 }
@@ -206,7 +211,9 @@ queue_listener(void *arg) {
 		pthread_mutex_unlock(&state->mutex);
 
 		if (item) {
-			queue_callbacks[item->type].cb(state, item->data);
+			if (!state->done) {
+				queue_callbacks[item->type].cb(state, item->data);
+			}
 			queue_callbacks[item->type].free(item->data);
 			free(item);
 		}
@@ -245,7 +252,7 @@ ui_init(struct state *state) {
 
 static enum widget_error
 handle_tree(struct state *state, struct tb_event *event) {
-	assert(state->active_widget == WIDGET_TREE);
+	assert(state->ui_data.active_widget == WIDGET_TREE);
 	static char hello[] = "Hello!";
 
 	if (!event->key && event->ch) {
@@ -296,7 +303,7 @@ handle_tree(struct state *state, struct tb_event *event) {
 
 static enum widget_error
 handle_input(struct state *state, struct tb_event *event) {
-	assert(state->active_widget == WIDGET_INPUT);
+	assert(state->ui_data.active_widget == WIDGET_INPUT);
 
 	if (!event->key && event->ch) {
 		return input_handle_event(&state->input, INPUT_ADD, event->ch);
@@ -344,7 +351,7 @@ ui_loop(struct state *state) {
 
 	redraw(state);
 
-	state->active_widget = WIDGET_INPUT;
+	state->ui_data.active_widget = WIDGET_INPUT;
 
 	for (;;) {
 		switch ((tb_poll_event(&event))) {
@@ -368,7 +375,7 @@ ui_loop(struct state *state) {
 			return;
 		}
 
-		switch (state->active_widget) {
+		switch (state->ui_data.active_widget) {
 		case WIDGET_INPUT:
 			ret = handle_input(state, &event);
 			break;
