@@ -62,7 +62,17 @@ matrix_userdata(struct matrix *matrix) {
 	return matrix->userp;
 }
 
+matrix_json_t *
+matrix_json_parse(const char *buf, size_t size) {
+	return size ? cJSON_ParseWithLength(buf, size) : cJSON_Parse(buf);
+}
+
 char *
 matrix_json_print(matrix_json_t *json) {
 	return cJSON_Print(json);
+}
+
+void
+matrix_json_delete(matrix_json_t *json) {
+	cJSON_Delete(json);
 }

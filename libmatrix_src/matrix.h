@@ -4,6 +4,7 @@
 #ifndef MATRIX_MATRIX_H
 #define MATRIX_MATRIX_H
 #include <stdbool.h>
+#include <stddef.h>
 /* Must allocate enum + 1. */
 enum matrix_limits {
 	MATRIX_MXID_MAX = 255,
@@ -291,8 +292,13 @@ matrix_sync_timeline_next(
 int
 matrix_sync_ephemeral_next(
   struct matrix_room *room, struct matrix_ephemeral_event *event);
+int
+matrix_sync_timeline_parse(
+  struct matrix_timeline_event *revent, matrix_json_t *json);
+int
+matrix_sync_state_parse(struct matrix_state_event *revent, matrix_json_t *json);
 
-/* Magic macro to call one of the above functions depending on the argument
+/* Magic macros to call one of the above functions depending on the argument
  * type. */
 #define matrix_sync_next(response_or_room, result)                             \
 	_Generic((result), struct matrix_room *                                    \
@@ -300,9 +306,20 @@ matrix_sync_ephemeral_next(
 			 : matrix_sync_state_next, struct matrix_timeline_event *          \
 			 : matrix_sync_timeline_next, struct matrix_ephemeral_event *      \
 			 : matrix_sync_ephemeral_next)(response_or_room, result)
+#define matrix_sync_parse(result, json)                                        \
+	_Generic((result), struct matrix_timeline_event *                          \
+			 : matrix_sync_timeline_parse, struct matrix_state_event *         \
+			 : matrix_sync_state_parse)(result, json)
+
 /* MISC */
+
+/* size is length of buf. If 0, size is calculated automatically. */
+matrix_json_t *
+matrix_json_parse(const char *buf, size_t size);
 char *
 matrix_json_print(matrix_json_t *json);
+void
+matrix_json_delete(matrix_json_t *json);
 
 /* API */
 enum matrix_code

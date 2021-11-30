@@ -354,6 +354,22 @@ matrix_sync_ephemeral_next(
 #undef TYPE
 
 int
+matrix_sync_timeline_parse(
+  struct matrix_timeline_event *revent, matrix_json_t *json) {
+	struct matrix_room room = {.events = {[MATRIX_EVENT_TIMELINE] = json}};
+
+	return matrix_sync_timeline_next(&room, revent);
+}
+
+int
+matrix_sync_state_parse(
+  struct matrix_state_event *revent, matrix_json_t *json) {
+	struct matrix_room room = {.events = {[MATRIX_EVENT_STATE] = json}};
+
+	return matrix_sync_state_next(&room, revent);
+}
+
+int
 matrix_dispatch_sync(struct matrix *matrix,
   const struct matrix_sync_callbacks *callbacks, const cJSON *sync) {
 	if (!matrix || !callbacks || !sync) {
