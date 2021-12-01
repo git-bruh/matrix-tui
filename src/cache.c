@@ -384,14 +384,14 @@ cache_save(struct cache *cache, struct matrix_sync_response *response) {
 								del_str(
 								  txn, dbs[ROOM_DB_MEMBERS], sevent->state_key);
 							} else {
-								char *data = matrix_json_print(sevent->json);
+								char *data = matrix_json_print(event.json);
 								put_str(txn, dbs[ROOM_DB_MEMBERS],
 								  sevent->state_key, data, 0);
 								free(data);
 							}
 						} else if (!sevent->state_key
 								   || (strnlen(sevent->state_key, 1)) == 0) {
-							char *data = matrix_json_print(sevent->json);
+							char *data = matrix_json_print(event.json);
 							put_str(txn, dbs[ROOM_DB_STATE], sevent->base.type,
 							  data, 0);
 							free(data);
@@ -427,8 +427,7 @@ cache_save(struct cache *cache, struct matrix_sync_response *response) {
 								continue;
 							}
 
-							char *data = matrix_json_print(tevent->json);
-
+							char *data = matrix_json_print(event.json);
 							put_int(txn, dbs[ROOM_DB_ORDER_TO_EVENTS], index,
 							  tevent->base.event_id, 0);
 							put_str_int(txn, dbs[ROOM_DB_EVENTS_TO_ORDER],
