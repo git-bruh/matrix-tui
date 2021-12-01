@@ -184,7 +184,6 @@ struct matrix_state_event {
 		MATRIX_ROOM_AVATAR,
 		MATRIX_ROOM_UNKNOWN_STATE,
 	} type;
-	matrix_json_t *json;
 	struct matrix_state_base base;
 	char *state_key;
 	union {
@@ -206,7 +205,6 @@ struct matrix_timeline_event {
 		MATRIX_ROOM_REDACTION,
 		MATRIX_ROOM_ATTACHMENT,
 	} type;
-	matrix_json_t *json;
 	struct matrix_room_base base;
 	union {
 		struct matrix_room_message message;
@@ -219,7 +217,6 @@ struct matrix_ephemeral_event {
 	enum matrix_ephemeral_type {
 		MATRIX_ROOM_TYPING = 0,
 	} type;
-	matrix_json_t *json;
 	struct matrix_ephemeral_base base;
 	union {
 		struct matrix_room_typing typing;
@@ -228,6 +225,7 @@ struct matrix_ephemeral_event {
 
 struct matrix_sync_event {
 	enum matrix_event_type type;
+	matrix_json_t *json;
 	union {
 		struct matrix_state_event state;
 		struct matrix_timeline_event timeline;

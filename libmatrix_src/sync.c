@@ -338,7 +338,9 @@ matrix_sync_event_next(
 
 	for (revent->type = 0; revent->type < MATRIX_EVENT_MAX; revent->type++) {
 		bool done = false;
+
 		matrix_json_t **json = &room->events[revent->type];
+		revent->json = *json;
 
 		while (!done && *json) {
 			switch (revent->type) {
