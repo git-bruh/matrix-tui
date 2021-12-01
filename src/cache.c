@@ -221,7 +221,7 @@ cache_room_name(struct cache *cache, MDB_txn *txn, const char *room_id) {
 				  || (get_str(txn, dbi, state_fallback, &value)) == 0)
 				&& (json
 					= matrix_json_parse((char *) value.mv_data, value.mv_size))
-				&& (matrix_sync_parse(&sevent, json)) == MATRIX_SUCCESS) {
+				&& (matrix_event_state_parse(&sevent, json)) == 0) {
 				switch (sevent.type) {
 				case MATRIX_ROOM_NAME:
 					res = sevent.name.name;
@@ -315,7 +315,7 @@ cache_save(struct cache *cache, struct matrix_sync_response *response) {
 			 == MDB_SUCCESS) {
 		struct matrix_room room;
 
-		while ((matrix_sync_next(response, &room)) == MATRIX_SUCCESS) {
+		while ((matrix_sync_room_next(response, &room)) == 0) {
 			bool fail = false;
 			MDB_dbi dbs[ROOM_DB_MAX] = {0};
 
@@ -337,40 +337,6 @@ cache_save(struct cache *cache, struct matrix_sync_response *response) {
 
 				continue;
 			}
-
-			struct matrix_state_event sevent;
-
-			while ((matrix_sync_next(&room, &sevent)) == MATRIX_SUCCESS) {
-				if (sevent.type == MATRIX_ROOM_MEMBER) {
-					assert(sevent.state_key);
-
-					if (!sevent.state_key) {
-						continue;
-					}
-
-					if ((STREQ(sevent.member.membership, "leave"))) {
-						del_str(txn, dbs[ROOM_DB_MEMBERS], sevent.state_key);
-					} else {
-						char *data = matrix_json_print(sevent.json);
-						put_str(
-						  txn, dbs[ROOM_DB_MEMBERS], sevent.state_key, data, 0);
-						free(data);
-					}
-				} else if (!sevent.state_key
-						   || (strnlen(sevent.state_key, 1)) == 0) {
-					char *data = matrix_json_print(sevent.json);
-					put_str(txn, dbs[ROOM_DB_STATE], sevent.base.type, data, 0);
-					free(data);
-				}
-			}
-
-			struct room_info info = {
-			  .name = cache_room_name(cache, txn, room.id),
-			  .topic = cache_room_topic(cache, txn, room.id),
-			};
-
-			free(info.name);
-			free(info.topic);
 
 			/* Start in the middle so we can easily backfill while filling in
 			 * events forward aswell. */
@@ -399,46 +365,94 @@ cache_save(struct cache *cache, struct matrix_sync_response *response) {
 				mdb_cursor_close(cursor);
 			}
 
-			struct matrix_timeline_event tevent;
+			struct matrix_sync_event event;
 
-			while ((matrix_sync_next(&room, &tevent)) == MATRIX_SUCCESS) {
-				if (tevent.type == MATRIX_ROOM_REDACTION) {
-					MDB_val del_index = {0};
+			while ((matrix_sync_event_next(&room, &event)) == 0) {
+				switch (event.type) {
+				case MATRIX_EVENT_STATE:
+					{
+						struct matrix_state_event *sevent = &event.state;
 
-					if ((get_str(txn, dbs[ROOM_DB_EVENTS_TO_ORDER],
-						  tevent.base.event_id, &del_index))
-						== 0) {
-						mdb_del(
-						  txn, dbs[ROOM_DB_ORDER_TO_EVENTS], &del_index, NULL);
+						if (sevent->type == MATRIX_ROOM_MEMBER) {
+							assert(sevent->state_key);
+
+							if (!sevent->state_key) {
+								continue;
+							}
+
+							if ((STREQ(sevent->member.membership, "leave"))) {
+								del_str(
+								  txn, dbs[ROOM_DB_MEMBERS], sevent->state_key);
+							} else {
+								char *data = matrix_json_print(sevent->json);
+								put_str(txn, dbs[ROOM_DB_MEMBERS],
+								  sevent->state_key, data, 0);
+								free(data);
+							}
+						} else if (!sevent->state_key
+								   || (strnlen(sevent->state_key, 1)) == 0) {
+							char *data = matrix_json_print(sevent->json);
+							put_str(txn, dbs[ROOM_DB_STATE], sevent->base.type,
+							  data, 0);
+							free(data);
+						}
 					}
+					break;
+				case MATRIX_EVENT_TIMELINE:
+					{
+						struct matrix_timeline_event *tevent = &event.timeline;
 
-					del_str(
-					  txn, dbs[ROOM_DB_EVENTS_TO_ORDER], tevent.base.event_id);
-					del_str(txn, dbs[ROOM_DB_EVENTS], tevent.base.event_id);
-				} else {
-					MDB_val value = {0};
+						if (tevent->type == MATRIX_ROOM_REDACTION) {
+							MDB_val del_index = {0};
 
-					if ((get_str(txn, dbs[ROOM_DB_EVENTS], tevent.base.event_id,
-						  &value))
-						== 0) {
-						(void) value;
-						/* TODO warn */
-						continue;
+							if ((get_str(txn, dbs[ROOM_DB_EVENTS_TO_ORDER],
+								  tevent->base.event_id, &del_index))
+								== 0) {
+								mdb_del(txn, dbs[ROOM_DB_ORDER_TO_EVENTS],
+								  &del_index, NULL);
+							}
+
+							del_str(txn, dbs[ROOM_DB_EVENTS_TO_ORDER],
+							  tevent->base.event_id);
+							del_str(
+							  txn, dbs[ROOM_DB_EVENTS], tevent->base.event_id);
+						} else {
+							MDB_val value = {0};
+
+							if ((get_str(txn, dbs[ROOM_DB_EVENTS],
+								  tevent->base.event_id, &value))
+								== 0) {
+								(void) value;
+								/* TODO warn */
+								continue;
+							}
+
+							char *data = matrix_json_print(tevent->json);
+
+							put_int(txn, dbs[ROOM_DB_ORDER_TO_EVENTS], index,
+							  tevent->base.event_id, 0);
+							put_str_int(txn, dbs[ROOM_DB_EVENTS_TO_ORDER],
+							  tevent->base.event_id, index, 0);
+							put_str(txn, dbs[ROOM_DB_EVENTS],
+							  tevent->base.event_id, data, 0);
+							index++;
+
+							free(data);
+						}
 					}
-
-					char *data = matrix_json_print(tevent.json);
-
-					put_int(txn, dbs[ROOM_DB_ORDER_TO_EVENTS], index,
-					  tevent.base.event_id, 0);
-					put_str_int(txn, dbs[ROOM_DB_EVENTS_TO_ORDER],
-					  tevent.base.event_id, index, 0);
-					put_str(
-					  txn, dbs[ROOM_DB_EVENTS], tevent.base.event_id, data, 0);
-					index++;
-
-					free(data);
+					break;
+				default:
+					break;
 				}
 			}
+
+			struct room_info info = {
+			  .name = cache_room_name(cache, txn, room.id),
+			  .topic = cache_room_topic(cache, txn, room.id),
+			};
+
+			free(info.name);
+			free(info.topic);
 		}
 	}
 
