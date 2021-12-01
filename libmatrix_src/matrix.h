@@ -226,6 +226,15 @@ struct matrix_ephemeral_event {
 	};
 };
 
+struct matrix_sync_event {
+	enum matrix_event_type type;
+	union {
+		struct matrix_state_event state;
+		struct matrix_timeline_event timeline;
+		struct matrix_ephemeral_event ephemeral;
+	};
+};
+
 struct matrix_sync_callbacks {
 	/* Called on each successful sync response. */
 	void (*sync_cb)(struct matrix *, struct matrix_sync_response *);
@@ -278,38 +287,29 @@ matrix_sync_forever(struct matrix *matrix, const char *next_batch,
 void
 matrix_sync_cancel(struct matrix *matrix);
 
-/* These functions fill in the passed struct with the corresponding JSON item's
- * representation at the current index. */
+/* Fill in the passed struct with the current room. */
 int
 matrix_sync_room_next(
   struct matrix_sync_response *response, struct matrix_room *room);
+/* Fill in the passed struct with the corresponding JSON item's
+ * representation at the current index. Items must be accessed based on the
+ * value of revent->type. */
 int
-matrix_sync_state_next(
-  struct matrix_room *room, struct matrix_state_event *event);
-int
-matrix_sync_timeline_next(
-  struct matrix_room *room, struct matrix_timeline_event *event);
-int
-matrix_sync_ephemeral_next(
-  struct matrix_room *room, struct matrix_ephemeral_event *event);
-int
-matrix_sync_timeline_parse(
-  struct matrix_timeline_event *revent, matrix_json_t *json);
-int
-matrix_sync_state_parse(struct matrix_state_event *revent, matrix_json_t *json);
+matrix_sync_event_next(
+  struct matrix_room *room, struct matrix_sync_event *revent);
 
-/* Magic macros to call one of the above functions depending on the argument
- * type. */
-#define matrix_sync_next(response_or_room, result)                             \
-	_Generic((result), struct matrix_room *                                    \
-			 : matrix_sync_room_next, struct matrix_state_event *              \
-			 : matrix_sync_state_next, struct matrix_timeline_event *          \
-			 : matrix_sync_timeline_next, struct matrix_ephemeral_event *      \
-			 : matrix_sync_ephemeral_next)(response_or_room, result)
-#define matrix_sync_parse(result, json)                                        \
-	_Generic((result), struct matrix_timeline_event *                          \
-			 : matrix_sync_timeline_parse, struct matrix_state_event *         \
-			 : matrix_sync_state_parse)(result, json)
+/* Individual parsing functions (from JSON). Can be used if storing JSON in
+ * database. JSON is obtained with matrix_json_parse. Items must be accessed
+ * based on the value of revent->type. */
+int
+matrix_event_state_parse(
+  struct matrix_state_event *revent, const matrix_json_t *event);
+int
+matrix_event_timeline_parse(
+  struct matrix_timeline_event *revent, const matrix_json_t *event);
+int
+matrix_event_ephemeral_parse(
+  struct matrix_ephemeral_event *revent, const matrix_json_t *event);
 
 /* MISC */
 

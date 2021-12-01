@@ -58,7 +58,7 @@ parse_timeline(struct matrix_room_timeline *timeline, const cJSON *data) {
 int
 matrix_sync_room_next(
   struct matrix_sync_response *response, struct matrix_room *room) {
-	for (int type = 0; type < MATRIX_ROOM_MAX; type++) {
+	for (enum matrix_room_type type = 0; type < MATRIX_ROOM_MAX; type++) {
 		cJSON *room_json = response->rooms[type];
 
 		while (room_json) {
@@ -75,7 +75,7 @@ cJSON_GetObjectItem(room_json, "state"), "events")
 				  cJSON_GetObjectItem(room_json, "timeline"), "events"),
 					[MATRIX_EVENT_EPHEMERAL] = get_array(
 				  cJSON_GetObjectItem(room_json, "ephemeral"), "events")},
-			  .type = (enum matrix_room_type) type,
+			  .type = type,
 			};
 
 			switch (type) {
@@ -111,241 +111,217 @@ cJSON_GetObjectItem(room_json, "state"), "events")
 	(revent->type = (enumeration), (STREQ(revent->base.type, string)))
 
 int
-matrix_sync_state_next(
-  struct matrix_room *room, struct matrix_state_event *revent) {
-	if (!room || !revent) {
+matrix_event_state_parse(
+  struct matrix_state_event *revent, const matrix_json_t *event) {
+	if (!revent || !event) {
 		return -1;
 	}
 
-	cJSON *event = room->events[MATRIX_EVENT_STATE];
+	bool is_valid = true;
+	revent->state_key = GETSTR(event, "state_key");
 
-	while ((revent->json = event)) {
-		bool is_valid = true;
-		revent->state_key = GETSTR(event, "state_key");
+	revent->base = (struct matrix_state_base) {
+	  .origin_server_ts
+	  = get_int(event, "origin_server_ts", 0), /* TODO time_t */
+	  .event_id = GETSTR(event, "event_id"),
+	  .sender = GETSTR(event, "sender"),
+	  .type = GETSTR(event, "type"),
+	};
 
-		revent->base = (struct matrix_state_base) {
-		  .origin_server_ts
-		  = get_int(event, "origin_server_ts", 0), /* TODO time_t */
-		  .event_id = GETSTR(event, "event_id"),
-		  .sender = GETSTR(event, "sender"),
-		  .type = GETSTR(event, "type"),
+	cJSON *content = NULL;
+
+	if (!revent->base.origin_server_ts || !revent->base.event_id
+		|| !revent->base.sender || !revent->base.type
+		|| !(content = cJSON_GetObjectItem(event, "content"))) {
+		return -1;
+	}
+
+	if (TYPE(MATRIX_ROOM_MEMBER, "m.room.member")) {
+		revent->member = (struct matrix_room_member) {
+		  .is_direct = cJSON_IsTrue(cJSON_GetObjectItem(content, "is_direct")),
+		  .membership = GETSTR(content, "membership"),
+		  .prev_membership
+		  = GETSTR(cJSON_GetObjectItem(event, "prev_content"), "membership"),
+		  .avatar_url = GETSTR(content, "avatar_url"),
+		  .displayname = GETSTR(content, "displayname"),
 		};
 
-		cJSON *content = NULL;
+		is_valid = !!revent->state_key && !!revent->member.membership;
+	} else if (TYPE(MATRIX_ROOM_POWER_LEVELS, "m.room.power_levels")) {
+		const int default_power = 50;
 
-		if (!revent->base.origin_server_ts || !revent->base.event_id
-			|| !revent->base.sender || !revent->base.type
-			|| !(content = cJSON_GetObjectItem(event, "content"))) {
-			event = room->events[MATRIX_EVENT_STATE] = event->next;
-			continue;
+		revent->power_levels = (struct matrix_room_power_levels) {
+		  .ban = get_int(content, "ban", default_power),
+		  .events_default
+		  = get_int(content, "events_default", 0), /* Exception. */
+		  .invite = get_int(content, "invite", default_power),
+		  .kick = get_int(content, "kick", default_power),
+		  .redact = get_int(content, "redact", default_power),
+		  .state_default = get_int(content, "state_default", default_power),
+		  .users_default
+		  = get_int(content, "users_default", 0), /* Exception. */
+		  .events = cJSON_GetObjectItem(content, "events"),
+		  .notifications = cJSON_GetObjectItem(content, "notifications"),
+		  .users = cJSON_GetObjectItem(content, "users"),
+		};
+	} else if (TYPE(MATRIX_ROOM_CANONICAL_ALIAS, "m.room.canonical_alias")) {
+		revent->canonical_alias = (struct matrix_room_canonical_alias) {
+		  .alias = GETSTR(content, "alias"),
+		};
+	} else if (TYPE(MATRIX_ROOM_CREATE, "m.room.create")) {
+		cJSON *federate = cJSON_GetObjectItem(content, "federate");
+		const char *version = GETSTR(content, "room_version");
+
+		if (!version) {
+			version = "1";
 		}
 
-		if (TYPE(MATRIX_ROOM_MEMBER, "m.room.member")) {
-			revent->member = (struct matrix_room_member) {
-			  .is_direct
-			  = cJSON_IsTrue(cJSON_GetObjectItem(content, "is_direct")),
-			  .membership = GETSTR(content, "membership"),
-			  .prev_membership = GETSTR(
-				cJSON_GetObjectItem(event, "prev_content"), "membership"),
-			  .avatar_url = GETSTR(content, "avatar_url"),
-			  .displayname = GETSTR(content, "displayname"),
-			};
+		revent->create = (struct matrix_room_create) {
+		  .federate = federate ? cJSON_IsTrue(federate)
+							   : true, /* Federation is enabled if the key
+										  doesn't exist. */
+		  .creator = GETSTR(content, "creator"),
+		  .room_version = version,
+		};
+	} else if (TYPE(MATRIX_ROOM_JOIN_RULES, "m.room.join_rules")) {
+		revent->join_rules = (struct matrix_room_join_rules) {
+		  .join_rule = GETSTR(content, "join_rule"),
+		};
 
-			is_valid = !!revent->state_key && !!revent->member.membership;
-		} else if (TYPE(MATRIX_ROOM_POWER_LEVELS, "m.room.power_levels")) {
-			const int default_power = 50;
+		is_valid = !!revent->join_rules.join_rule;
+	} else if (TYPE(MATRIX_ROOM_NAME, "m.room.name")) {
+		revent->name = (struct matrix_room_name) {
+		  .name = GETSTR(content, "name"),
+		};
+	} else if (TYPE(MATRIX_ROOM_TOPIC, "m.room.topic")) {
+		revent->topic = (struct matrix_room_topic) {
+		  .topic = GETSTR(content, "topic"),
+		};
+	} else if (TYPE(MATRIX_ROOM_AVATAR, "m.room.avatar")) {
+		cJSON *info = cJSON_GetObjectItem(content, "info");
 
-			revent->power_levels = (struct matrix_room_power_levels) {
-			  .ban = get_int(content, "ban", default_power),
-			  .events_default
-			  = get_int(content, "events_default", 0), /* Exception. */
-			  .invite = get_int(content, "invite", default_power),
-			  .kick = get_int(content, "kick", default_power),
-			  .redact = get_int(content, "redact", default_power),
-			  .state_default = get_int(content, "state_default", default_power),
-			  .users_default
-			  = get_int(content, "users_default", 0), /* Exception. */
-			  .events = cJSON_GetObjectItem(content, "events"),
-			  .notifications = cJSON_GetObjectItem(content, "notifications"),
-			  .users = cJSON_GetObjectItem(content, "users"),
-			};
-		} else if (TYPE(
-					 MATRIX_ROOM_CANONICAL_ALIAS, "m.room.canonical_alias")) {
-			revent->canonical_alias = (struct matrix_room_canonical_alias) {
-			  .alias = GETSTR(content, "alias"),
-			};
-		} else if (TYPE(MATRIX_ROOM_CREATE, "m.room.create")) {
-			cJSON *federate = cJSON_GetObjectItem(content, "federate");
-			const char *version = GETSTR(content, "room_version");
+		revent->avatar = (struct matrix_room_avatar){
+		  .url = GETSTR(content, "url"),
+		  .info =
+			{
+			  .size = get_int(info, "size", 0),
+			  .mimetype = GETSTR(info, "mimetype"),
+			},
+		};
+	} else {
+		/* TODO unknown */
+		is_valid = false;
+	}
 
-			if (!version) {
-				version = "1";
-			}
-
-			revent->create = (struct matrix_room_create) {
-			  .federate = federate ? cJSON_IsTrue(federate)
-								   : true, /* Federation is enabled if the key
-											  doesn't exist. */
-			  .creator = GETSTR(content, "creator"),
-			  .room_version = version,
-			};
-		} else if (TYPE(MATRIX_ROOM_JOIN_RULES, "m.room.join_rules")) {
-			revent->join_rules = (struct matrix_room_join_rules) {
-			  .join_rule = GETSTR(content, "join_rule"),
-			};
-
-			is_valid = !!revent->join_rules.join_rule;
-		} else if (TYPE(MATRIX_ROOM_NAME, "m.room.name")) {
-			revent->name = (struct matrix_room_name) {
-			  .name = GETSTR(content, "name"),
-			};
-		} else if (TYPE(MATRIX_ROOM_TOPIC, "m.room.topic")) {
-			revent->topic = (struct matrix_room_topic) {
-			  .topic = GETSTR(content, "topic"),
-			};
-		} else if (TYPE(MATRIX_ROOM_AVATAR, "m.room.avatar")) {
-			cJSON *info = cJSON_GetObjectItem(content, "info");
-
-			revent->avatar = (struct matrix_room_avatar){
-			  .url = GETSTR(content, "url"),
-			  .info =
-				{
-				  .size = get_int(info, "size", 0),
-				  .mimetype = GETSTR(info, "mimetype"),
-				},
-			};
-		} else {
-			/* TODO unknown */
-			is_valid = false;
-		}
-
-		event = room->events[MATRIX_EVENT_STATE] = event->next;
-
-		if (is_valid) {
-			return 0;
-		}
+	if (is_valid) {
+		return 0;
 	}
 
 	return -1;
 }
 
 int
-matrix_sync_timeline_next(
-  struct matrix_room *room, struct matrix_timeline_event *revent) {
-	if (!room || !revent) {
+matrix_event_timeline_parse(
+  struct matrix_timeline_event *revent, const matrix_json_t *event) {
+	if (!revent || !event) {
 		return -1;
 	}
 
-	cJSON *event = room->events[MATRIX_EVENT_TIMELINE];
+	bool is_valid = false;
 
-	while ((revent->json = event)) {
-		bool is_valid = false;
+	revent->base = (struct matrix_room_base) {
+	  .origin_server_ts
+	  = get_int(event, "origin_server_ts", 0), /* TODO time_t */
+	  .event_id = GETSTR(event, "event_id"),
+	  .sender = GETSTR(event, "sender"),
+	  .type = GETSTR(event, "type"),
+	};
 
-		revent->base = (struct matrix_room_base) {
-		  .origin_server_ts
-		  = get_int(event, "origin_server_ts", 0), /* TODO time_t */
-		  .event_id = GETSTR(event, "event_id"),
-		  .sender = GETSTR(event, "sender"),
-		  .type = GETSTR(event, "type"),
+	cJSON *content = NULL;
+
+	if (!revent->base.origin_server_ts || !revent->base.event_id
+		|| !revent->base.sender || !revent->base.type
+		|| !(content = cJSON_GetObjectItem(event, "content"))) {
+		return -1;
+	}
+
+	if (TYPE(MATRIX_ROOM_MESSAGE, "m.room.message")) {
+		revent->message = (struct matrix_room_message) {
+		  .body = GETSTR(content, "body"),
+		  .msgtype = GETSTR(content, "msgtype"),
+		  .format = GETSTR(content, "format"),
+		  .formatted_body = GETSTR(content, "formatted_body"),
 		};
 
-		cJSON *content = NULL;
+		is_valid = !!revent->message.body && !!revent->message.msgtype;
 
-		if (!revent->base.origin_server_ts || !revent->base.event_id
-			|| !revent->base.sender || !revent->base.type
-			|| !(content = cJSON_GetObjectItem(event, "content"))) {
-			event = room->events[MATRIX_EVENT_TIMELINE] = event->next;
-			continue;
-		}
+		cJSON *info = cJSON_GetObjectItem(content, "info");
 
-		if (TYPE(MATRIX_ROOM_MESSAGE, "m.room.message")) {
-			revent->message = (struct matrix_room_message) {
+		/* Check if the message is an attachment. */
+		if (is_valid && info
+			&& (STREQ(revent->message.msgtype, "m.image")
+				|| STREQ(revent->message.msgtype, "m.file")
+				|| STREQ(revent->message.msgtype, "m.audio")
+				|| STREQ(revent->message.msgtype, "m.video"))) {
+			revent->type = MATRIX_ROOM_ATTACHMENT;
+			revent->attachment = (struct matrix_room_attachment) {
 			  .body = GETSTR(content, "body"),
 			  .msgtype = GETSTR(content, "msgtype"),
-			  .format = GETSTR(content, "format"),
-			  .formatted_body = GETSTR(content, "formatted_body"),
+			  .url = GETSTR(content, "url"),
+			  .filename = GETSTR(content, "filename"),
+			  .info = {.size = get_int(info, "size", 0),
+						.mimetype = GETSTR(info, "mimetype")},
 			};
 
-			is_valid = !!revent->message.body && !!revent->message.msgtype;
-
-			cJSON *info = cJSON_GetObjectItem(content, "info");
-
-			/* Check if the message is an attachment. */
-			if (is_valid && info
-				&& (STREQ(revent->message.msgtype, "m.image")
-					|| STREQ(revent->message.msgtype, "m.file")
-					|| STREQ(revent->message.msgtype, "m.audio")
-					|| STREQ(revent->message.msgtype, "m.video"))) {
-				revent->type = MATRIX_ROOM_ATTACHMENT;
-				revent->attachment = (struct matrix_room_attachment) {
-				  .body = GETSTR(content, "body"),
-				  .msgtype = GETSTR(content, "msgtype"),
-				  .url = GETSTR(content, "url"),
-				  .filename = GETSTR(content, "filename"),
-				  .info = {.size = get_int(info, "size", 0),
-							.mimetype = GETSTR(info, "mimetype")},
-				};
-
-				is_valid = !!revent->attachment.body
-						&& !!revent->attachment.msgtype
-						&& !!revent->attachment.url;
-			}
-		} else if (TYPE(MATRIX_ROOM_REDACTION, "m.room.redaction")) {
-			revent->redaction = (struct matrix_room_redaction) {
-			  .redacts = GETSTR(event, "redacts"),
-			  .reason = GETSTR(content, "reason"),
-			};
-
-			is_valid = !!revent->redaction.redacts;
+			is_valid = !!revent->attachment.body && !!revent->attachment.msgtype
+					&& !!revent->attachment.url;
 		}
+	} else if (TYPE(MATRIX_ROOM_REDACTION, "m.room.redaction")) {
+		revent->redaction = (struct matrix_room_redaction) {
+		  .redacts = GETSTR(event, "redacts"),
+		  .reason = GETSTR(content, "reason"),
+		};
 
-		event = room->events[MATRIX_EVENT_TIMELINE] = event->next;
+		is_valid = !!revent->redaction.redacts;
+	}
 
-		if (is_valid) {
-			return 0;
-		}
+	if (is_valid) {
+		return 0;
 	}
 
 	return -1;
 }
 
 int
-matrix_sync_ephemeral_next(
-  struct matrix_room *room, struct matrix_ephemeral_event *revent) {
-	if (!room || !revent) {
+matrix_event_ephemeral_parse(
+  struct matrix_ephemeral_event *revent, const matrix_json_t *event) {
+	if (!revent || !event) {
 		return -1;
 	}
 
-	cJSON *event = room->events[MATRIX_EVENT_EPHEMERAL];
+	bool is_valid = false;
 
-	while ((revent->json = event)) {
-		bool is_valid = false;
+	revent->base = (struct matrix_ephemeral_base) {
+	  .type = GETSTR(event, "type"),
+	  .room_id = GETSTR(event, "room_id"),
+	};
 
-		revent->base = (struct matrix_ephemeral_base) {
-		  .type = GETSTR(event, "type"),
-		  .room_id = GETSTR(event, "room_id"),
+	cJSON *content = cJSON_GetObjectItem(event, "content");
+
+	if (!content) {
+		return -1;
+	}
+
+	if (TYPE(MATRIX_ROOM_TYPING, "m.typing")) {
+		revent->typing = (struct matrix_room_typing) {
+		  .user_ids = cJSON_GetObjectItem(content, "user_ids"),
 		};
 
-		cJSON *content = cJSON_GetObjectItem(event, "content");
+		is_valid = !!revent->typing.user_ids;
+	}
 
-		if (!content) {
-			event = room->events[MATRIX_EVENT_EPHEMERAL] = event->next;
-			continue;
-		}
-
-		if (TYPE(MATRIX_ROOM_TYPING, "m.typing")) {
-			revent->typing = (struct matrix_room_typing) {
-			  .user_ids = cJSON_GetObjectItem(content, "user_ids"),
-			};
-
-			is_valid = !!revent->typing.user_ids;
-		}
-
-		event = room->events[MATRIX_EVENT_EPHEMERAL] = event->next;
-
-		if (is_valid) {
-			return 0;
-		}
+	if (is_valid) {
+		return 0;
 	}
 
 	return -1;
@@ -354,19 +330,50 @@ matrix_sync_ephemeral_next(
 #undef TYPE
 
 int
-matrix_sync_timeline_parse(
-  struct matrix_timeline_event *revent, matrix_json_t *json) {
-	struct matrix_room room = {.events = {[MATRIX_EVENT_TIMELINE] = json}};
+matrix_sync_event_next(
+  struct matrix_room *room, struct matrix_sync_event *revent) {
+	if (!room || !revent) {
+		return -1;
+	}
 
-	return matrix_sync_timeline_next(&room, revent);
-}
+	for (revent->type = 0; revent->type < MATRIX_EVENT_MAX; revent->type++) {
+		bool done = false;
+		matrix_json_t **json = &room->events[revent->type];
 
-int
-matrix_sync_state_parse(
-  struct matrix_state_event *revent, matrix_json_t *json) {
-	struct matrix_room room = {.events = {[MATRIX_EVENT_STATE] = json}};
+		while (!done && *json) {
+			switch (revent->type) {
+			case MATRIX_EVENT_STATE:
+				done = ((matrix_event_state_parse(&revent->state, *json)) == 0);
+				break;
+			case MATRIX_EVENT_TIMELINE:
+				done = ((matrix_event_timeline_parse(&revent->timeline, *json))
+						== 0);
 
-	return matrix_sync_state_next(&room, revent);
+				/* Sometimes state events might pop up in the timeline. */
+				if (!done
+					&& (matrix_event_state_parse(&revent->state, *json)) == 0) {
+					revent->type = MATRIX_EVENT_STATE;
+					done = true;
+				}
+				break;
+			case MATRIX_EVENT_EPHEMERAL:
+				done
+				  = ((matrix_event_ephemeral_parse(&revent->ephemeral, *json))
+					 == 0);
+				break;
+			case MATRIX_EVENT_MAX:
+				assert(0);
+			}
+
+			*json = (*json)->next;
+		}
+
+		if (done) {
+			return 0;
+		}
+	}
+
+	return -1;
 }
 
 int
