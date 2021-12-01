@@ -176,7 +176,11 @@ response_perform_sync(struct response *response, CURLM *multi,
 		code = curl_multi_perform(multi, &still_running);
 
 		if (code == CURLM_OK) {
+#if CURL_AT_LEAST_VERSION(7, 66, 0)
 			curl_multi_poll(multi, NULL, 0, timeout_multi, &nfds);
+#else
+			curl_multi_wait(multi, NULL, 0, timeout_multi, &nfds);
+#endif
 		}
 	} while (still_running);
 
