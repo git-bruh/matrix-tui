@@ -392,6 +392,26 @@ ui_loop(struct state *state) {
 	}
 }
 
+static int
+login(struct state *state) {
+	char *access_token = cache_get_token(&state->cache);
+	int ret = -1;
+
+	if (access_token) {
+		if ((matrix_login_with_token(state->matrix, access_token))
+			== MATRIX_SUCCESS) {
+			ret = 0;
+		}
+	} else if ((matrix_login(state->matrix, PASS, NULL, NULL, &access_token))
+				 == MATRIX_SUCCESS
+			   && (cache_set_token(&state->cache, access_token)) == 0) {
+		ret = 0;
+	}
+
+	free(access_token);
+	return ret;
+}
+
 static void
 sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 	struct state *state = matrix_userp(matrix);
@@ -417,9 +437,7 @@ main() {
 		&& !ERRLOG(ui_init(&state) == 0, "Failed to initialize UI.\n")
 		&& !ERRLOG(state.matrix = matrix_alloc(MXID, HOMESERVER, &state),
 		  "Failed to initialize libmatrix.\n")
-		&& !ERRLOG(
-		  matrix_login(state.matrix, PASS, NULL, NULL) == MATRIX_SUCCESS,
-		  "Failed to login.\n")
+		&& !ERRLOG(login(&state) == 0, "Failed to login.\n")
 		&& !ERRLOG(tb_init() == TB_OK, "Failed to initialize termbox.\n")
 		&& !ERRLOG(
 		  threads_init(&state) == 0, "Failed to initialize threads.\n")) {

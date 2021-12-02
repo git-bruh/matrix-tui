@@ -11,9 +11,8 @@ XCFLAGS = \
 	$(CFLAGS) $(CPPFLAGS) -O3 -std=c11 \
 	-D_GNU_SOURCE -D_FORTIFY_SOURCE=2 \
 	-flto -fstack-protector-strong --param=ssp-buffer-size=4 \
-	-Wall -Wextra -Wpedantic -Wwrite-strings \
-	-Wshadow -Wnull-dereference -Wformat=2 \
-	-Wcast-qual -Wconversion -Wpointer-arith \
+	-Wall -Wextra -Wpedantic -Wshadow -Wnull-dereference \
+	-Wformat=2 -Wcast-qual -Wconversion -Wpointer-arith \
 	-Wunused-macros -Wredundant-decls \
 	-Werror=implicit-function-declaration \
 	-Werror=incompatible-pointer-types \

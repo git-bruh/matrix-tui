@@ -470,8 +470,8 @@ matrix_login_with_token(struct matrix *matrix, const char *access_token) {
 
 enum matrix_code
 matrix_login(struct matrix *matrix, const char *password, const char *device_id,
-  const char *initial_device_display_name) {
-	if (!matrix || !password) {
+  const char *initial_device_display_name, char **access_token) {
+	if (!matrix || !password || !access_token) {
 		return MATRIX_INVALID_ARGUMENT;
 	}
 
@@ -496,8 +496,9 @@ matrix_login(struct matrix *matrix, const char *password, const char *device_id,
 			 == MATRIX_SUCCESS) {
 		cJSON *parsed = cJSON_Parse(response.data);
 
-		if ((code
-			  = matrix_login_with_token(matrix, GETSTR(parsed, "access_token")))
+		*access_token = matrix_strdup(GETSTR(parsed, "access_token"));
+
+		if ((code = matrix_login_with_token(matrix, *access_token))
 			== MATRIX_INVALID_ARGUMENT) {
 			code = MATRIX_MALFORMED_JSON; /* token was NULL */
 		}

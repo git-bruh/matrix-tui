@@ -29,6 +29,10 @@ cache_init(struct cache *cache);
 void
 cache_finish(struct cache *cache);
 char *
+cache_get_token(struct cache *cache);
+int
+cache_set_token(struct cache *cache, char *access_token);
+char *
 cache_room_name(struct cache *cache, MDB_txn *txn, const char *room_id);
 char *
 cache_room_topic(struct cache *cache, MDB_txn *txn, const char *room_id);

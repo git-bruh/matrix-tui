@@ -28,9 +28,16 @@ enum room_db {
 	ROOM_DB_MAX,
 };
 
+enum { DB_KEY_ACCESS_TOKEN = 0, DB_KEY_NEXT_BATCH, DB_KEY_MAX };
+
 static const char *const db_names[DB_MAX] = {
   [DB_SYNC] = "sync_state",
   [DB_ROOMS] = "rooms",
+};
+
+static const char *const db_keys[DB_KEY_MAX] = {
+  [DB_KEY_ACCESS_TOKEN] = "access_token",
+  [DB_KEY_NEXT_BATCH] = "next_batch",
 };
 
 static const char *const room_db_names[ROOM_DB_MAX] = {
@@ -147,6 +154,18 @@ put_str_int(
 		   : -1;
 }
 
+static MDB_txn *
+get_txn(struct cache *cache, unsigned flags) {
+	MDB_txn *txn = NULL;
+
+	if (cache
+		&& (mdb_txn_begin(cache->env, NULL, flags, &txn)) != MDB_SUCCESS) {
+		return NULL;
+	}
+
+	return txn;
+}
+
 int
 cache_init(struct cache *cache) {
 	if (!cache) {
@@ -174,7 +193,8 @@ cache_init(struct cache *cache) {
 	if ((mdb_env_create(&cache->env)) == MDB_SUCCESS
 		&& (mdb_env_set_maxdbs(cache->env, max_dbs)) == MDB_SUCCESS
 		&& (mdb_env_open(cache->env, dir, 0, db_perms)) == MDB_SUCCESS
-		&& (mdb_txn_begin(cache->env, NULL, 0, &txn)) == MDB_SUCCESS) {
+		&& (txn = get_txn(cache, 0))) {
+
 		for (size_t i = 0; i < DB_MAX; i++) {
 			if ((mdb_dbi_open(txn, db_names[i], MDB_CREATE, &cache->dbs[i]))
 				!= MDB_SUCCESS) {
@@ -201,6 +221,49 @@ cache_finish(struct cache *cache) {
 
 	mdb_env_close(cache->env);
 	memset(cache, 0, sizeof(*cache));
+}
+
+char *
+cache_get_token(struct cache *cache) {
+	if (!cache) {
+		return NULL;
+	}
+
+	MDB_txn *txn = get_txn(cache, 0);
+	MDB_val data = {0};
+
+	char *ret = NULL;
+
+	if (txn
+		&& (get_str(txn, cache->dbs[DB_SYNC],
+			 (char *) db_keys[DB_KEY_ACCESS_TOKEN], &data))
+			 == 0) {
+		ret = strndup(data.mv_data, data.mv_size);
+	}
+
+	mdb_txn_commit(txn);
+	return ret;
+}
+
+int
+cache_set_token(struct cache *cache, char *access_token) {
+	int ret = -1;
+
+	if (!cache || !access_token) {
+		return ret;
+	}
+
+	MDB_txn *txn = NULL;
+
+	if ((txn = get_txn(cache, 0))
+		&& (put_str(txn, cache->dbs[DB_SYNC],
+			 (char *) db_keys[DB_KEY_ACCESS_TOKEN], access_token, 0))
+			 == 0) {
+		ret = 0;
+	}
+
+	mdb_txn_commit(txn);
+	return ret;
 }
 
 char *
@@ -280,13 +343,13 @@ cache_room_topic(struct cache *cache, MDB_txn *txn, const char *room_id) {
 char *
 cache_next_batch(struct cache *cache) {
 	MDB_txn *txn = NULL;
-	char next_batch_key[] = "next_batch";
 
-	if (cache
-		&& (mdb_txn_begin(cache->env, NULL, MDB_RDONLY, &txn)) == MDB_SUCCESS) {
+	if (cache && (txn = get_txn(cache, MDB_RDONLY))) {
 		MDB_val value = {0};
 
-		if ((get_str(txn, cache->dbs[DB_SYNC], next_batch_key, &value)) == 0) {
+		if ((get_str(txn, cache->dbs[DB_SYNC],
+			  (char *) db_keys[DB_KEY_NEXT_BATCH], &value))
+			== 0) {
 			mdb_txn_commit(txn);
 
 			return strndup(value.mv_data, value.mv_size);
@@ -307,11 +370,10 @@ cache_save(struct cache *cache, struct matrix_sync_response *response) {
 	assert(cache->env);
 
 	MDB_txn *txn = NULL;
-	char next_batch_key[] = "next_batch";
 
-	if ((mdb_txn_begin(cache->env, NULL, 0, &txn)) == MDB_SUCCESS
-		&& (put_str(
-			 txn, cache->dbs[DB_SYNC], next_batch_key, response->next_batch, 0))
+	if ((get_txn(cache, 0))
+		&& (put_str(txn, cache->dbs[DB_SYNC],
+			 (char *) db_keys[DB_KEY_NEXT_BATCH], response->next_batch, 0))
 			 == MDB_SUCCESS) {
 		struct matrix_room room;
 

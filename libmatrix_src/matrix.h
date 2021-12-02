@@ -272,7 +272,7 @@ matrix_login_with_token(struct matrix *matrix, const char *access_token);
 /* nullable: device_id, initial_device_display_name */
 enum matrix_code
 matrix_login(struct matrix *matrix, const char *password, const char *device_id,
-  const char *initial_device_display_name);
+  const char *initial_device_display_name, char **access_token);
 
 /* timeout specifies the maximum time in milliseconds that the server will wait
  * for events to be received. The recommended minimum is 1000 == 1 second to
