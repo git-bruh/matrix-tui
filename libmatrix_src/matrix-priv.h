@@ -60,8 +60,10 @@ matrix_ll_free(struct ll *ll);
 int
 matrix_dispatch_sync(struct matrix *matrix,
   const struct matrix_sync_callbacks *callbacks, const cJSON *sync);
-int
-matrix_double_to_int(double x);
-char *
-matrix_strdup(const char *s);
+
+/* Inlined. */
+__attribute__((unused)) static char *
+matrix_strdup(const char *s) {
+	return s ? strdup(s) : NULL;
+}
 #endif /* !MATRIX_PRIV_H */

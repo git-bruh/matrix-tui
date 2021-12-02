@@ -12,10 +12,34 @@ get_int(const cJSON *json, const char name[], int int_default) {
 	double tmp = cJSON_GetNumberValue(cJSON_GetObjectItem(json, name));
 
 	if (!(isnan(tmp))) {
-		return matrix_double_to_int(tmp);
+		if (tmp > INT_MAX) {
+			return INT_MAX;
+		}
+
+		if (tmp < INT_MIN) {
+			return INT_MIN;
+		}
+
+		return (int) tmp;
 	}
 
 	return int_default;
+}
+
+static uint64_t
+get_uint64(const cJSON *json, const char name[], uint64_t uint64_default) {
+	double tmp = cJSON_GetNumberValue(cJSON_GetObjectItem(json, name));
+
+	if (!(isnan(tmp)) && tmp >= 0) {
+		/* Overflow. */
+		if (((double) ((uint64_t) tmp)) < tmp) {
+			return UINT64_MAX;
+		}
+
+		return (uint64_t) tmp;
+	}
+
+	return uint64_default;
 }
 
 static cJSON *
@@ -121,8 +145,7 @@ matrix_event_state_parse(
 	revent->state_key = GETSTR(event, "state_key");
 
 	revent->base = (struct matrix_state_base) {
-	  .origin_server_ts
-	  = get_int(event, "origin_server_ts", 0), /* TODO time_t */
+	  .origin_server_ts = get_uint64(event, "origin_server_ts", 0),
 	  .event_id = GETSTR(event, "event_id"),
 	  .sender = GETSTR(event, "sender"),
 	  .type = GETSTR(event, "type"),
@@ -230,8 +253,7 @@ matrix_event_timeline_parse(
 	bool is_valid = false;
 
 	revent->base = (struct matrix_room_base) {
-	  .origin_server_ts
-	  = get_int(event, "origin_server_ts", 0), /* TODO time_t */
+	  .origin_server_ts = get_uint64(event, "origin_server_ts", 0),
 	  .event_id = GETSTR(event, "event_id"),
 	  .sender = GETSTR(event, "sender"),
 	  .type = GETSTR(event, "type"),

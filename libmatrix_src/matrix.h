@@ -5,6 +5,7 @@
 #define MATRIX_MATRIX_H
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 /* Must allocate enum + 1. */
 enum matrix_limits {
 	MATRIX_MXID_MAX = 255,
@@ -31,14 +32,14 @@ struct matrix_state_base {
 	char *sender;
 	char *type;
 	char *state_key;
-	int origin_server_ts;
+	uint64_t origin_server_ts;
 };
 
 struct matrix_room_base {
 	char *event_id;
 	char *sender;
 	char *type;
-	int origin_server_ts;
+	uint64_t origin_server_ts;
 };
 
 struct matrix_ephemeral_base {

@@ -37,8 +37,7 @@ OBJ = \
 	libmatrix_src/api.o \
 	libmatrix_src/linked_list.o \
 	libmatrix_src/matrix.o \
-	libmatrix_src/sync.o \
-	libmatrix_src/utils.o
+	libmatrix_src/sync.o
 
 all: $(BIN)
 
