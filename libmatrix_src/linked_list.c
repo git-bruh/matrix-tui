@@ -15,6 +15,8 @@ matrix_ll_alloc(void (*free)(void *data)) {
 
 struct node *
 matrix_ll_append(struct ll *ll, void *data) {
+	assert(ll);
+
 	struct node *node = calloc(1, sizeof(*node));
 
 	if (!node) {
@@ -37,13 +39,21 @@ matrix_ll_append(struct ll *ll, void *data) {
 
 void
 matrix_ll_remove(struct ll *ll, struct node *node) {
+	assert(ll);
+
+	if (!node) {
+		return;
+	}
+
 	if (node->prev) {
 		node->prev->next = node->next;
 	}
 
 	node->next ? (node->next->prev = node->prev) : (ll->tail = node->prev);
 
-	ll->free(node->data);
+	if (ll->free) {
+		ll->free(node->data);
+	}
 
 	free(node);
 }
@@ -59,7 +69,10 @@ matrix_ll_free(struct ll *ll) {
 	while (ll->tail) {
 		prev = ll->tail->prev;
 
-		ll->free(ll->tail->data);
+		if (ll->free) {
+			ll->free(ll->tail->data);
+		}
+
 		free(ll->tail);
 
 		ll->tail = prev;

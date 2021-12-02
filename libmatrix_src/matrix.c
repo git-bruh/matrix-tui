@@ -22,7 +22,8 @@ matrix_alloc(const char *mxid, const char *homeserver, void *userp) {
 	struct matrix *matrix = malloc(sizeof(*matrix));
 
 	if (matrix) {
-		*matrix = (struct matrix) {.transfers = matrix_ll_alloc(NULL),
+		*matrix = (struct matrix) {.ll_mutex = PTHREAD_MUTEX_INITIALIZER,
+		  .transfers = matrix_ll_alloc(NULL),
 		  .homeserver = strdup(homeserver),
 		  .mxid = strdup(mxid),
 		  .userp = userp};

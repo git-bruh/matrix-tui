@@ -219,6 +219,24 @@ response_perform(struct matrix *matrix, struct response *response) {
 	return MATRIX_CURL_FAILURE;
 }
 
+static struct node *
+lock_and_append(struct matrix *matrix, struct response *response) {
+	pthread_mutex_lock(&matrix->ll_mutex);
+	struct node *node
+	  = matrix_ll_append(matrix->transfers, response->transfer.multi);
+	pthread_mutex_unlock(&matrix->ll_mutex);
+	return node;
+}
+
+static void
+lock_and_remove(struct matrix *matrix, struct node *node) {
+	assert(matrix);
+
+	pthread_mutex_lock(&matrix->ll_mutex);
+	matrix_ll_remove(matrix->transfers, node);
+	pthread_mutex_unlock(&matrix->ll_mutex);
+}
+
 /* The caller must response_finish() the response. */
 static enum matrix_code
 perform(struct matrix *matrix, const cJSON *json, enum method method,
@@ -234,7 +252,9 @@ perform(struct matrix *matrix, const cJSON *json, enum method method,
 	if (url
 		&& (code = response_init(matrix, method, data, url, response))
 			 == MATRIX_SUCCESS) {
+		struct node *node = lock_and_append(matrix, response);
 		code = response_perform(matrix, response);
+		lock_and_remove(matrix, node);
 	}
 
 	free(data);
@@ -319,6 +339,17 @@ set_batch(char *url, char **new_url, size_t *new_len, const char *next_batch) {
 void
 matrix_cancel(struct matrix *matrix) {
 	matrix->cancelled = true;
+
+	pthread_mutex_lock(&matrix->ll_mutex);
+
+	struct node *node = matrix->transfers->tail;
+
+	while (node) {
+		curl_multi_wakeup((CURLM *) node->data);
+		node = node->prev;
+	}
+
+	pthread_mutex_unlock(&matrix->ll_mutex);
 }
 
 enum matrix_code
@@ -359,6 +390,8 @@ matrix_sync_forever(struct matrix *matrix, const char *next_batch,
 					: true)
 		&& (response_init(matrix, GET, NULL, url, &response))
 			 == MATRIX_SUCCESS) {
+		struct node *node = lock_and_append(matrix, &response);
+
 		for (bool backed_off = false;;) {
 			if (new_buf
 				&& (curl_easy_setopt(
@@ -411,6 +444,8 @@ matrix_sync_forever(struct matrix *matrix, const char *next_batch,
 			matrix_dispatch_sync(matrix, &callbacks, parsed);
 			cJSON_Delete(parsed);
 		}
+
+		lock_and_remove(matrix, node);
 	}
 
 	response_finish(&response);

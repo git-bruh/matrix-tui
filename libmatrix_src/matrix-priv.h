@@ -9,6 +9,7 @@
 #include <cjson/cJSON.h>
 #include <curl/curl.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,6 +40,7 @@ struct ll {
 struct matrix {
 	_Atomic bool cancelled;
 	_Atomic unsigned txn_id;
+	pthread_mutex_t ll_mutex;
 	struct ll *transfers;
 	char *access_token;
 	char *homeserver;
