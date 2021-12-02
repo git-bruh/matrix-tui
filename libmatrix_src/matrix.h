@@ -280,10 +280,6 @@ matrix_login(struct matrix *matrix, const char *password, const char *device_id,
 enum matrix_code
 matrix_sync_forever(struct matrix *matrix, const char *next_batch,
   unsigned timeout, struct matrix_sync_callbacks callbacks);
-/* Cancel an ongoing matrix_sync_forever() call. It might take a few
- * milliseconds for the transfer to actually be cancelled. */
-void
-matrix_sync_cancel(struct matrix *matrix);
 
 /* Fill in the passed struct with the current room. */
 int
@@ -320,6 +316,10 @@ void
 matrix_json_delete(matrix_json_t *json);
 
 /* API */
+
+/* Cancel all ongoing requests from any thread (including syncing). */
+void
+matrix_cancel(struct matrix *matrix);
 enum matrix_code
 matrix_send_message(struct matrix *matrix, char **event_id, const char *room_id,
   const char *msgtype, const char *body, const char *formatted_body);

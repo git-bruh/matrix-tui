@@ -14,7 +14,7 @@ matrix_alloc(const char *mxid, const char *homeserver, void *userp) {
 		size_t len_mxid = 0;
 
 		if (!mxid || !homeserver || (len_mxid = strlen(mxid)) < 1
-			|| len_mxid > MATRIX_MXID_MAX || (strlen(homeserver)) < 1) {
+			|| len_mxid > MATRIX_MXID_MAX || (strnlen(homeserver, 1)) < 1) {
 			return NULL;
 		}
 	}
@@ -22,11 +22,11 @@ matrix_alloc(const char *mxid, const char *homeserver, void *userp) {
 	struct matrix *matrix = malloc(sizeof(*matrix));
 
 	if (matrix) {
-		*matrix = (struct matrix) {.homeserver = strdup(homeserver),
+		*matrix = (struct matrix) {.transfers = matrix_ll_alloc(NULL),
+		  .homeserver = strdup(homeserver),
 		  .mxid = strdup(mxid),
 		  .userp = userp};
-
-		if (matrix->homeserver && matrix->mxid) {
+		if (matrix->homeserver && matrix->mxid && matrix->transfers) {
 			return matrix;
 		}
 	}
@@ -46,6 +46,7 @@ matrix_destroy(struct matrix *matrix) {
 		return;
 	}
 
+	matrix_ll_free(matrix->transfers);
 	free(matrix->access_token);
 	free(matrix->homeserver);
 	free(matrix->mxid);

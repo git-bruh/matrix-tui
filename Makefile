@@ -35,6 +35,7 @@ OBJ = \
 	src/cache.o \
 	src/main.o \
 	libmatrix_src/api.o \
+	libmatrix_src/linked_list.o \
 	libmatrix_src/matrix.o \
 	libmatrix_src/sync.o \
 	libmatrix_src/utils.o

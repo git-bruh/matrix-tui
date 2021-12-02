@@ -25,14 +25,35 @@
 /* Stringify the variable name and set it's value as the key. */
 #define ADDVARSTR(obj, var) (ADDSTR(obj, #var, var))
 
+struct node {
+	void *data;
+	struct node *next;
+	struct node *prev;
+};
+
+struct ll {
+	struct node *tail;
+	void (*free)(void *data);
+};
+
 struct matrix {
-	_Atomic bool sync_stopped;
+	_Atomic bool cancelled;
 	_Atomic unsigned txn_id;
+	struct ll *transfers;
 	char *access_token;
 	char *homeserver;
 	char *mxid;
 	void *userp;
 };
+
+struct ll *
+matrix_ll_alloc(void (*free)(void *data));
+struct node *
+matrix_ll_append(struct ll *ll, void *data);
+void
+matrix_ll_remove(struct ll *ll, struct node *node);
+void
+matrix_ll_free(struct ll *ll);
 
 int
 matrix_dispatch_sync(struct matrix *matrix,

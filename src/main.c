@@ -112,7 +112,7 @@ cleanup(struct state *state) {
 	state->done = true;
 
 	if (state->threads[THREAD_SYNC]) {
-		matrix_sync_cancel(state->matrix);
+		matrix_cancel(state->matrix);
 		pthread_join(state->threads[THREAD_SYNC], NULL);
 	}
 
