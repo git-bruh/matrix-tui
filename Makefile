@@ -13,7 +13,7 @@ XCFLAGS = \
 	-flto -fstack-protector-strong --param=ssp-buffer-size=4 \
 	-Wall -Wextra -Wpedantic -Wshadow -Wnull-dereference \
 	-Wformat=2 -Wcast-qual -Wconversion -Wpointer-arith \
-	-Wunused-macros -Wredundant-decls \
+	-Wunused-macros -Wredundant-decls -Wwrite-strings \
 	-Werror=implicit-function-declaration \
 	-Werror=incompatible-pointer-types \
 	-DCLIENT_NAME=\"matrix-client\"

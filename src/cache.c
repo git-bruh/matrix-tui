@@ -87,7 +87,7 @@ get_dbi(enum room_db db, MDB_txn *txn, MDB_dbi *dbi, const char *room_id) {
 
 	free(room);
 
-	return ret;
+	return ret == MDB_SUCCESS ? 0 : -1;
 }
 
 static int
@@ -319,7 +319,7 @@ cache_room_topic(struct cache *cache, MDB_txn *txn, const char *room_id) {
 		char *res = NULL;
 		matrix_json_t *json = NULL;
 
-		if (get_dbi(ROOM_DB_STATE, txn, &dbi, room_id) == MDB_SUCCESS) {
+		if (get_dbi(ROOM_DB_STATE, txn, &dbi, room_id) == 0) {
 			char state_key[] = "m.room.topic";
 
 			MDB_val value = {0};
@@ -371,10 +371,10 @@ cache_save(struct cache *cache, struct matrix_sync_response *response) {
 
 	MDB_txn *txn = NULL;
 
-	if ((get_txn(cache, 0))
+	if ((txn = get_txn(cache, 0))
 		&& (put_str(txn, cache->dbs[DB_SYNC],
 			 (char *) db_keys[DB_KEY_NEXT_BATCH], response->next_batch, 0))
-			 == MDB_SUCCESS) {
+			 == 0) {
 		struct matrix_room room;
 
 		while ((matrix_sync_room_next(response, &room)) == 0) {
