@@ -202,13 +202,8 @@ response_perform(struct matrix *matrix, struct response *response) {
 		}
 
 		if (code == CURLM_OK) {
-#if CURL_AT_LEAST_VERSION(7, 66, 0)
 			curl_multi_poll(
 			  response->transfer.multi, NULL, 0, timeout_multi, &nfds);
-#else
-			/* Just make it compile on LGTM CI. */
-			return MATRIX_CURL_FAILURE;
-#endif
 		}
 	}
 
