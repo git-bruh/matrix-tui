@@ -152,7 +152,7 @@ static void *
 syncer(void *arg) {
 	struct state *state = arg;
 
-	const unsigned sync_timeout = 1000;
+	const unsigned sync_timeout = 10000;
 
 	const struct matrix_sync_callbacks callbacks = {
 	  .sync_cb = sync_cb,
@@ -162,8 +162,8 @@ syncer(void *arg) {
 
 	char *next_batch = cache_next_batch(&state->cache);
 
-	switch (
-	  (matrix_sync_forever(state->matrix, NULL, sync_timeout, callbacks))) {
+	switch ((matrix_sync_forever(
+	  state->matrix, next_batch, sync_timeout, callbacks))) {
 	case MATRIX_NOMEM:
 	case MATRIX_CURL_FAILURE:
 	default:
