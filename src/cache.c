@@ -69,6 +69,13 @@ mkdir_parents(char path[], mode_t mode) {
 	return 0;
 }
 
+/* Hack to pass const char arrays to MDB APIs that don't modify them but don't
+ * explicitly mark their arguments as const either. */
+static char *
+noconst(const char *str) {
+	return (char *) str;
+}
+
 static int
 get_dbi(enum room_db db, MDB_txn *txn, MDB_dbi *dbi, const char *room_id) {
 	unsigned flags = MDB_CREATE;
@@ -236,7 +243,7 @@ cache_get_token(struct cache *cache) {
 
 	if (txn
 		&& (get_str(txn, cache->dbs[DB_SYNC],
-			 (char *) db_keys[DB_KEY_ACCESS_TOKEN], &data))
+			 noconst(db_keys[DB_KEY_ACCESS_TOKEN]), &data))
 			 == 0) {
 		ret = strndup(data.mv_data, data.mv_size);
 	}
@@ -257,7 +264,7 @@ cache_set_token(struct cache *cache, char *access_token) {
 
 	if ((txn = get_txn(cache, 0))
 		&& (put_str(txn, cache->dbs[DB_SYNC],
-			 (char *) db_keys[DB_KEY_ACCESS_TOKEN], access_token, 0))
+			 noconst(db_keys[DB_KEY_ACCESS_TOKEN]), access_token, 0))
 			 == 0) {
 		ret = 0;
 	}
@@ -354,7 +361,7 @@ cache_next_batch(struct cache *cache) {
 		MDB_val value = {0};
 
 		if ((get_str(txn, cache->dbs[DB_SYNC],
-			  (char *) db_keys[DB_KEY_NEXT_BATCH], &value))
+			  noconst(db_keys[DB_KEY_NEXT_BATCH]), &value))
 			== 0) {
 			mdb_txn_commit(txn);
 
@@ -379,7 +386,7 @@ cache_save(struct cache *cache, struct matrix_sync_response *response) {
 
 	if ((txn = get_txn(cache, 0))
 		&& (put_str(txn, cache->dbs[DB_SYNC],
-			 (char *) db_keys[DB_KEY_NEXT_BATCH], response->next_batch, 0))
+			 noconst(db_keys[DB_KEY_NEXT_BATCH]), response->next_batch, 0))
 			 == 0) {
 		struct matrix_room room;
 
