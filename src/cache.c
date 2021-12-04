@@ -296,7 +296,7 @@ cache_room_name(struct cache *cache, MDB_txn *txn, const char *room_id) {
 					break;
 				}
 			} else {
-				/* Check if DM. */
+				/* TODO Check if DM. */
 			}
 		}
 
@@ -323,8 +323,14 @@ cache_room_topic(struct cache *cache, MDB_txn *txn, const char *room_id) {
 			char state_key[] = "m.room.topic";
 
 			MDB_val value = {0};
+			struct matrix_state_event sevent;
 
-			if ((get_str(txn, dbi, state_key, &value)) == 0) {
+			if ((get_str(txn, dbi, state_key, &value)) == 0
+				&& (json
+					= matrix_json_parse((char *) value.mv_data, value.mv_size))
+				&& (matrix_event_state_parse(&sevent, json)) == 0
+				&& (sevent.type == MATRIX_ROOM_TOPIC)) {
+				res = sevent.topic.topic;
 			}
 		}
 
