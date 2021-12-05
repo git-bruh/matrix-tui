@@ -4,21 +4,9 @@
 
 A terminal based Matrix client. WIP, not usable yet. Discard the following information for now.
 
-# TODO
-
-## Client
-
-- [ ] Database
-- [ ] UI
-
-## Library
-
-- [x] Syncing (Needs testing and some refactoring)
-- [ ] Basic endpoints (Send / Delete / Edit)
-
 # Pre-requisites
 
-* C11 Compiler - `cproc`, `clang`, `gcc`
+* C11 Compiler
 
 * POSIX Make - `bmake` or `gmake`
 
