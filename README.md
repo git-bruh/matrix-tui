@@ -26,6 +26,8 @@ A terminal based Matrix client. WIP, not usable yet. Discard the following infor
 
 * [cURL](https://github.com/curl/curl)
 
+* [lmdb](https://github.com/LMDB/lmdb)
+
 The above can be installed through your distribution's package manager. The corresponding package names are usually suffixed with `-dev`, such as `libcurl-dev` depending on your distribution.
 
 A few dependencies are bundled:
