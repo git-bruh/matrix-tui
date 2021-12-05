@@ -63,11 +63,19 @@ handle_command(struct state *state, void *data) {
 }
 
 static struct {
-	void (*cb)(struct state *state, void *);
+	void (*cb)(struct state *, void *);
 	void (*free)(void *);
 } const queue_callbacks[QUEUE_ITEM_MAX] = {
   [QUEUE_ITEM_COMMAND] = {handle_command, free},
 };
+
+static void
+queue_item_free(struct queue_item *item) {
+	if (item) {
+		queue_callbacks[item->type].free(item->data);
+		free(item);
+	}
+}
 
 static struct queue_item *
 queue_item_alloc(enum queue_item_type type, void *data) {
@@ -79,6 +87,8 @@ queue_item_alloc(enum queue_item_type type, void *data) {
 		  .type = type,
 		  .data = data,
 		};
+	} else {
+		queue_callbacks[type].free(data);
 	}
 
 	return item;
@@ -183,7 +193,7 @@ lock_and_push(struct state *state, struct queue_item *item) {
 
 	pthread_mutex_lock(&state->mutex);
 	if ((queue_push_tail(&state->queue, item)) == -1) {
-		free(item); /* TODO maybe don't free the caller's pointers... */
+		queue_item_free(item);
 		pthread_mutex_unlock(&state->mutex);
 		return -1;
 	}
@@ -320,10 +330,7 @@ handle_input(struct state *state, struct tb_event *event) {
 
 		char *buf = input_buf(&state->input);
 
-		if ((lock_and_push(state, queue_item_alloc(QUEUE_ITEM_COMMAND, buf)))
-			== -1) {
-			free(buf);
-		}
+		lock_and_push(state, queue_item_alloc(QUEUE_ITEM_COMMAND, buf));
 		break;
 	case TB_KEY_BACKSPACE:
 	case TB_KEY_BACKSPACE2:
