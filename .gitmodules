@@ -4,3 +4,9 @@
 [submodule "third_party/stb"]
 	path = third_party/stb
 	url = https://github.com/nothings/stb
+[submodule "third_party/libmatrix"]
+	path = third_party/libmatrix
+	url = https://github.com/git-bruh/libmatrix
+[submodule "third_party/termbox-widgets"]
+	path = third_party/termbox-widgets
+	url = https://github.com/git-bruh/termbox-widgets

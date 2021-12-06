@@ -1,9 +1,8 @@
 .POSIX:
 
 BIN = client
-LIB = libmatrix.h
 
-.PHONY: $(LIB) format tidy clean
+.PHONY: format tidy clean
 
 include config.mk
 
@@ -21,22 +20,23 @@ XCFLAGS = \
 XLDLIBS = $(LDLIBS) `curl-config --libs` -lcjson -llmdb -lpthread
 
 INCLUDES = \
-	-I libmatrix_src \
+	-I third_party/libmatrix \
+	-I third_party/termbox-widgets \
 	-isystem third_party/stb \
 	-isystem third_party/termbox2
 
 OBJ = \
 	src/header_libs.o \
-	src/input.o \
-	src/tree.o \
-	src/ui_common.o \
 	src/queue.o \
 	src/cache.o \
 	src/main.o \
-	libmatrix_src/api.o \
-	libmatrix_src/linked_list.o \
-	libmatrix_src/matrix.o \
-	libmatrix_src/sync.o
+	third_party/libmatrix/api.o \
+	third_party/libmatrix/linked_list.o \
+	third_party/libmatrix/matrix.o \
+	third_party/libmatrix/sync.o \
+	third_party/termbox-widgets/input.o \
+	third_party/termbox-widgets/tree.o \
+	third_party/termbox-widgets/ui_common.o
 
 all: $(BIN)
 
@@ -50,24 +50,6 @@ DEP = $(OBJ:.o=.d)
 $(BIN): $(OBJ)
 	$(CC) $(XCFLAGS) -o $@ $(OBJ) $(XLDLIBS) $(LDFLAGS)
 
-$(LIB):
-	@{ \
-		:>$(LIB); \
-		printf "%s\n" \
-			"#ifndef LIBMATRIX_H" \
-			"#define LIBMATRIX_H" >> $(LIB); \
-		cat ./libmatrix_src/matrix.h >> $(LIB); \
-		printf "%s\n" \
-			"#endif" \
-			"#ifdef LIBMATRIX_IMPL" \
-			>> $(LIB); \
-		cat ./libmatrix_src/matrix-priv.h >> $(LIB); \
-		cat ./libmatrix_src/*.c >> $(LIB); \
-		printf "%s\n" \
-			"#endif" >> $(LIB); \
-		sed -i '/^#include \"/d' $(LIB); \
-	}
-
 format:
 	clang-format -Wno-error=unknown -i ./*src/*.[hc]
 
@@ -75,4 +57,4 @@ tidy:
 	clang-tidy ./*src/*.[hc] -- $(XCFLAGS) $(INCLUDES)
 
 clean:
-	rm -f $(DEP) $(OBJ) $(BIN) $(LIB)
+	rm -f $(DEP) $(OBJ) $(BIN)

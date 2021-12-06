@@ -20,9 +20,14 @@ The above can be installed through your distribution's package manager. The corr
 
 A few dependencies are bundled:
 
+* [libmatrix](https://github.com/git-bruh/libmatrix) - Library for interacting with matrix APIs.
+
 * [stb](https://github.com/nothings/stb) - Data structures from `stb_ds.h`
 
-* [termbox](https://github.com/termbox/termbox2) - The terminal rendering library
+* [termbox-widgets](https://github.com/git-bruh/termbox-widgets) - Widgets for termbox such as input fields and trees.
+
+* [termbox2](https://github.com/termbox/termbox2) - The terminal rendering library
+
 
 Make sure to run `git submodule update --remote --init -f` to clone them.
 
