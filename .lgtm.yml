@@ -1,6 +1,7 @@
 path_classifiers:
   library:
-  - third_party/*
+  - third_party/stb
+  - third_party/termbox2
 extraction:
   cpp:
     prepare:
