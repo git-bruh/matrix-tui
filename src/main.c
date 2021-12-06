@@ -423,7 +423,52 @@ static void
 sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 	struct state *state = matrix_userp(matrix);
 
-	cache_save(&state->cache, response);
+	assert(state);
+
+	struct matrix_room room;
+	struct cache_save_txn txn = {0};
+
+	if ((cache_save_txn_init(&state->cache, &txn)) != 0) {
+		return;
+	}
+
+	cache_save_next_batch(&txn, response->next_batch);
+
+	while ((matrix_sync_room_next(response, &room)) == 0) {
+		switch (room.type) {
+		case MATRIX_ROOM_LEAVE:
+			break;
+		case MATRIX_ROOM_JOIN:
+			break;
+		case MATRIX_ROOM_INVITE:
+			break;
+		default:
+			assert(0);
+		}
+
+		if ((cache_set_room_dbs(&txn, &room)) != 0) {
+			continue;
+		}
+
+		struct matrix_sync_event event;
+
+		while ((matrix_sync_event_next(&room, &event)) == 0) {
+			cache_save_event(&txn, &event);
+
+			switch (event.type) {
+			case MATRIX_EVENT_EPHEMERAL:
+				break;
+			case MATRIX_EVENT_STATE:
+				break;
+			case MATRIX_EVENT_TIMELINE:
+				break;
+			default:
+				assert(0);
+			}
+		}
+	}
+
+	cache_save_txn_finish(&txn);
 }
 
 int
