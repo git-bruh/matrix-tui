@@ -31,18 +31,17 @@ enum { THREAD_SYNC = 0, THREAD_QUEUE, THREAD_MAX };
 
 struct state {
 	_Atomic bool done;
-	char *current_room;
 	pthread_t threads[THREAD_MAX];
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
 	struct matrix *matrix;
 	struct cache cache;
 	struct queue queue;
-	struct input input;
-	struct treeview treeview;
 	struct {
 		enum { WIDGET_INPUT = 0, WIDGET_TREE } active_widget;
 		enum { TAB_HOME = 0, TAB_CHANNEL } active_tab;
+		struct input input;
+		struct treeview treeview;
 	} ui_data;
 };
 
@@ -105,18 +104,18 @@ redraw(struct state *state) {
 	struct widget_points points = {0};
 
 	widget_points_set(&points, 0, width, height - input_height, height);
-	input_redraw(&state->input, &points);
+	input_redraw(&state->ui_data.input, &points);
 
 	widget_points_set(&points, 0, width, bar_height, height);
-	treeview_redraw(&state->treeview, &points);
+	treeview_redraw(&state->ui_data.treeview, &points);
 
 	tb_present();
 }
 
 static void
 cleanup(struct state *state) {
-	input_finish(&state->input);
-	treeview_finish(&state->treeview);
+	input_finish(&state->ui_data.input);
+	treeview_finish(&state->ui_data.treeview);
 	tb_shutdown();
 
 	state->done = true;
@@ -251,8 +250,8 @@ ui_init(struct state *state) {
 	struct treeview_node *root
 	  = treeview_node_alloc(name, tree_string_cb, NULL);
 
-	if ((input_init(&state->input)) == -1
-		|| (treeview_init(&state->treeview, root)) == -1) {
+	if ((input_init(&state->ui_data.input)) == -1
+		|| (treeview_init(&state->ui_data.treeview, root)) == -1) {
 		treeview_node_destroy(root);
 		return -1;
 	}
@@ -268,14 +267,14 @@ handle_tree(struct state *state, struct tb_event *event) {
 	if (!event->key && event->ch) {
 		switch (event->ch) {
 		case 'd':
-			return treeview_event(&state->treeview, TREEVIEW_DELETE);
+			return treeview_event(&state->ui_data.treeview, TREEVIEW_DELETE);
 		case 'h':
 			{
 				struct treeview_node *node
 				  = treeview_node_alloc(hello, tree_string_cb, NULL);
 
 				return treeview_event(
-						 &state->treeview, TREEVIEW_INSERT_PARENT, node)
+						 &state->ui_data.treeview, TREEVIEW_INSERT_PARENT, node)
 						== WIDGET_REDRAW
 					   ? WIDGET_REDRAW
 					   : (treeview_node_destroy(node), WIDGET_NOOP);
@@ -285,13 +284,14 @@ handle_tree(struct state *state, struct tb_event *event) {
 				struct treeview_node *node
 				  = treeview_node_alloc(hello, tree_string_cb, NULL);
 
-				return treeview_event(&state->treeview, TREEVIEW_INSERT, node)
+				return treeview_event(
+						 &state->ui_data.treeview, TREEVIEW_INSERT, node)
 						== WIDGET_REDRAW
 					   ? WIDGET_REDRAW
 					   : (treeview_node_destroy(node), WIDGET_NOOP);
 			}
 		case ' ':
-			return treeview_event(&state->treeview, TREEVIEW_EXPAND);
+			return treeview_event(&state->ui_data.treeview, TREEVIEW_EXPAND);
 		default:
 			break;
 		}
@@ -299,11 +299,11 @@ handle_tree(struct state *state, struct tb_event *event) {
 
 	switch (event->key) {
 	case TB_KEY_TAB:
-		return treeview_event(&state->treeview, TREEVIEW_EXPAND);
+		return treeview_event(&state->ui_data.treeview, TREEVIEW_EXPAND);
 	case TB_KEY_ARROW_UP:
-		return treeview_event(&state->treeview, TREEVIEW_UP);
+		return treeview_event(&state->ui_data.treeview, TREEVIEW_UP);
 	case TB_KEY_ARROW_DOWN:
-		return treeview_event(&state->treeview, TREEVIEW_DOWN);
+		return treeview_event(&state->ui_data.treeview, TREEVIEW_DOWN);
 	default:
 		break;
 	}
@@ -316,7 +316,7 @@ handle_input(struct state *state, struct tb_event *event) {
 	assert(state->ui_data.active_widget == WIDGET_INPUT);
 
 	if (!event->key && event->ch) {
-		return input_handle_event(&state->input, INPUT_ADD, event->ch);
+		return input_handle_event(&state->ui_data.input, INPUT_ADD, event->ch);
 	}
 
 	bool mod = (event->mod & TB_MOD_SHIFT);
@@ -325,23 +325,23 @@ handle_input(struct state *state, struct tb_event *event) {
 	switch (event->key) {
 	case TB_KEY_ENTER:
 		if (mod_enter) {
-			return input_handle_event(&state->input, INPUT_ADD, '\n');
+			return input_handle_event(&state->ui_data.input, INPUT_ADD, '\n');
 		}
 
-		char *buf = input_buf(&state->input);
+		char *buf = input_buf(&state->ui_data.input);
 
 		lock_and_push(state, queue_item_alloc(QUEUE_ITEM_COMMAND, buf));
 		break;
 	case TB_KEY_BACKSPACE:
 	case TB_KEY_BACKSPACE2:
 		return input_handle_event(
-		  &state->input, mod ? INPUT_DELETE_WORD : INPUT_DELETE);
+		  &state->ui_data.input, mod ? INPUT_DELETE_WORD : INPUT_DELETE);
 	case TB_KEY_ARROW_RIGHT:
 		return input_handle_event(
-		  &state->input, mod ? INPUT_RIGHT_WORD : INPUT_RIGHT);
+		  &state->ui_data.input, mod ? INPUT_RIGHT_WORD : INPUT_RIGHT);
 	case TB_KEY_ARROW_LEFT:
 		return input_handle_event(
-		  &state->input, mod ? INPUT_LEFT_WORD : INPUT_LEFT);
+		  &state->ui_data.input, mod ? INPUT_LEFT_WORD : INPUT_LEFT);
 	default:
 		break;
 	}
