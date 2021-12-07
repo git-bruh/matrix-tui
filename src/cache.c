@@ -167,6 +167,39 @@ get_txn(struct cache *cache, unsigned flags) {
 	return txn;
 }
 
+static int
+cache_iterator_init(struct cache *cache, struct cache_iterator *iterator,
+  MDB_dbi dbi, unsigned txn_flags,
+  int (*iter_cb)(struct cache_iterator *iterator, MDB_val *key, MDB_val *data),
+  void *data) {
+	assert(iterator);
+
+	*iterator = (struct cache_iterator) {
+	  .txn = get_txn(cache, txn_flags),
+	  .iter_cb = iter_cb,
+	  .data = data,
+	};
+
+	if (iterator->txn
+		&& (mdb_cursor_open(iterator->txn, dbi, &iterator->cursor))
+			 == MDB_SUCCESS) {
+		return 0;
+	}
+
+	cache_iterator_finish(iterator);
+	return -1;
+}
+
+void
+cache_iterator_finish(struct cache_iterator *iterator) {
+	if (iterator) {
+		mdb_cursor_close(iterator->cursor);
+		mdb_txn_commit(iterator->txn);
+
+		memset(iterator, 0, sizeof(*iterator));
+	}
+}
+
 int
 cache_init(struct cache *cache) {
 	if (!cache) {
@@ -191,9 +224,13 @@ cache_init(struct cache *cache) {
 
 	MDB_txn *txn = NULL;
 
+	unsigned multiple_readonly_txn_per_thread = MDB_NOTLS;
+
 	if ((mdb_env_create(&cache->env)) == MDB_SUCCESS
 		&& (mdb_env_set_maxdbs(cache->env, max_dbs)) == MDB_SUCCESS
-		&& (mdb_env_open(cache->env, dir, 0, db_perms)) == MDB_SUCCESS
+		&& (mdb_env_open(
+			 cache->env, dir, multiple_readonly_txn_per_thread, db_perms))
+			 == MDB_SUCCESS
 		&& (txn = get_txn(cache, 0))) {
 
 		for (size_t i = 0; i < DB_MAX; i++) {
@@ -347,6 +384,85 @@ cache_room_topic(struct cache *cache, MDB_txn *txn, const char *room_id) {
 	return NULL;
 }
 
+int
+cache_iterator_next(struct cache_iterator *iterator) {
+	assert(iterator);
+
+	if (!iterator) {
+		return -1;
+	}
+
+	MDB_val key = {0};
+	MDB_val data = {0};
+
+	if ((mdb_cursor_get(iterator->cursor, &key, &data, MDB_NEXT))
+		!= MDB_SUCCESS) {
+		return -1;
+	}
+
+	return iterator->iter_cb(iterator, &key, &data);
+}
+
+struct room_info *
+cache_room_info(struct cache *cache, const char *room_id) {
+	assert(cache);
+	assert(room_id);
+
+	struct room_info *info = malloc(sizeof(*info));
+
+	if (info) {
+		MDB_txn *txn = get_txn(cache, MDB_RDONLY);
+
+		if (txn) {
+			*info = (struct room_info) {
+			  .invite = false,
+			  .space = false,
+			  .name = cache_room_name(cache, txn, room_id),
+			  .topic = cache_room_topic(cache, txn, room_id),
+			};
+
+			mdb_txn_commit(txn);
+
+			return info;
+		}
+
+		free(info);
+	}
+
+	return NULL;
+}
+
+void
+room_info_destroy(struct room_info *info) {
+	if (info) {
+		free(info->name);
+		free(info->topic);
+		free(info);
+	}
+}
+
+static int
+cache_rooms_next(struct cache_iterator *iterator, MDB_val *key, MDB_val *data) {
+	assert(iterator);
+	assert(key);
+	assert(data);
+	assert(key->mv_data);
+
+	return (*((char **) iterator->data) = strndup(key->mv_data, key->mv_size))
+		   ? 0
+		   : -1;
+}
+
+int
+cache_rooms_iterator(
+  struct cache *cache, struct cache_iterator *iterator, char **id) {
+	assert(cache);
+	assert(iterator);
+
+	return cache_iterator_init(
+	  cache, iterator, cache->dbs[DB_ROOMS], MDB_RDONLY, cache_rooms_next, id);
+}
+
 char *
 cache_next_batch(struct cache *cache) {
 	MDB_txn *txn = NULL;
@@ -451,9 +567,20 @@ cache_set_room_dbs(struct cache_save_txn *txn, struct matrix_room *room) {
 }
 
 int
+cache_save_room(struct cache_save_txn *txn, struct matrix_room *room) {
+	if (!txn || !room) {
+		return -1;
+	}
+
+	/* TODO dump summary. */
+	return put_str(
+	  txn->txn, txn->cache->dbs[DB_ROOMS], room->id, (char[]) {""}, 0);
+}
+
+enum cache_save_error
 cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 	if (!txn || !event) {
-		return -1;
+		return CACHE_FAIL;
 	}
 
 	switch (event->type) {
@@ -465,7 +592,7 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 				assert(sevent->state_key);
 
 				if (!sevent->state_key) {
-					return -1;
+					return CACHE_FAIL;
 				}
 
 				if ((STREQ(sevent->member.membership, "leave"))) {
@@ -492,18 +619,29 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 
 			if (tevent->type == MATRIX_ROOM_REDACTION) {
 				MDB_val del_index = {0};
+				bool set_index = false;
 
 				if ((get_str(txn->txn, txn->dbs[ROOM_DB_EVENTS_TO_ORDER],
-					  tevent->base.event_id, &del_index))
+					  tevent->redaction.redacts, &del_index))
 					== 0) {
 					mdb_del(txn->txn, txn->dbs[ROOM_DB_ORDER_TO_EVENTS],
 					  &del_index, NULL);
+
+					assert(del_index.mv_size == sizeof(txn->latest_redaction));
+					memcpy(&txn->latest_redaction, del_index.mv_data,
+					  del_index.mv_size);
+
+					set_index = true;
 				}
 
 				del_str(txn->txn, txn->dbs[ROOM_DB_EVENTS_TO_ORDER],
 				  tevent->base.event_id);
 				del_str(
 				  txn->txn, txn->dbs[ROOM_DB_EVENTS], tevent->base.event_id);
+
+				if (set_index) {
+					return CACHE_GOT_REDACTION;
+				}
 			} else {
 				MDB_val value = {0};
 
@@ -512,10 +650,11 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 					== 0) {
 					(void) value;
 					/* TODO warn about duplicates. */
-					return -1;
+					return CACHE_FAIL;
 				}
 
 				char *data = matrix_json_print(event->json);
+
 				put_int(txn->txn, txn->dbs[ROOM_DB_ORDER_TO_EVENTS], txn->index,
 				  tevent->base.event_id, 0);
 				put_str_int(txn->txn, txn->dbs[ROOM_DB_EVENTS_TO_ORDER],
@@ -532,5 +671,5 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 		break;
 	}
 
-	return 0;
+	return CACHE_SUCCESS;
 }

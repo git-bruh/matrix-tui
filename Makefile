@@ -13,6 +13,7 @@ XCFLAGS = \
 	-Wall -Wextra -Wpedantic -Wshadow -Wnull-dereference \
 	-Wformat=2 -Wcast-qual -Wconversion -Wpointer-arith \
 	-Wunused-macros -Wredundant-decls -Wwrite-strings \
+	-Werror=int-conversion \
 	-Werror=implicit-function-declaration \
 	-Werror=incompatible-pointer-types \
 	-DCLIENT_NAME=\"matrix-client\"
@@ -29,6 +30,7 @@ OBJ = \
 	src/header_libs.o \
 	src/queue.o \
 	src/cache.o \
+	src/room_ds.o \
 	src/main.o \
 	third_party/libmatrix/api.o \
 	third_party/libmatrix/linked_list.o \

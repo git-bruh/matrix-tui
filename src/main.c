@@ -1,9 +1,9 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
-#include "cache.h"
-#include "matrix.h"
 #include "queue.h"
+#include "room_ds.h"
+#include "stb_ds.h"
 #include "widgets.h"
 
 #include <assert.h>
@@ -11,8 +11,6 @@
 #include <curl/curl.h>
 #include <langinfo.h>
 #include <locale.h>
-#include <pthread.h>
-#include <stdatomic.h>
 
 #if 1
 #define MXID "@testuser:localhost"
@@ -42,6 +40,10 @@ struct state {
 		enum { TAB_HOME = 0, TAB_CHANNEL } active_tab;
 		struct input input;
 		struct treeview treeview;
+		struct {
+			char *key;
+			struct room *value;
+		} * rooms;
 	} ui_data;
 };
 
@@ -56,8 +58,7 @@ handle_command(struct state *state, void *data) {
 	assert(buf);
 
 	char *event_id = NULL;
-	matrix_send_message(state->matrix, &event_id, "!7oDrRRJK2v0eapPf:localhost",
-	  "m.text", buf, NULL);
+	matrix_send_message(state->matrix, &event_id, "", "m.text", buf, NULL);
 	free(event_id);
 }
 
@@ -145,6 +146,11 @@ cleanup(struct state *state) {
 
 	matrix_destroy(state->matrix);
 	matrix_global_cleanup();
+
+	for (size_t i = 0, len = shlenu(state->ui_data.rooms); i < len; i++) {
+		room_destroy(state->ui_data.rooms[i].value);
+	}
+	shfree(state->ui_data.rooms);
 
 	memset(state, 0, sizeof(*state));
 }
@@ -399,6 +405,37 @@ ui_loop(struct state *state) {
 	}
 }
 
+static void
+populate_from_cache(struct state *state) {
+	assert(state);
+
+	struct cache_iterator iterator = {0};
+	char *id = NULL;
+
+	if ((cache_rooms_iterator(&state->cache, &iterator, &id)) == 0) {
+		while ((cache_iterator_next(&iterator)) == 0) {
+			assert(id);
+			struct room_info *info = cache_room_info(&state->cache, id);
+
+			if (info) {
+				struct room *room = room_alloc(info);
+
+				if (room) {
+					shput(state->ui_data.rooms, id, room);
+				} else {
+					room_info_destroy(info);
+				}
+			}
+
+			free(id);
+			id = NULL; /* Fix false positive in static analyzers, id is
+						* reassigned by cache_iterator_next. */
+		}
+
+		cache_iterator_finish(&iterator);
+	}
+}
+
 static int
 login(struct state *state) {
 	char *access_token = cache_get_token(&state->cache);
@@ -419,13 +456,33 @@ login(struct state *state) {
 	return ret;
 }
 
+static int
+redact(struct room *room, uint64_t index) {
+	struct room_index out_index = {0};
+
+	if ((room_bsearch(room, index, &out_index)) == -1) {
+		return -1;
+	}
+
+	pthread_mutex_lock(&room->nontrivial_modification_mutex);
+	struct message *to_redact
+	  = &room->timelines[out_index.index_timeline][out_index.index_buf]
+		   .buf[out_index.index_message];
+	to_redact->redacted = true;
+	free(to_redact->body);
+	to_redact->body = NULL;
+	pthread_mutex_unlock(&room->nontrivial_modification_mutex);
+
+	return 0;
+}
+
 static void
 sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 	struct state *state = matrix_userp(matrix);
 
 	assert(state);
 
-	struct matrix_room room;
+	struct matrix_room sync_room;
 	struct cache_save_txn txn = {0};
 
 	if ((cache_save_txn_init(&state->cache, &txn)) != 0) {
@@ -434,8 +491,8 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 	cache_save_next_batch(&txn, response->next_batch);
 
-	while ((matrix_sync_room_next(response, &room)) == 0) {
-		switch (room.type) {
+	while ((matrix_sync_room_next(response, &sync_room)) == 0) {
+		switch (sync_room.type) {
 		case MATRIX_ROOM_LEAVE:
 			break;
 		case MATRIX_ROOM_JOIN:
@@ -446,14 +503,38 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 			assert(0);
 		}
 
-		if ((cache_set_room_dbs(&txn, &room)) != 0) {
+		if ((cache_set_room_dbs(&txn, &sync_room)) != 0
+			|| (cache_save_room(&txn, &sync_room)) != 0) {
 			continue;
 		}
 
 		struct matrix_sync_event event;
 
-		while ((matrix_sync_event_next(&room, &event)) == 0) {
-			cache_save_event(&txn, &event);
+		struct room *room = shget(state->ui_data.rooms, sync_room.id);
+		bool room_needs_info = !room;
+
+		if (room_needs_info) {
+			room = room_alloc(NULL);
+
+			if (!room) {
+				continue;
+			}
+		}
+
+		struct timeline *timeline = room->timelines[TIMELINE_FORWARD];
+		size_t len = timeline->len;
+
+		while ((matrix_sync_event_next(&sync_room, &event)) == 0) {
+			uint64_t index = txn.index;
+			enum cache_save_error ret = CACHE_FAIL;
+
+			if ((ret = cache_save_event(&txn, &event)) == CACHE_FAIL) {
+				continue;
+			}
+
+			/* Declare variables here to avoid adding a new scope in the switch
+			 * as it increases the indentation level needlessly. */
+			struct matrix_timeline_event *tevent = NULL;
 
 			switch (event.type) {
 			case MATRIX_EVENT_EPHEMERAL:
@@ -461,9 +542,55 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 			case MATRIX_EVENT_STATE:
 				break;
 			case MATRIX_EVENT_TIMELINE:
+				tevent = &event.timeline;
+
+				switch (tevent->type) {
+				case MATRIX_ROOM_MESSAGE:
+					if ((len + 1) > TIMELINE_BUFSZ) {
+						assert(0);
+						break; /* TODO */
+					}
+
+					assert(tevent->base.sender);
+					assert(tevent->message.body);
+
+					/* This is safe as the reader thread will have the old
+					 * value of len stored and not access anything beyond
+					 * that. */
+					timeline->buf[len++] = (struct message) {
+					  .formatted = false,
+					  .reply = false,
+					  .index = index,
+					  .body = strdup(tevent->message.body),
+					  .sender = strdup(tevent->base.sender),
+					};
+					break;
+				case MATRIX_ROOM_REDACTION:
+					if (ret == CACHE_GOT_REDACTION) {
+						timeline->len = len; /* Ensure that bsearch has
+												access to new events. */
+
+						redact(room, txn.latest_redaction);
+					}
+					break;
+				case MATRIX_ROOM_ATTACHMENT:
+					break;
+				default:
+					assert(0);
+				}
 				break;
 			default:
 				assert(0);
+			}
+		}
+
+		timeline->len = len;
+
+		if (room_needs_info) {
+			if ((room->info = cache_room_info(&state->cache, sync_room.id))) {
+				shput(state->ui_data.rooms, sync_room.id, room);
+			} else {
+				room_destroy(room);
 			}
 		}
 	}
@@ -493,7 +620,11 @@ main() {
 		&& !ERRLOG(tb_init() == TB_OK, "Failed to initialize termbox.\n")
 		&& !ERRLOG(
 		  threads_init(&state) == 0, "Failed to initialize threads.\n")) {
-		ui_loop(&state);
+		sh_new_strdup(
+		  state.ui_data.rooms); /* Important to avoid use after frees. */
+		populate_from_cache(&state);
+
+		ui_loop(&state); /* Blocks forever. */
 		cleanup(&state);
 
 		return EXIT_SUCCESS;
