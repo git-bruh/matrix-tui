@@ -3,7 +3,6 @@
 
 #include "queue.h"
 #include "room_ds.h"
-#include "stb_ds.h"
 #include "widgets.h"
 
 #include <assert.h>
@@ -44,6 +43,8 @@ struct state {
 			char *key;
 			struct room *value;
 		} * rooms;
+		char *current_room;
+		pthread_mutex_t rooms_mutex;
 	} ui_data;
 };
 
@@ -109,6 +110,37 @@ redraw(struct state *state) {
 
 	widget_points_set(&points, 0, width, bar_height, height);
 	treeview_redraw(&state->ui_data.treeview, &points);
+
+	pthread_mutex_lock(&state->ui_data.rooms_mutex);
+	struct room *room = NULL;
+
+	if (!state->ui_data.current_room && (shlenu(state->ui_data.rooms)) > 0) {
+		state->ui_data.current_room = state->ui_data.rooms[0].key;
+	}
+
+	if (state->ui_data.current_room) {
+		room = shget(state->ui_data.rooms, state->ui_data.current_room);
+	}
+	pthread_mutex_unlock(&state->ui_data.rooms_mutex);
+
+	if (room) {
+		pthread_mutex_lock(&room->realloc_or_modify_mutex);
+		struct message *buf = room->timelines[TIMELINE_FORWARD].buf;
+		size_t len = room->timelines[TIMELINE_FORWARD].len;
+
+		int y = 0;
+
+		for (size_t i = 0; i < len; i++) {
+			if (buf[i].redacted) {
+				tb_printf(0, y++, TB_DEFAULT, TB_DEFAULT, "Redacted (%s)\n",
+				  buf[i].sender);
+			} else {
+				tb_printf(0, y++, TB_DEFAULT, TB_DEFAULT, "(%s): %s\n",
+				  buf[i].sender, buf[i].body);
+			}
+		}
+		pthread_mutex_unlock(&room->realloc_or_modify_mutex);
+	}
 
 	tb_present();
 }
@@ -581,7 +613,9 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 		if (room_needs_info) {
 			if ((room->info = cache_room_info(&state->cache, sync_room.id))) {
+				pthread_mutex_lock(&state->ui_data.rooms_mutex);
 				shput(state->ui_data.rooms, sync_room.id, room);
+				pthread_mutex_unlock(&state->ui_data.rooms_mutex);
 			} else {
 				room_destroy(room);
 			}
@@ -599,8 +633,9 @@ main() {
 		return EXIT_FAILURE;
 	}
 
-	struct state state
-	  = {.cond = PTHREAD_COND_INITIALIZER, .mutex = PTHREAD_MUTEX_INITIALIZER};
+	struct state state = {.cond = PTHREAD_COND_INITIALIZER,
+	  .mutex = PTHREAD_MUTEX_INITIALIZER,
+	  .ui_data = {.rooms_mutex = PTHREAD_MUTEX_INITIALIZER}};
 
 	if (!ERRLOG(
 		  matrix_global_init() == 0, "Failed to initialize matrix globals.\n")

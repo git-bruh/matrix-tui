@@ -8,7 +8,7 @@
 	do {                                                                       \
 		if (!((stbds_header(arr)->length + 1)                                  \
 			  > stbds_header(arr)->capacity)) {                                \
-			continue;                                                          \
+			break;                                                             \
 		}                                                                      \
 		pthread_mutex_lock(mutex);                                             \
 		stbds_arrgrow(arr, 1, 0);                                              \
