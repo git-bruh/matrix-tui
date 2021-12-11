@@ -464,14 +464,13 @@ redact(struct room *room, uint64_t index) {
 		return -1;
 	}
 
-	pthread_mutex_lock(&room->nontrivial_modification_mutex);
+	pthread_mutex_lock(&room->realloc_or_modify_mutex);
 	struct message *to_redact
-	  = &room->timelines[out_index.index_timeline][out_index.index_buf]
-		   .buf[out_index.index_message];
+	  = &room->timelines[out_index.index_timeline].buf[out_index.index_buf];
 	to_redact->redacted = true;
 	free(to_redact->body);
 	to_redact->body = NULL;
-	pthread_mutex_unlock(&room->nontrivial_modification_mutex);
+	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 
 	return 0;
 }
@@ -521,8 +520,7 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 			}
 		}
 
-		struct timeline *timeline = room->timelines[TIMELINE_FORWARD];
-		size_t len = timeline->len;
+		struct timeline *timeline = &room->timelines[TIMELINE_FORWARD];
 
 		while ((matrix_sync_event_next(&sync_room, &event)) == 0) {
 			uint64_t index = txn.index;
@@ -546,29 +544,24 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 				switch (tevent->type) {
 				case MATRIX_ROOM_MESSAGE:
-					if ((len + 1) > TIMELINE_BUFSZ) {
-						assert(0);
-						break; /* TODO */
-					}
+					lock_if_grow(timeline->buf, &room->realloc_or_modify_mutex);
 
 					assert(tevent->base.sender);
 					assert(tevent->message.body);
 
-					/* This is safe as the reader thread will have the old
-					 * value of len stored and not access anything beyond
-					 * that. */
-					timeline->buf[len++] = (struct message) {
-					  .formatted = false,
-					  .reply = false,
-					  .index = index,
-					  .body = strdup(tevent->message.body),
-					  .sender = strdup(tevent->base.sender),
-					};
+					/* This is safe as the reader thread will have the old value
+					 * of len stored and not access anything beyond that. */
+					arrput(
+					  timeline->buf, ((struct message) {.formatted = false,
+									   .reply = false,
+									   .index = index,
+									   .body = strdup(tevent->message.body),
+									   .sender = strdup(tevent->base.sender)}));
 					break;
 				case MATRIX_ROOM_REDACTION:
 					if (ret == CACHE_GOT_REDACTION) {
-						timeline->len = len; /* Ensure that bsearch has
-												access to new events. */
+						/* Ensure that bsearch has access to new events. */
+						timeline->len = arrlenu(timeline->buf);
 
 						redact(room, txn.latest_redaction);
 					}
@@ -584,7 +577,7 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 			}
 		}
 
-		timeline->len = len;
+		timeline->len = arrlenu(timeline->buf);
 
 		if (room_needs_info) {
 			if ((room->info = cache_room_info(&state->cache, sync_room.id))) {

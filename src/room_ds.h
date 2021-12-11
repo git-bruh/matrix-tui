@@ -1,10 +1,22 @@
 #include "cache.h"
+#include "stb_ds.h"
 
 #include <pthread.h>
 #include <stdatomic.h>
 
+#define lock_if_grow(arr, mutex)                                               \
+	do {                                                                       \
+		if (!((stbds_header(arr)->length + 1)                                  \
+			  > stbds_header(arr)->capacity)) {                                \
+			continue;                                                          \
+		}                                                                      \
+		pthread_mutex_lock(mutex);                                             \
+		stbds_arrgrow(arr, 1, 0);                                              \
+		pthread_mutex_unlock(mutex);                                           \
+	} while (0)
+
 enum { TIMELINE_FORWARD = 0, TIMELINE_BACKWARD, TIMELINE_MAX };
-enum { TIMELINE_BUFSZ = 500 };
+enum { TIMELINE_INITIAL_RESERVE = 50 };
 
 struct message {
 	bool edited;
@@ -14,41 +26,33 @@ struct message {
 	uint64_t index; /* Index from database. */
 	uint64_t
 	  index_reply; /* Index (from database) of the message being replied to. */
-	char *body;	   /* HTML if formatted is true. */
+	char *body;	   /* HTML, if formatted is true. */
 	char *sender;
 };
 
 struct timeline {
-	struct message *buf; /* Size is capped to avoid realloc and make it easier
-						  * to access from multiple threads. */
-	_Atomic size_t len; /* Index of the last inserted message, must be an atomic
-						 * since we copy it in the syncer thread, fill in events
-						 * and set it back. */
+	struct message *buf;
+	/* Index of the last inserted message, must be an atomic since we store it
+	 * once in the reader thread and later re-assign it from the writer after
+	 * writing events. This allows the reader thread to read old events while
+	 * the writer inserts after the reader's index. */
+	_Atomic size_t len;
 };
 
 struct room {
 	uint64_t current_message_index;
 	struct room_info *info;
-	/* We use binary search to search for events. We require
-	 * insertion at both the front and back so an ordered hash-map
-	 * is not feasible. We use an array of fixed-size buffers instead.
-	 * Insertion of new events starts from TIMELINE_FORWARD and the more
-	 * buffers are added as required. Paginated events are stored similarly
-	 * in TIMELINE_BACKWARD. */
-	struct timeline *timelines[TIMELINE_MAX];
-	/* Mutex for realloc-ing the timelines array or marking edited/redacted
-	 * flags on events. Must be locked for the full duration duration of an
-	 * iteration by the reader thread. The writer thread locks it on a per-event
-	 * basis to avoid blocking for too long. This is fine as edits or redactions
-	 * are way less common than regular events, which we don't need to lock for
-	 * and can just fill in arrays after the len parameter of the timeline. */
-	pthread_mutex_t nontrivial_modification_mutex;
+	/* .buf MUST have an initial capacity set with arrsetcap. Binary search is
+	 * used to find messages in the appropriate timeline. */
+	struct timeline timelines[TIMELINE_MAX];
+	/* Locked by reader for the whole duration of an iteration. Used to realloc
+	 * the message buffer or mark existing messages as edited/redacetd. */
+	pthread_mutex_t realloc_or_modify_mutex;
 };
 
 struct room_index {
 	size_t index_timeline;
 	size_t index_buf;
-	size_t index_message;
 };
 
 int
