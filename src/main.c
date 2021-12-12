@@ -641,6 +641,10 @@ main() {
 		  matrix_global_init() == 0, "Failed to initialize matrix globals.\n")
 		&& !ERRLOG(
 		  cache_init(&state.cache) == 0, "Failed to initialize database.\n")
+		/* sh_new_strdup is important to avoid use after frees. Must call these
+		 * 2 functions here before the syncer thread starts. */
+		&& (sh_new_strdup(state.ui_data.rooms), populate_from_cache(&state),
+		  true)
 		&& !ERRLOG(ui_init(&state) == 0, "Failed to initialize UI.\n")
 		&& !ERRLOG(state.matrix = matrix_alloc(MXID, HOMESERVER, &state),
 		  "Failed to initialize libmatrix.\n")
@@ -648,10 +652,6 @@ main() {
 		&& !ERRLOG(tb_init() == TB_OK, "Failed to initialize termbox.\n")
 		&& !ERRLOG(
 		  threads_init(&state) == 0, "Failed to initialize threads.\n")) {
-		sh_new_strdup(
-		  state.ui_data.rooms); /* Important to avoid use after frees. */
-		populate_from_cache(&state);
-
 		ui_loop(&state); /* Blocks forever. */
 		cleanup(&state);
 

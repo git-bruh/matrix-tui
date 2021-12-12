@@ -15,7 +15,11 @@
 		pthread_mutex_unlock(mutex);                                           \
 	} while (0)
 
-enum { TIMELINE_FORWARD = 0, TIMELINE_BACKWARD, TIMELINE_MAX };
+enum {
+	TIMELINE_FORWARD = 0, /* New messages. */
+	TIMELINE_BACKWARD,	  /* Backfilled messages. */
+	TIMELINE_MAX
+};
 enum { TIMELINE_INITIAL_RESERVE = 50 };
 
 struct message {
@@ -40,7 +44,6 @@ struct timeline {
 };
 
 struct room {
-	uint64_t current_message_index;
 	struct room_info *info;
 	/* .buf MUST have an initial capacity set with arrsetcap. Binary search is
 	 * used to find messages in the appropriate timeline. */
