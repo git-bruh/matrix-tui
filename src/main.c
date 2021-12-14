@@ -125,18 +125,18 @@ redraw(struct state *state) {
 
 	if (room) {
 		pthread_mutex_lock(&room->realloc_or_modify_mutex);
-		struct message *buf = room->timelines[TIMELINE_FORWARD].buf;
+		struct message **buf = room->timelines[TIMELINE_FORWARD].buf;
 		size_t len = room->timelines[TIMELINE_FORWARD].len;
 
 		int y = 0;
 
 		for (size_t i = 0; i < len; i++) {
-			if (buf[i].redacted) {
+			if (buf[i]->redacted) {
 				tb_printf(0, y++, TB_DEFAULT, TB_DEFAULT, "Redacted (%s)\n",
-				  buf[i].sender);
+				  buf[i]->sender);
 			} else {
 				tb_printf(0, y++, TB_DEFAULT, TB_DEFAULT, "(%s): %s\n",
-				  buf[i].sender, buf[i].body);
+				  buf[i]->sender, buf[i]->body);
 			}
 		}
 		pthread_mutex_unlock(&room->realloc_or_modify_mutex);
@@ -497,7 +497,7 @@ redact(struct room *room, uint64_t index) {
 
 	pthread_mutex_lock(&room->realloc_or_modify_mutex);
 	struct message *to_redact
-	  = &room->timelines[out_index.index_timeline].buf[out_index.index_buf];
+	  = room->timelines[out_index.index_timeline].buf[out_index.index_buf];
 	to_redact->redacted = true;
 	free(to_redact->body);
 	to_redact->body = NULL;
@@ -585,12 +585,15 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 					/* This is safe as the reader thread will have the old value
 					 * of len stored and not access anything beyond that. */
-					arrput(
-					  timeline->buf, ((struct message) {.formatted = false,
-									   .reply = false,
-									   .index = index,
-									   .body = strdup(tevent->message.body),
-									   .sender = strdup(tevent->base.sender)}));
+					struct message *message
+					  = message_alloc(tevent->message.body, tevent->base.sender,
+						index, NULL, false);
+
+					if (!message) {
+						break;
+					}
+
+					arrput(timeline->buf, message);
 					break;
 				case MATRIX_ROOM_REDACTION:
 					if (ret == CACHE_GOT_REDACTION) {

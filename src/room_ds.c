@@ -40,6 +40,37 @@ cmp_backward(const void *key, const void *array_item) {
 	return 0; /* Equal. */
 }
 
+struct message *
+message_alloc(char *body, char *sender, uint64_t index,
+  const uint64_t *index_reply, bool formatted) {
+	struct message *message = malloc(sizeof(*message));
+
+	if (message) {
+		*message = (struct message) {.formatted = formatted,
+		  .reply = !!index_reply,
+		  .index = index,
+		  .index_reply = (index_reply ? *index_reply : 0),
+		  .body = strdup(body),
+		  .sender = strdup(sender)};
+
+		if (!message->body || !message->sender) {
+			message_destroy(message);
+			return NULL;
+		}
+	}
+
+	return message;
+}
+
+void
+message_destroy(struct message *message) {
+	if (message) {
+		free(message->body);
+		free(message->sender);
+		free(message);
+	}
+}
+
 int
 room_bsearch(struct room *room, uint64_t index, struct room_index *out_index) {
 	if (!room || !out_index) {
@@ -49,10 +80,10 @@ room_bsearch(struct room *room, uint64_t index, struct room_index *out_index) {
 	struct timeline *timeline = NULL;
 	int (*cmp)(const void *, const void *) = NULL;
 
-	if (room->timelines[TIMELINE_FORWARD].buf[0].index <= index) {
+	if (room->timelines[TIMELINE_FORWARD].buf[0]->index <= index) {
 		timeline = &room->timelines[TIMELINE_FORWARD];
 		cmp = cmp_forward;
-	} else if (room->timelines[TIMELINE_BACKWARD].buf[0].index >= index) {
+	} else if (room->timelines[TIMELINE_BACKWARD].buf[0]->index >= index) {
 		/* Reverse search. */
 		timeline = &room->timelines[TIMELINE_BACKWARD];
 		cmp = cmp_backward;
@@ -60,7 +91,7 @@ room_bsearch(struct room *room, uint64_t index, struct room_index *out_index) {
 		return -1;
 	}
 
-	struct message *message = NULL;
+	struct message **message = NULL;
 
 	if (!(message = bsearch(&index, timeline->buf, timeline->len,
 			sizeof(*timeline->buf), cmp))) {
@@ -99,8 +130,7 @@ void
 timeline_finish(struct timeline *timeline) {
 	if (timeline && timeline->buf) {
 		for (size_t i = 0, len = timeline->len; i < len; i++) {
-			free(timeline->buf[i].body);
-			free(timeline->buf[i].sender);
+			message_destroy(timeline->buf[i]);
 		}
 
 		arrfree(timeline->buf);

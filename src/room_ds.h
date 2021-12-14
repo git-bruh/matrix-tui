@@ -37,7 +37,9 @@ struct message {
 };
 
 struct timeline {
-	struct message *buf;
+	/* Pointer to heap-allocated structures so that we can pass
+	 * them between threads. */
+	struct message **buf;
 	/* Index of the last inserted message, must be an atomic since we store it
 	 * once in the reader thread and later re-assign it from the writer after
 	 * writing events. This allows the reader thread to read old events while
@@ -60,6 +62,11 @@ struct room_index {
 	size_t index_buf;
 };
 
+struct message *
+message_alloc(char *body, char *sender, uint64_t index,
+  const uint64_t *index_reply, bool formatted);
+void
+message_destroy(struct message *message);
 int
 room_bsearch(struct room *room, uint64_t index, struct room_index *out_index);
 int
