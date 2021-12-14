@@ -170,8 +170,7 @@ cleanup(struct state *state) {
 
 	/* Free any unconsumed items. */
 	while ((item = queue_pop_head(&state->queue))) {
-		queue_callbacks[item->type].free(item->data);
-		free(item);
+		queue_item_free(item);
 	}
 
 	cache_finish(&state->cache);
@@ -541,7 +540,10 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 		struct matrix_sync_event event;
 
+		pthread_mutex_lock(&state->ui_data.rooms_mutex);
 		struct room *room = shget(state->ui_data.rooms, sync_room.id);
+		pthread_mutex_unlock(&state->ui_data.rooms_mutex);
+
 		bool room_needs_info = !room;
 
 		if (room_needs_info) {
@@ -626,6 +628,16 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 }
 
 int
+hm_init(struct state *state) {
+	/* sh_new_strdup is important to avoid use after frees. Must call these
+	 * 2 functions here before the syncer thread starts. */
+	sh_new_strdup(state->ui_data.rooms);
+	populate_from_cache(state);
+
+	return 0;
+}
+
+int
 main() {
 	if (ERRLOG(setlocale(LC_ALL, ""), "Failed to set locale.\n")
 		|| ERRLOG(strcmp("UTF-8", nl_langinfo(CODESET)) == 0,
@@ -641,10 +653,7 @@ main() {
 		  matrix_global_init() == 0, "Failed to initialize matrix globals.\n")
 		&& !ERRLOG(
 		  cache_init(&state.cache) == 0, "Failed to initialize database.\n")
-		/* sh_new_strdup is important to avoid use after frees. Must call these
-		 * 2 functions here before the syncer thread starts. */
-		&& (sh_new_strdup(state.ui_data.rooms), populate_from_cache(&state),
-		  true)
+		&& !ERRLOG(hm_init(&state) == 0, "")
 		&& !ERRLOG(ui_init(&state) == 0, "Failed to initialize UI.\n")
 		&& !ERRLOG(state.matrix = matrix_alloc(MXID, HOMESERVER, &state),
 		  "Failed to initialize libmatrix.\n")
