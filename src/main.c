@@ -1,13 +1,10 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
+#include "message_buffer.h"
 #include "queue.h"
-#include "room_ds.h"
-#include "widgets.h"
 
 #include <assert.h>
-#include <cjson/cJSON.h>
-#include <curl/curl.h>
 #include <langinfo.h>
 #include <locale.h>
 
@@ -25,6 +22,7 @@
 	(!(cond) ? (fprintf(stderr, __VA_ARGS__), true) : false)
 
 enum { THREAD_SYNC = 0, THREAD_QUEUE, THREAD_MAX };
+enum { PIPE_READ = 0, PIPE_WRITE, PIPE_MAX };
 
 struct state {
 	_Atomic bool done;
@@ -37,8 +35,11 @@ struct state {
 	struct {
 		enum { WIDGET_INPUT = 0, WIDGET_TREE } active_widget;
 		enum { TAB_HOME = 0, TAB_CHANNEL } active_tab;
+		bool message_buffer_changed;
+		int buffer_changed_pipe[PIPE_MAX];
 		struct input input;
 		struct treeview treeview;
+		struct message_buffer buffer;
 		struct {
 			char *key;
 			struct room *value;
@@ -106,7 +107,9 @@ redraw(struct state *state) {
 	struct widget_points points = {0};
 
 	widget_points_set(&points, 0, width, height - input_height, height);
-	input_redraw(&state->ui_data.input, &points);
+
+	int input_rows = 0;
+	input_redraw(&state->ui_data.input, &points, &input_rows);
 
 	widget_points_set(&points, 0, width, bar_height, height);
 	treeview_redraw(&state->ui_data.treeview, &points);
@@ -125,21 +128,30 @@ redraw(struct state *state) {
 
 	if (room) {
 		pthread_mutex_lock(&room->realloc_or_modify_mutex);
+
+		widget_points_set(&points, 0, width, bar_height, height - input_rows);
+
 		struct message **buf = room->timelines[TIMELINE_FORWARD].buf;
 		size_t len = room->timelines[TIMELINE_FORWARD].len;
 
-		int y = 0;
+		if (state->ui_data.message_buffer_changed
+			|| (message_buffer_should_recalculate(
+			  &state->ui_data.buffer, &points))) {
+			message_buffer_zero(&state->ui_data.buffer);
 
-		for (size_t i = 0; i < len; i++) {
-			if (buf[i]->redacted) {
-				tb_printf(0, y++, TB_DEFAULT, TB_DEFAULT, "Redacted (%s)\n",
-				  buf[i]->sender);
-			} else {
-				tb_printf(0, y++, TB_DEFAULT, TB_DEFAULT, "(%s): %s\n",
-				  buf[i]->sender, buf[i]->body);
+			for (size_t i = 0; i < len; i++) {
+				if (!buf[i]->redacted) {
+					message_buffer_insert(
+					  &state->ui_data.buffer, &points, buf[i]);
+				}
 			}
+
+			message_buffer_ensure_sane_scroll(&state->ui_data.buffer);
 		}
+
 		pthread_mutex_unlock(&room->realloc_or_modify_mutex);
+
+		message_buffer_redraw(&state->ui_data.buffer, &points);
 	}
 
 	tb_present();
@@ -149,6 +161,7 @@ static void
 cleanup(struct state *state) {
 	input_finish(&state->ui_data.input);
 	treeview_finish(&state->ui_data.treeview);
+	arrfree(state->ui_data.buffer.buf);
 	tb_shutdown();
 
 	state->done = true;
@@ -161,6 +174,12 @@ cleanup(struct state *state) {
 	if (state->threads[THREAD_QUEUE]) {
 		pthread_cond_signal(&state->cond);
 		pthread_join(state->threads[THREAD_QUEUE], NULL);
+	}
+
+	for (size_t i = 0; i < PIPE_MAX; i++) {
+		if (state->ui_data.buffer_changed_pipe[i] != -1) {
+			close(state->ui_data.buffer_changed_pipe[i]);
+		}
 	}
 
 	pthread_cond_destroy(&state->cond);
@@ -386,26 +405,75 @@ handle_input(struct state *state, struct tb_event *event) {
 	return WIDGET_NOOP;
 }
 
+static enum widget_error
+handle_message_buffer(struct state *state, struct tb_event *event) {
+	assert(event->type == TB_EVENT_MOUSE);
+
+	switch (event->key) {
+	case TB_KEY_MOUSE_WHEEL_UP:
+		if ((message_buffer_handle_event(
+			  &state->ui_data.buffer, MESSAGE_BUFFER_UP))
+			== WIDGET_NOOP) {
+			/* TODO paginate(); */
+		} else {
+			return WIDGET_REDRAW;
+		}
+		break;
+	case TB_KEY_MOUSE_WHEEL_DOWN:
+		return message_buffer_handle_event(
+		  &state->ui_data.buffer, MESSAGE_BUFFER_DOWN);
+	default:
+		break;
+	}
+
+	return WIDGET_NOOP;
+}
+
 static void
 ui_loop(struct state *state) {
-	tb_set_input_mode(TB_INPUT_ALT);
+	tb_set_input_mode(TB_INPUT_ALT | TB_INPUT_MOUSE);
 	tb_set_output_mode(TB_OUTPUT_256);
-
-	struct tb_event event = {0};
 
 	redraw(state);
 
 	state->ui_data.active_widget = WIDGET_INPUT;
 
+	struct tb_event event = {0};
+
+	enum { FD_READ = TB_FD_MAX, FD_MAX = TB_FD_MAX + 1 };
+
+	struct pollfd fds[FD_MAX] = {
+	  [FD_READ]
+	  = {.fd = state->ui_data.buffer_changed_pipe[PIPE_READ], .events = POLLIN},
+	};
+
+	if ((tb_pollfds(fds)) != TB_OK) {
+		assert(0);
+	}
+
 	for (;;) {
-		switch ((tb_poll_event(&event))) {
-		case TB_OK:
-			break;
-		/* TODO termbox2 bug, resize event is sent after this. */
-		case TB_ERR_SELECT:
+		int fds_with_data = poll(fds, FD_MAX, -1);
+
+		if (fds_with_data > 0 && (fds[FD_READ].revents & POLLIN)) {
+			fds_with_data--;
+
+			int changes = 0;
+
+			if ((read(state->ui_data.buffer_changed_pipe[PIPE_READ], &changes,
+				  sizeof(changes)))
+				== sizeof(changes)) {
+				state->ui_data.message_buffer_changed = true;
+				redraw(state);
+				state->ui_data.message_buffer_changed = false;
+			}
+		}
+
+		if (fds_with_data <= 0) {
 			continue;
-		default:
-			return;
+		}
+
+		if ((tb_event_from_fds(&event, fds)) != TB_OK) {
+			continue;
 		}
 
 		enum widget_error ret = WIDGET_NOOP;
@@ -419,15 +487,19 @@ ui_loop(struct state *state) {
 			return;
 		}
 
-		switch (state->ui_data.active_widget) {
-		case WIDGET_INPUT:
-			ret = handle_input(state, &event);
-			break;
-		case WIDGET_TREE:
-			ret = handle_tree(state, &event);
-			break;
-		default:
-			assert(0);
+		if (event.type == TB_EVENT_MOUSE) {
+			ret = handle_message_buffer(state, &event);
+		} else {
+			switch (state->ui_data.active_widget) {
+			case WIDGET_INPUT:
+				ret = handle_input(state, &event);
+				break;
+			case WIDGET_TREE:
+				ret = handle_tree(state, &event);
+				break;
+			default:
+				assert(0);
+			}
 		}
 
 		if (ret == WIDGET_REDRAW) {
@@ -628,6 +700,10 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 	}
 
 	cache_save_txn_finish(&txn);
+
+	int notify = 1;
+	(void) write(
+	  state->ui_data.buffer_changed_pipe[PIPE_WRITE], &notify, sizeof(notify));
 }
 
 int
@@ -648,15 +724,20 @@ main() {
 		return EXIT_FAILURE;
 	}
 
-	struct state state = {.cond = PTHREAD_COND_INITIALIZER,
+	struct state state = {
+	  .cond = PTHREAD_COND_INITIALIZER,
 	  .mutex = PTHREAD_MUTEX_INITIALIZER,
-	  .ui_data = {.rooms_mutex = PTHREAD_MUTEX_INITIALIZER}};
+	  .ui_data = {.rooms_mutex = PTHREAD_MUTEX_INITIALIZER,
+					.buffer_changed_pipe = {-1, -1}}
+	};
 
 	if (!ERRLOG(
 		  matrix_global_init() == 0, "Failed to initialize matrix globals.\n")
+		&& !ERRLOG(pipe(state.ui_data.buffer_changed_pipe) == 0,
+		  "Failed to initialize pipe.\n")
 		&& !ERRLOG(
 		  cache_init(&state.cache) == 0, "Failed to initialize database.\n")
-		&& !ERRLOG(hm_init(&state) == 0, "")
+		&& !ERRLOG(hm_init(&state) == 0, "Unreachable.\n")
 		&& !ERRLOG(ui_init(&state) == 0, "Failed to initialize UI.\n")
 		&& !ERRLOG(state.matrix = matrix_alloc(MXID, HOMESERVER, &state),
 		  "Failed to initialize libmatrix.\n")
