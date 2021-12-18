@@ -1,3 +1,5 @@
+#ifndef CACHE_H
+#define CACHE_H
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "matrix.h"
@@ -94,3 +96,4 @@ struct room_info *
 cache_room_info(struct cache *cache, const char *room_id);
 void
 room_info_destroy(struct room_info *info);
+#endif /* !CACHE_H */

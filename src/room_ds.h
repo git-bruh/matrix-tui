@@ -1,6 +1,9 @@
+#ifndef ROOM_DS_H
+#define ROOM_DS_H
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "cache.h"
+#include "message_buffer.h"
 #include "stb_ds.h"
 
 #include <pthread.h>
@@ -49,6 +52,8 @@ struct timeline {
 
 struct room {
 	struct room_info *info;
+	/* Rendered message indices. */
+	struct message_buffer buffer;
 	/* .buf MUST have an initial capacity set with arrsetcap. Binary search is
 	 * used to find messages in the appropriate timeline. */
 	struct timeline timelines[TIMELINE_MAX];
@@ -77,3 +82,4 @@ struct room *
 room_alloc(struct room_info *info);
 void
 room_destroy(struct room *room);
+#endif /* !ROOM_DS_H */

@@ -2,6 +2,9 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "message_buffer.h"
 
+#include "room_ds.h"
+#include "stb_ds.h"
+
 #include <assert.h>
 
 struct buf_item {
@@ -9,6 +12,14 @@ struct buf_item {
 	size_t start; /* Index to begin in the message body. */
 	struct message *message;
 };
+
+void
+message_buffer_finish(struct message_buffer *buf) {
+	if (buf) {
+		arrfree(buf->buf);
+		memset(buf, 0, sizeof(*buf));
+	}
+}
 
 int
 message_buffer_insert(struct message_buffer *buf, struct widget_points *points,
@@ -39,6 +50,68 @@ message_buffer_insert(struct message_buffer *buf, struct widget_points *points,
 			x = start_x + width; /* Account for start character. */
 		}
 	}
+
+	return 0;
+}
+
+static int
+cmp(const void *key, const void *array_item) {
+	uint64_t i1 = *((const uint64_t *) key);
+	uint64_t i2 = ((const struct buf_item *) array_item)->message->index;
+
+	if (i1 > i2) {
+		return 1;
+	}
+
+	if (i1 < i2) {
+		return -1;
+	}
+
+	return 0; /* Equal. */
+}
+
+int
+message_buffer_redact(struct message_buffer *buf, uint64_t index) {
+	assert(buf);
+
+	size_t len = arrlenu(buf->buf);
+
+	struct buf_item *message
+	  = bsearch(&index, buf->buf, len, sizeof(*buf->buf), cmp);
+
+	if (!message) {
+		return -1;
+	}
+
+	size_t msg_index = (size_t) (message - buf->buf);
+	assert(msg_index < len);
+
+	/* Range of all the lines covered by this message. */
+	size_t start = msg_index;
+	size_t end = msg_index;
+
+	for (size_t i = msg_index; i > 0; i--) {
+		if (buf->buf[i - 1].message == message->message) {
+			start = i - 1;
+		} else {
+			break;
+		}
+	}
+
+	for (size_t i = msg_index; (i + 1) < len; i++) {
+		if (buf->buf[i + 1].message == message->message) {
+			end = i + 1;
+		} else {
+			break;
+		}
+	}
+
+	assert(end < len);
+	assert(end >= start);
+	assert(start <= msg_index);
+	assert(((end - start) + 1) <= len);
+
+	arrdeln(buf->buf, start, (end - start) + 1);
 
 	return 0;
 }

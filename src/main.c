@@ -1,8 +1,7 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
-
-#include "message_buffer.h"
 #include "queue.h"
+#include "room_ds.h"
 
 #include <assert.h>
 #include <langinfo.h>
@@ -35,16 +34,15 @@ struct state {
 	struct {
 		enum { WIDGET_INPUT = 0, WIDGET_TREE } active_widget;
 		enum { TAB_HOME = 0, TAB_CHANNEL } active_tab;
-		bool message_buffer_changed;
+		bool current_buffer_changed;
 		int buffer_changed_pipe[PIPE_MAX];
 		struct input input;
 		struct treeview treeview;
-		struct message_buffer buffer;
 		struct {
 			char *key;
 			struct room *value;
 		} * rooms;
-		char *current_room;
+		struct room *current_room;
 		pthread_mutex_t rooms_mutex;
 	} ui_data;
 };
@@ -115,15 +113,11 @@ redraw(struct state *state) {
 	treeview_redraw(&state->ui_data.treeview, &points);
 
 	pthread_mutex_lock(&state->ui_data.rooms_mutex);
-	struct room *room = NULL;
-
 	if (!state->ui_data.current_room && (shlenu(state->ui_data.rooms)) > 0) {
-		state->ui_data.current_room = state->ui_data.rooms[0].key;
+		state->ui_data.current_room = state->ui_data.rooms[0].value;
 	}
 
-	if (state->ui_data.current_room) {
-		room = shget(state->ui_data.rooms, state->ui_data.current_room);
-	}
+	struct room *room = state->ui_data.current_room;
 	pthread_mutex_unlock(&state->ui_data.rooms_mutex);
 
 	if (room) {
@@ -134,24 +128,22 @@ redraw(struct state *state) {
 		struct message **buf = room->timelines[TIMELINE_FORWARD].buf;
 		size_t len = room->timelines[TIMELINE_FORWARD].len;
 
-		if (state->ui_data.message_buffer_changed
-			|| (message_buffer_should_recalculate(
-			  &state->ui_data.buffer, &points))) {
-			message_buffer_zero(&state->ui_data.buffer);
+		if (state->ui_data.current_buffer_changed
+			|| (message_buffer_should_recalculate(&room->buffer, &points))) {
+			message_buffer_zero(&room->buffer);
 
 			for (size_t i = 0; i < len; i++) {
 				if (!buf[i]->redacted) {
-					message_buffer_insert(
-					  &state->ui_data.buffer, &points, buf[i]);
+					message_buffer_insert(&room->buffer, &points, buf[i]);
 				}
 			}
 
-			message_buffer_ensure_sane_scroll(&state->ui_data.buffer);
+			message_buffer_ensure_sane_scroll(&room->buffer);
 		}
 
-		pthread_mutex_unlock(&room->realloc_or_modify_mutex);
+		message_buffer_redraw(&room->buffer, &points);
 
-		message_buffer_redraw(&state->ui_data.buffer, &points);
+		pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 	}
 
 	tb_present();
@@ -161,7 +153,6 @@ static void
 cleanup(struct state *state) {
 	input_finish(&state->ui_data.input);
 	treeview_finish(&state->ui_data.treeview);
-	arrfree(state->ui_data.buffer.buf);
 	tb_shutdown();
 
 	state->done = true;
@@ -412,7 +403,7 @@ handle_message_buffer(struct state *state, struct tb_event *event) {
 	switch (event->key) {
 	case TB_KEY_MOUSE_WHEEL_UP:
 		if ((message_buffer_handle_event(
-			  &state->ui_data.buffer, MESSAGE_BUFFER_UP))
+			  &state->ui_data.current_room->buffer, MESSAGE_BUFFER_UP))
 			== WIDGET_NOOP) {
 			/* TODO paginate(); */
 		} else {
@@ -421,7 +412,7 @@ handle_message_buffer(struct state *state, struct tb_event *event) {
 		break;
 	case TB_KEY_MOUSE_WHEEL_DOWN:
 		return message_buffer_handle_event(
-		  &state->ui_data.buffer, MESSAGE_BUFFER_DOWN);
+		  &state->ui_data.current_room->buffer, MESSAGE_BUFFER_DOWN);
 	default:
 		break;
 	}
@@ -462,9 +453,9 @@ ui_loop(struct state *state) {
 			if ((read(state->ui_data.buffer_changed_pipe[PIPE_READ], &changes,
 				  sizeof(changes)))
 				== sizeof(changes)) {
-				state->ui_data.message_buffer_changed = true;
+				state->ui_data.current_buffer_changed = true;
 				redraw(state);
-				state->ui_data.message_buffer_changed = false;
+				state->ui_data.current_buffer_changed = false;
 			}
 		}
 
@@ -573,6 +564,7 @@ redact(struct room *room, uint64_t index) {
 	to_redact->redacted = true;
 	free(to_redact->body);
 	to_redact->body = NULL;
+	message_buffer_redact(&room->buffer, index);
 	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 
 	return 0;

@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "room_ds.h"
 
+#include "message_buffer.h"
 #include "stb_ds.h"
 
 #include <assert.h>
@@ -168,6 +169,7 @@ room_destroy(struct room *room) {
 			timeline_finish(&room->timelines[i]);
 		}
 
+		message_buffer_finish(&room->buffer);
 		room_info_destroy(room->info);
 		free(room);
 	}
