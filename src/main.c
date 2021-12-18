@@ -34,7 +34,6 @@ struct state {
 	struct {
 		enum { WIDGET_INPUT = 0, WIDGET_TREE } active_widget;
 		enum { TAB_HOME = 0, TAB_CHANNEL } active_tab;
-		bool current_buffer_changed;
 		int buffer_changed_pipe[PIPE_MAX];
 		struct input input;
 		struct treeview treeview;
@@ -128,8 +127,7 @@ redraw(struct state *state) {
 		struct message **buf = room->timelines[TIMELINE_FORWARD].buf;
 		size_t len = room->timelines[TIMELINE_FORWARD].len;
 
-		if (state->ui_data.current_buffer_changed
-			|| (message_buffer_should_recalculate(&room->buffer, &points))) {
+		if ((message_buffer_should_recalculate(&room->buffer, &points))) {
 			message_buffer_zero(&room->buffer);
 
 			for (size_t i = 0; i < len; i++) {
@@ -448,14 +446,13 @@ ui_loop(struct state *state) {
 		if (fds_with_data > 0 && (fds[FD_READ].revents & POLLIN)) {
 			fds_with_data--;
 
-			int changes = 0;
+			uintptr_t room = 0;
 
-			if ((read(state->ui_data.buffer_changed_pipe[PIPE_READ], &changes,
-				  sizeof(changes)))
-				== sizeof(changes)) {
-				state->ui_data.current_buffer_changed = true;
+			if ((read(state->ui_data.buffer_changed_pipe[PIPE_READ], &room,
+				  sizeof(room)))
+				  == sizeof(room)
+				&& room == ((uintptr_t) state->ui_data.current_room)) {
 				redraw(state);
-				state->ui_data.current_buffer_changed = false;
 			}
 		}
 
@@ -552,6 +549,8 @@ login(struct state *state) {
 
 static int
 redact(struct room *room, uint64_t index) {
+	assert(room);
+
 	struct room_index out_index = {0};
 
 	if ((room_bsearch(room, index, &out_index)) == -1) {
@@ -685,17 +684,21 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 				pthread_mutex_lock(&state->ui_data.rooms_mutex);
 				shput(state->ui_data.rooms, sync_room.id, room);
 				pthread_mutex_unlock(&state->ui_data.rooms_mutex);
+
+				uintptr_t ptr = (uintptr_t) NULL;
+				(void) write(state->ui_data.buffer_changed_pipe[PIPE_WRITE],
+				  &ptr, sizeof(ptr));
 			} else {
 				room_destroy(room);
 			}
+		} else {
+			uintptr_t ptr = (uintptr_t) room;
+			(void) write(state->ui_data.buffer_changed_pipe[PIPE_WRITE], &ptr,
+			  sizeof(ptr));
 		}
 	}
 
 	cache_save_txn_finish(&txn);
-
-	int notify = 1;
-	(void) write(
-	  state->ui_data.buffer_changed_pipe[PIPE_WRITE], &notify, sizeof(notify));
 }
 
 int
