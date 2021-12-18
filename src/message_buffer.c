@@ -71,8 +71,9 @@ message_buffer_should_recalculate(
 
 	struct widget_points *cmp = &buf->last_points;
 
-	return !(cmp->x1 == points->x1 && cmp->x2 == points->x2
-			 && cmp->y1 == points->y1 && cmp->y2 == points->y2);
+	/* No need to compare y axis since that doesn't impact how messages should
+	 * be rendered, only the start and endpoint of the whole buffer. */
+	return !(cmp->x1 == points->x1 && cmp->x2 == points->x2);
 }
 
 enum widget_error
