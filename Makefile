@@ -31,6 +31,7 @@ OBJ = \
 	src/queue.o \
 	src/cache.o \
 	src/room_ds.o \
+	src/login_form.o \
 	src/message_buffer.o \
 	src/main.o \
 	third_party/libmatrix/api.o \

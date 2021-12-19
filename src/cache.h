@@ -8,11 +8,19 @@
 #include <stdbool.h>
 
 enum db {
-	/* Access token, prev/next batch. */
-	DB_SYNC = 0,
+	/* Access token, prev/next batch, MXID, Homeserver. */
+	DB_AUTH = 0,
 	/* Room info. */
 	DB_ROOMS,
 	DB_MAX,
+};
+
+enum auth_key {
+	DB_KEY_ACCESS_TOKEN = 0,
+	DB_KEY_NEXT_BATCH,
+	DB_KEY_MXID,
+	DB_KEY_HOMESERVER,
+	DB_KEY_MAX
 };
 
 enum room_db {
@@ -68,17 +76,13 @@ cache_init(struct cache *cache);
 void
 cache_finish(struct cache *cache);
 char *
-cache_get_token(struct cache *cache);
+cache_auth_get(struct cache *cache, enum auth_key key);
 int
-cache_set_token(struct cache *cache, char *access_token);
-char *
-cache_next_batch(struct cache *cache);
+cache_auth_set(struct cache *cache, enum auth_key key, char *auth);
 int
 cache_save_txn_init(struct cache *cache, struct cache_save_txn *txn);
 void
 cache_save_txn_finish(struct cache_save_txn *txn);
-int
-cache_save_next_batch(struct cache_save_txn *txn, char *next_batch);
 int
 cache_set_room_dbs(struct cache_save_txn *txn, struct matrix_room *room);
 int

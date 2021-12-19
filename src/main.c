@@ -1,5 +1,6 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
+#include "login_form.h"
 #include "queue.h"
 #include "room_ds.h"
 
@@ -7,21 +8,12 @@
 #include <langinfo.h>
 #include <locale.h>
 
-#if 1
-#define MXID "@testuser:localhost"
-#define HOMESERVER "http://127.0.0.1:8008"
-#define PASS "0000000 072142 063162 026563 067543 072156 067562 005154 072542"
-#else
-#define MXID ""
-#define HOMESERVER ""
-#define PASS ""
-#endif
-
 #define ERRLOG(cond, ...)                                                      \
 	(!(cond) ? (fprintf(stderr, __VA_ARGS__), true) : false)
 
 enum { THREAD_SYNC = 0, THREAD_QUEUE, THREAD_MAX };
 enum { PIPE_READ = 0, PIPE_WRITE, PIPE_MAX };
+enum { FD_TTY = 0, FD_RESIZE, FD_PIPE, FD_MAX };
 
 struct state {
 	_Atomic bool done;
@@ -32,24 +24,33 @@ struct state {
 	struct cache cache;
 	struct queue queue;
 	struct {
-		enum { WIDGET_INPUT = 0, WIDGET_TREE } active_widget;
-		enum { TAB_HOME = 0, TAB_CHANNEL } active_tab;
-		int buffer_changed_pipe[PIPE_MAX];
+		enum { WIDGET_INPUT = 0, WIDGET_TREE, WIDGET_FORM } active_widget;
+		enum { TAB_HOME = 0, TAB_LOGIN, TAB_CHANNEL } active_tab;
+		int thread_comm_pipe[PIPE_MAX];
 		struct input input;
 		struct treeview treeview;
+		struct form form;
 		struct {
 			char *key;
 			struct room *value;
 		} * rooms;
+		const char *error;
 		struct room *current_room;
 		pthread_mutex_t rooms_mutex;
 	} ui_data;
 };
 
 struct queue_item {
-	enum queue_item_type { QUEUE_ITEM_COMMAND = 0, QUEUE_ITEM_MAX } type;
+	enum queue_item_type {
+		QUEUE_ITEM_COMMAND = 0,
+		QUEUE_ITEM_LOGIN,
+		QUEUE_ITEM_MAX
+	} type;
 	void *data;
 };
+
+static void
+sync_cb(struct matrix *matrix, struct matrix_sync_response *response);
 
 void
 handle_command(struct state *state, void *data) {
@@ -61,11 +62,50 @@ handle_command(struct state *state, void *data) {
 	free(event_id);
 }
 
+void
+handle_login(struct state *state, void *data) {
+	assert(state);
+	assert(data);
+
+	char *password = data;
+	char *access_token = NULL;
+
+	enum matrix_code code
+	  = matrix_login(state->matrix, password, NULL, NULL, &access_token);
+
+	if (code == MATRIX_SUCCESS) {
+		assert(access_token);
+
+		char *mxid = NULL;
+		char *homeserver = NULL;
+
+		matrix_get_mxid_homeserver(state->matrix, &mxid, &homeserver);
+
+		assert(mxid);
+		assert(homeserver);
+
+		int ret = -1;
+
+		ret = cache_auth_set(&state->cache, DB_KEY_ACCESS_TOKEN, access_token);
+		assert(ret == 0);
+		ret = cache_auth_set(&state->cache, DB_KEY_MXID, mxid);
+		assert(ret == 0);
+		ret = cache_auth_set(&state->cache, DB_KEY_HOMESERVER, homeserver);
+		assert(ret == 0);
+	}
+
+	(void) write(
+	  state->ui_data.thread_comm_pipe[PIPE_WRITE], &code, sizeof(code));
+
+	free(access_token);
+}
+
 static struct {
 	void (*cb)(struct state *, void *);
 	void (*free)(void *);
 } const queue_callbacks[QUEUE_ITEM_MAX] = {
   [QUEUE_ITEM_COMMAND] = {handle_command, free},
+  [QUEUE_ITEM_LOGIN] = {	handle_login, free},
 };
 
 static void
@@ -100,8 +140,53 @@ redraw(struct state *state) {
 	int height = tb_height();
 	int width = tb_width();
 
-	enum { bar_height = 1, input_height = 5 };
+	enum {
+		bar_height = 1,
+		input_height = 5,
+		form_width = 68,
+		form_height = (FIELD_MAX * COLS_PER_FIELD) + FIELD_BUTTON_MAX,
+		form_art_gap = 2,
+	};
+
 	struct widget_points points = {0};
+
+	if (state->ui_data.active_tab == TAB_LOGIN) {
+		static const char *art[]
+		  = {"███╗███╗   ███╗ █████╗ ████████╗██████╗ ██╗██╗  ██╗███╗",
+			"██╔╝████╗ ████║██╔══██╗╚══██╔══╝██╔══██╗██║╚██╗██╔╝╚██║",
+			"██║ ██╔████╔██║███████║   ██║   ██████╔╝██║ ╚███╔╝  ██║",
+			"██║ ██║╚██╔╝██║██╔══██║   ██║   ██╔══██╗██║ ██╔██╗  ██║",
+			"███╗██║ ╚═╝ ██║██║  ██║   ██║   ██║  ██║██║██╔╝ ██╗███║",
+			"╚══╝╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝╚══╝"};
+
+		assert(state->ui_data.active_widget == WIDGET_FORM);
+
+		int padding_x = widget_pad_center(form_width, width);
+		int padding_y = widget_pad_center(form_height, height - bar_height);
+
+		int padding_art = widget_pad_center(widget_str_width(*art), width);
+		int art_y = (bar_height + padding_y) - form_art_gap;
+
+		for (size_t i = (sizeof(art) / sizeof(*art));
+			 i > 0 && art_y >= bar_height; i--, art_y--) {
+			widget_print_str(
+			  padding_art, art_y, width, TB_DEFAULT, TB_DEFAULT, art[i - 1]);
+		}
+
+		widget_points_set(&points, padding_x, width - padding_x,
+		  bar_height + padding_y, height - padding_y);
+		form_redraw(&state->ui_data.form, &points);
+
+		if (state->ui_data.error) {
+			widget_print_str(
+			  widget_pad_center(widget_str_width(state->ui_data.error), width),
+			  (height - padding_y) + 1, width, TB_RED, TB_DEFAULT,
+			  state->ui_data.error);
+		}
+
+		tb_present();
+		return;
+	}
 
 	widget_points_set(&points, 0, width, height - input_height, height);
 
@@ -154,9 +239,11 @@ cleanup(struct state *state) {
 	tb_shutdown();
 
 	state->done = true;
+	/* Cancel here as we might be logging in, so the syncer thread would
+	 * not have started. */
+	matrix_cancel(state->matrix);
 
 	if (state->threads[THREAD_SYNC]) {
-		matrix_cancel(state->matrix);
 		pthread_join(state->threads[THREAD_SYNC], NULL);
 	}
 
@@ -166,8 +253,8 @@ cleanup(struct state *state) {
 	}
 
 	for (size_t i = 0; i < PIPE_MAX; i++) {
-		if (state->ui_data.buffer_changed_pipe[i] != -1) {
-			close(state->ui_data.buffer_changed_pipe[i]);
+		if (state->ui_data.thread_comm_pipe[i] != -1) {
+			close(state->ui_data.thread_comm_pipe[i]);
 		}
 	}
 
@@ -199,9 +286,6 @@ tree_string_cb(void *data) {
 	return (char *) data;
 }
 
-static void
-sync_cb(struct matrix *matrix, struct matrix_sync_response *response);
-
 static void *
 syncer(void *arg) {
 	struct state *state = arg;
@@ -214,7 +298,7 @@ syncer(void *arg) {
 	  .backoff_reset_cb = NULL, /* TODO */
 	};
 
-	char *next_batch = cache_next_batch(&state->cache);
+	char *next_batch = cache_auth_get(&state->cache, DB_KEY_NEXT_BATCH);
 
 	switch ((matrix_sync_forever(
 	  state->matrix, next_batch, sync_timeout, callbacks))) {
@@ -277,26 +361,15 @@ queue_listener(void *arg) {
 }
 
 static int
-threads_init(struct state *state) {
-	if ((pthread_create(&state->threads[THREAD_SYNC], NULL, syncer, state)) == 0
-		&& (pthread_create(
-			 &state->threads[THREAD_QUEUE], NULL, queue_listener, state))
-			 == 0) {
-		return 0;
-	}
-
-	return -1;
-}
-
-static int
 ui_init(struct state *state) {
 	static char name[] = "Root";
 
 	struct treeview_node *root
 	  = treeview_node_alloc(name, tree_string_cb, NULL);
 
-	if ((input_init(&state->ui_data.input)) == -1
-		|| (treeview_init(&state->ui_data.treeview, root)) == -1) {
+	if ((input_init(&state->ui_data.input, TB_DEFAULT, false)) == -1
+		|| (treeview_init(&state->ui_data.treeview, root)) == -1
+		|| (form_init(&state->ui_data.form, TB_BLUE)) == -1) {
 		treeview_node_destroy(root);
 		return -1;
 	}
@@ -418,35 +491,44 @@ handle_message_buffer(struct state *state, struct tb_event *event) {
 	return WIDGET_NOOP;
 }
 
-static void
-ui_loop(struct state *state) {
-	tb_set_input_mode(TB_INPUT_ALT | TB_INPUT_MOUSE);
-	tb_set_output_mode(TB_OUTPUT_256);
-
-	redraw(state);
-
-	state->ui_data.active_widget = WIDGET_INPUT;
-
-	struct tb_event event = {0};
-
-	enum { FD_TTY = 0, FD_RESIZE, FD_PIPE, FD_MAX };
+static int
+get_fds(struct state *state, struct pollfd fds[FD_MAX]) {
+	assert(state);
+	assert(fds);
 
 	int ttyfd = -1;
 	int resizefd = -1;
 
 	if ((tb_get_fds(&ttyfd, &resizefd)) != TB_OK) {
 		assert(0);
+		return -1;
 	}
 
 	assert(ttyfd != -1);
 	assert(resizefd != -1);
 
-	struct pollfd fds[FD_MAX] = {
-	  [FD_TTY] = {										  .fd = ttyfd, .events = POLLIN},
-	  [FD_RESIZE] = {									 .fd = resizefd, .events = POLLIN},
-	  [FD_PIPE]
-	  = {.fd = state->ui_data.buffer_changed_pipe[PIPE_READ], .events = POLLIN},
-	};
+	fds[FD_TTY] = (struct pollfd) {.fd = ttyfd, .events = POLLIN};
+	fds[FD_RESIZE] = (struct pollfd) {.fd = resizefd, .events = POLLIN};
+	fds[FD_PIPE] = (struct pollfd) {
+	  .fd = state->ui_data.thread_comm_pipe[PIPE_READ], .events = POLLIN};
+
+	return 0;
+}
+
+static void
+ui_loop(struct state *state) {
+	tb_set_input_mode(TB_INPUT_ALT | TB_INPUT_MOUSE);
+	tb_set_output_mode(TB_OUTPUT_256);
+
+	state->ui_data.active_tab = TAB_HOME;
+	state->ui_data.active_widget = WIDGET_INPUT;
+
+	redraw(state);
+
+	struct tb_event event = {0};
+
+	struct pollfd fds[FD_MAX] = {0};
+	get_fds(state, fds);
 
 	for (;;) {
 		int fds_with_data = poll(fds, FD_MAX, -1);
@@ -456,7 +538,7 @@ ui_loop(struct state *state) {
 
 			uintptr_t room = 0;
 
-			if ((read(state->ui_data.buffer_changed_pipe[PIPE_READ], &room,
+			if ((read(state->ui_data.thread_comm_pipe[PIPE_READ], &room,
 				  sizeof(room)))
 				  == sizeof(room)
 				&& room == ((uintptr_t) state->ui_data.current_room)) {
@@ -504,7 +586,7 @@ ui_loop(struct state *state) {
 	}
 }
 
-static void
+static int
 populate_from_cache(struct state *state) {
 	assert(state);
 
@@ -533,25 +615,196 @@ populate_from_cache(struct state *state) {
 
 		cache_iterator_finish(&iterator);
 	}
+
+	return 0;
+}
+
+static int
+login_with_info(struct state *state) {
+	assert(state);
+
+	int ret = -1;
+
+	char *username = input_buf(&state->ui_data.form.fields[FIELD_MXID]);
+	char *password = input_buf(&state->ui_data.form.fields[FIELD_PASSWORD]);
+	char *homeserver = input_buf(&state->ui_data.form.fields[FIELD_HOMESERVER]);
+
+	bool password_sent_to_queue = false;
+
+	if (username && password && homeserver) {
+		if (state->matrix) {
+			if ((matrix_set_mxid_homeserver(
+				  state->matrix, username, homeserver))
+				== 0) {
+				ret = 0;
+			}
+		} else {
+			ret = (state->matrix = matrix_alloc(username, homeserver, state))
+				  ? 0
+				  : -1;
+		}
+
+		if (ret == 0) {
+			if (lock_and_push(
+				  state, queue_item_alloc(QUEUE_ITEM_LOGIN, password))
+				== 0) {
+				password_sent_to_queue = true;
+				ret = 0;
+			} else {
+				password = NULL; /* Freed */
+			}
+		}
+	}
+
+	free(username);
+	free(homeserver);
+
+	if (!password_sent_to_queue) {
+		free(password);
+	}
+
+	return ret;
 }
 
 static int
 login(struct state *state) {
-	char *access_token = cache_get_token(&state->cache);
+	assert(state);
+
+	char *access_token = cache_auth_get(&state->cache, DB_KEY_ACCESS_TOKEN);
+	char *mxid = cache_auth_get(&state->cache, DB_KEY_MXID);
+	char *homeserver = cache_auth_get(&state->cache, DB_KEY_HOMESERVER);
+
 	int ret = -1;
 
-	if (access_token) {
-		if ((matrix_login_with_token(state->matrix, access_token))
-			== MATRIX_SUCCESS) {
-			ret = 0;
-		}
-	} else if ((matrix_login(state->matrix, PASS, NULL, NULL, &access_token))
-				 == MATRIX_SUCCESS
-			   && (cache_set_token(&state->cache, access_token)) == 0) {
+	if (access_token && mxid && homeserver
+		&& (state->matrix = matrix_alloc(mxid, homeserver, state))
+		&& (matrix_login_with_token(state->matrix, access_token))
+			 == MATRIX_SUCCESS) {
 		ret = 0;
 	}
 
 	free(access_token);
+	free(mxid);
+	free(homeserver);
+
+	if (ret == 0) {
+		return ret;
+	}
+
+	state->ui_data.active_tab = TAB_LOGIN;
+	state->ui_data.active_widget = WIDGET_FORM;
+
+	redraw(state);
+
+	struct tb_event event = {0};
+
+	struct pollfd fds[FD_MAX] = {0};
+	get_fds(state, fds);
+
+	bool logging_in = false;
+
+	for (;;) {
+		int fds_with_data = poll(fds, FD_MAX, -1);
+
+		if (fds_with_data > 0 && (fds[FD_PIPE].revents & POLLIN)) {
+			fds_with_data--;
+
+			enum matrix_code code = MATRIX_SUCCESS;
+
+			if ((read(state->ui_data.thread_comm_pipe[PIPE_READ], &code,
+				  sizeof(code)))
+				== sizeof(code)) {
+				logging_in = false;
+
+				if (code == MATRIX_SUCCESS) {
+					state->ui_data.error = NULL;
+					redraw(state);
+
+					ret = 0;
+					break;
+				} else {
+					state->ui_data.error = matrix_strerror(code);
+					redraw(state);
+				}
+			}
+		}
+
+		if (fds_with_data <= 0 || (tb_poll_event(&event)) != TB_OK) {
+			continue;
+		}
+
+		if (event.type == TB_EVENT_RESIZE) {
+			redraw(state);
+			continue;
+		}
+
+		if (event.key == TB_KEY_CTRL_C) {
+			ret = -1; /* Transfer cancelled and thread killed in cleanup() */
+			break;
+		}
+
+		if (logging_in) {
+			continue;
+		}
+
+		enum widget_error should_redraw = WIDGET_NOOP;
+
+		switch (event.key) {
+		case TB_KEY_ARROW_UP:
+			should_redraw = form_handle_event(&state->ui_data.form, FORM_UP);
+			break;
+		case TB_KEY_ARROW_DOWN:
+			should_redraw = form_handle_event(&state->ui_data.form, FORM_DOWN);
+			break;
+		case TB_KEY_ENTER:
+			if (!state->ui_data.form.button_is_selected) {
+				break;
+			}
+
+			if ((login_with_info(state)) == 0) {
+				state->ui_data.error = NULL;
+				logging_in = true;
+			} else {
+				state->ui_data.error = "Invalid Information";
+			}
+
+			should_redraw = WIDGET_REDRAW;
+			break;
+		default:
+			{
+				struct input *input = form_current_input(&state->ui_data.form);
+
+				if (!input) {
+					break;
+				}
+
+				if (!event.key && event.ch) {
+					should_redraw
+					  = input_handle_event(input, INPUT_ADD, event.ch);
+				} else {
+					switch (event.key) {
+					case TB_KEY_BACKSPACE:
+					case TB_KEY_BACKSPACE2:
+						should_redraw = input_handle_event(input, INPUT_DELETE);
+						break;
+					case TB_KEY_ARROW_RIGHT:
+						should_redraw = input_handle_event(input, INPUT_RIGHT);
+						break;
+					case TB_KEY_ARROW_LEFT:
+						should_redraw = input_handle_event(input, INPUT_LEFT);
+						break;
+					}
+				}
+			}
+			break;
+		}
+
+		if (should_redraw == WIDGET_REDRAW) {
+			redraw(state);
+		}
+	}
+
+	form_finish(&state->ui_data.form);
 	return ret;
 }
 
@@ -586,11 +839,11 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 	struct matrix_room sync_room;
 	struct cache_save_txn txn = {0};
 
-	if ((cache_save_txn_init(&state->cache, &txn)) != 0) {
+	if ((cache_auth_set(&state->cache, DB_KEY_NEXT_BATCH, response->next_batch))
+		  != 0
+		|| (cache_save_txn_init(&state->cache, &txn)) != 0) {
 		return;
 	}
-
-	cache_save_next_batch(&txn, response->next_batch);
 
 	while ((matrix_sync_room_next(response, &sync_room)) == 0) {
 		switch (sync_room.type) {
@@ -694,15 +947,15 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 				pthread_mutex_unlock(&state->ui_data.rooms_mutex);
 
 				uintptr_t ptr = (uintptr_t) NULL;
-				(void) write(state->ui_data.buffer_changed_pipe[PIPE_WRITE],
-				  &ptr, sizeof(ptr));
+				(void) write(state->ui_data.thread_comm_pipe[PIPE_WRITE], &ptr,
+				  sizeof(ptr));
 			} else {
 				room_destroy(room);
 			}
 		} else {
 			uintptr_t ptr = (uintptr_t) room;
-			(void) write(state->ui_data.buffer_changed_pipe[PIPE_WRITE], &ptr,
-			  sizeof(ptr));
+			(void) write(
+			  state->ui_data.thread_comm_pipe[PIPE_WRITE], &ptr, sizeof(ptr));
 		}
 	}
 
@@ -731,23 +984,26 @@ main() {
 	  .cond = PTHREAD_COND_INITIALIZER,
 	  .mutex = PTHREAD_MUTEX_INITIALIZER,
 	  .ui_data = {.rooms_mutex = PTHREAD_MUTEX_INITIALIZER,
-					.buffer_changed_pipe = {-1, -1}}
-	};
+					.thread_comm_pipe = {-1, -1}}
+	 };
 
 	if (!ERRLOG(
 		  matrix_global_init() == 0, "Failed to initialize matrix globals.\n")
-		&& !ERRLOG(pipe(state.ui_data.buffer_changed_pipe) == 0,
+		&& !ERRLOG(pipe(state.ui_data.thread_comm_pipe) == 0,
 		  "Failed to initialize pipe.\n")
 		&& !ERRLOG(
 		  cache_init(&state.cache) == 0, "Failed to initialize database.\n")
-		&& !ERRLOG(hm_init(&state) == 0, "Unreachable.\n")
 		&& !ERRLOG(ui_init(&state) == 0, "Failed to initialize UI.\n")
-		&& !ERRLOG(state.matrix = matrix_alloc(MXID, HOMESERVER, &state),
-		  "Failed to initialize libmatrix.\n")
-		&& !ERRLOG(login(&state) == 0, "Failed to login.\n")
 		&& !ERRLOG(tb_init() == TB_OK, "Failed to initialize termbox.\n")
-		&& !ERRLOG(
-		  threads_init(&state) == 0, "Failed to initialize threads.\n")) {
+		&& !ERRLOG(pthread_create(
+					 &state.threads[THREAD_QUEUE], NULL, queue_listener, &state)
+					 == 0,
+		  "Failed to initialize queue thread.\n")
+		&& (login(&state)) == 0
+		&& hm_init(&state) == 0
+		/* TODO die and log function */
+		&& (pthread_create(&state.threads[THREAD_SYNC], NULL, syncer, &state))
+			 == 0) {
 		ui_loop(&state); /* Blocks forever. */
 		cleanup(&state);
 

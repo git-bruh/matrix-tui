@@ -14,16 +14,16 @@
 
 #define STREQ(s1, s2) ((strcmp(s1, s2)) == 0)
 
-enum { DB_KEY_ACCESS_TOKEN = 0, DB_KEY_NEXT_BATCH, DB_KEY_MAX };
-
 static const char *const db_names[DB_MAX] = {
-  [DB_SYNC] = "sync_state",
+  [DB_AUTH] = "auth",
   [DB_ROOMS] = "rooms",
 };
 
 static const char *const db_keys[DB_KEY_MAX] = {
   [DB_KEY_ACCESS_TOKEN] = "access_token",
   [DB_KEY_NEXT_BATCH] = "next_batch",
+  [DB_KEY_MXID] = "mxid",
+  [DB_KEY_HOMESERVER] = "homeserver",
 };
 
 static const char *const room_db_names[ROOM_DB_MAX] = {
@@ -113,6 +113,19 @@ get_str(MDB_txn *txn, MDB_dbi dbi, char *key, MDB_val *data) {
 			 == MDB_SUCCESS)
 		   ? 0
 		   : -1;
+}
+
+static char *
+get_str_and_dup(MDB_txn *txn, MDB_dbi dbi, char *key) {
+	if (txn && key) {
+		MDB_val data = {0};
+
+		if ((get_str(txn, dbi, key, &data)) == 0) {
+			return strndup(data.mv_data, data.mv_size);
+		}
+	}
+
+	return NULL;
 }
 
 static int
@@ -262,42 +275,37 @@ cache_finish(struct cache *cache) {
 }
 
 char *
-cache_get_token(struct cache *cache) {
-	if (!cache) {
-		return NULL;
-	}
+cache_auth_get(struct cache *cache, enum auth_key key) {
+	assert(cache);
 
 	MDB_txn *txn = get_txn(cache, 0);
-	MDB_val data = {0};
 
 	char *ret = NULL;
 
-	if (txn
-		&& (get_str(txn, cache->dbs[DB_SYNC],
-			 noconst(db_keys[DB_KEY_ACCESS_TOKEN]), &data))
-			 == 0) {
-		ret = strndup(data.mv_data, data.mv_size);
+	if (txn) {
+		ret = get_str_and_dup(txn, cache->dbs[DB_AUTH], noconst(db_keys[key]));
 	}
 
 	mdb_txn_commit(txn);
+
 	return ret;
 }
 
 int
-cache_set_token(struct cache *cache, char *access_token) {
+cache_auth_set(struct cache *cache, enum auth_key key, char *auth) {
+	assert(cache);
+	assert(auth);
+
+	MDB_txn *txn = get_txn(cache, 0);
+
 	int ret = -1;
 
-	if (!cache || !access_token) {
-		return ret;
-	}
-
-	MDB_txn *txn = NULL;
-
-	if ((txn = get_txn(cache, 0))
-		&& (put_str(txn, cache->dbs[DB_SYNC],
-			 noconst(db_keys[DB_KEY_ACCESS_TOKEN]), access_token, 0))
-			 == 0) {
-		ret = 0;
+	if (txn) {
+		ret
+		  = ((put_str(txn, cache->dbs[DB_AUTH], noconst(db_keys[key]), auth, 0))
+			  == 0)
+			? 0
+			: -1;
 	}
 
 	mdb_txn_commit(txn);
@@ -463,27 +471,6 @@ cache_rooms_iterator(
 	  cache, iterator, cache->dbs[DB_ROOMS], MDB_RDONLY, cache_rooms_next, id);
 }
 
-char *
-cache_next_batch(struct cache *cache) {
-	MDB_txn *txn = NULL;
-
-	if (cache && (txn = get_txn(cache, MDB_RDONLY))) {
-		MDB_val value = {0};
-
-		if ((get_str(txn, cache->dbs[DB_SYNC],
-			  noconst(db_keys[DB_KEY_NEXT_BATCH]), &value))
-			== 0) {
-			mdb_txn_commit(txn);
-
-			return strndup(value.mv_data, value.mv_size);
-		}
-
-		mdb_txn_commit(txn);
-	}
-
-	return NULL;
-}
-
 int
 cache_save_txn_init(struct cache *cache, struct cache_save_txn *txn) {
 	if (!cache || !cache->env || !txn) {
@@ -505,19 +492,6 @@ cache_save_txn_finish(struct cache_save_txn *txn) {
 	if (txn) {
 		mdb_txn_commit(txn->txn);
 	}
-}
-
-int
-cache_save_next_batch(struct cache_save_txn *txn, char *next_batch) {
-	if (!txn) {
-		return -1;
-	}
-
-	return (put_str(txn->txn, txn->cache->dbs[DB_SYNC],
-			 noconst(db_keys[DB_KEY_NEXT_BATCH]), next_batch, 0))
-			== 0
-		   ? 0
-		   : -1;
 }
 
 int
