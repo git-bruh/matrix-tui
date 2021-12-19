@@ -429,21 +429,29 @@ ui_loop(struct state *state) {
 
 	struct tb_event event = {0};
 
-	enum { FD_READ = TB_FD_MAX, FD_MAX = TB_FD_MAX + 1 };
+	enum { FD_TTY = 0, FD_RESIZE, FD_PIPE, FD_MAX };
 
-	struct pollfd fds[FD_MAX] = {
-	  [FD_READ]
-	  = {.fd = state->ui_data.buffer_changed_pipe[PIPE_READ], .events = POLLIN},
-	};
+	int ttyfd = -1;
+	int resizefd = -1;
 
-	if ((tb_pollfds(fds)) != TB_OK) {
+	if ((tb_get_fds(&ttyfd, &resizefd)) != TB_OK) {
 		assert(0);
 	}
+
+	assert(ttyfd != -1);
+	assert(resizefd != -1);
+
+	struct pollfd fds[FD_MAX] = {
+	  [FD_TTY] = {										  .fd = ttyfd, .events = POLLIN},
+	  [FD_RESIZE] = {									 .fd = resizefd, .events = POLLIN},
+	  [FD_PIPE]
+	  = {.fd = state->ui_data.buffer_changed_pipe[PIPE_READ], .events = POLLIN},
+	};
 
 	for (;;) {
 		int fds_with_data = poll(fds, FD_MAX, -1);
 
-		if (fds_with_data > 0 && (fds[FD_READ].revents & POLLIN)) {
+		if (fds_with_data > 0 && (fds[FD_PIPE].revents & POLLIN)) {
 			fds_with_data--;
 
 			uintptr_t room = 0;
@@ -460,7 +468,7 @@ ui_loop(struct state *state) {
 			continue;
 		}
 
-		if ((tb_event_from_fds(&event, fds)) != TB_OK) {
+		if ((tb_poll_event(&event)) != TB_OK) {
 			continue;
 		}
 
