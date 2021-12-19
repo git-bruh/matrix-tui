@@ -11,7 +11,7 @@
 static int
 cmp_forward(const void *key, const void *array_item) {
 	uint64_t i1 = *((const uint64_t *) key);
-	uint64_t i2 = (*((const struct message **) array_item))->index;
+	uint64_t i2 = (*((struct message *const *) array_item))->index;
 
 	if (i1 > i2) {
 		return 1;
@@ -28,7 +28,7 @@ cmp_forward(const void *key, const void *array_item) {
 static int
 cmp_backward(const void *key, const void *array_item) {
 	uint64_t i1 = *((const uint64_t *) key);
-	uint64_t i2 = (*((const struct message **) array_item))->index;
+	uint64_t i2 = (*((struct message *const *) array_item))->index;
 
 	if (i1 > i2) {
 		return -1;
