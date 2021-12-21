@@ -49,10 +49,39 @@ struct queue_item {
 	void *data;
 };
 
+enum read_or_write { READ = 0, WRITE };
+
+static ssize_t
+safe_read_or_write(
+  int fildes, void *buf, size_t nbyte, enum read_or_write what) {
+	ssize_t ret = 0;
+
+	while (nbyte > 0) {
+		do {
+			ret = (what == READ) ? (read(fildes, buf, nbyte))
+								 : (write(fildes, buf, nbyte));
+		} while ((ret < 0) && (errno == EINTR || errno == EAGAIN));
+
+		if (ret < 0) {
+			return ret;
+		}
+
+		nbyte -= (size_t) ret;
+		/* Increment buffer */
+		buf = &((unsigned char *) buf)[ret];
+	}
+
+	return 0;
+}
+
+/* Immune to EINTR. */
+#define read(fildes, buf, byte) safe_read_or_write(fildes, buf, byte, READ)
+#define write(fildes, buf, nbyte) safe_read_or_write(fildes, buf, nbyte, WRITE)
+
 static void
 sync_cb(struct matrix *matrix, struct matrix_sync_response *response);
 
-void
+static void
 handle_command(struct state *state, void *data) {
 	char *buf = data;
 	assert(buf);
@@ -62,7 +91,7 @@ handle_command(struct state *state, void *data) {
 	free(event_id);
 }
 
-void
+static void
 handle_login(struct state *state, void *data) {
 	assert(state);
 	assert(data);
@@ -94,8 +123,7 @@ handle_login(struct state *state, void *data) {
 		assert(ret == 0);
 	}
 
-	(void) write(
-	  state->ui_data.thread_comm_pipe[PIPE_WRITE], &code, sizeof(code));
+	write(state->ui_data.thread_comm_pipe[PIPE_WRITE], &code, sizeof(code));
 
 	free(access_token);
 }
@@ -539,7 +567,7 @@ ui_loop(struct state *state) {
 
 			if ((read(state->ui_data.thread_comm_pipe[PIPE_READ], &room,
 				  sizeof(room)))
-				  == sizeof(room)
+				  == 0
 				&& room == ((uintptr_t) state->ui_data.current_room)) {
 				redraw(state);
 			}
@@ -712,7 +740,7 @@ login(struct state *state) {
 
 			if ((read(state->ui_data.thread_comm_pipe[PIPE_READ], &code,
 				  sizeof(code)))
-				== sizeof(code)) {
+				== 0) {
 				logging_in = false;
 
 				if (code == MATRIX_SUCCESS) {
@@ -946,14 +974,14 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 				pthread_mutex_unlock(&state->ui_data.rooms_mutex);
 
 				uintptr_t ptr = (uintptr_t) NULL;
-				(void) write(state->ui_data.thread_comm_pipe[PIPE_WRITE], &ptr,
+				write(state->ui_data.thread_comm_pipe[PIPE_WRITE], &ptr,
 				  sizeof(ptr));
 			} else {
 				room_destroy(room);
 			}
 		} else {
 			uintptr_t ptr = (uintptr_t) room;
-			(void) write(
+			write(
 			  state->ui_data.thread_comm_pipe[PIPE_WRITE], &ptr, sizeof(ptr));
 		}
 	}
