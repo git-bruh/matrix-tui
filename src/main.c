@@ -721,10 +721,10 @@ login(struct state *state) {
 
 					ret = 0;
 					break;
-				} else {
-					state->ui_data.error = matrix_strerror(code);
-					redraw(state);
 				}
+
+				state->ui_data.error = matrix_strerror(code);
+				redraw(state);
 			}
 		}
 

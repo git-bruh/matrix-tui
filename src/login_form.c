@@ -12,7 +12,7 @@ enum {
 	BORDER_MAX
 };
 
-static const char *borders[BORDER_MAX] = {
+static const char *const borders[BORDER_MAX] = {
   [BORDER_NORMAL] = "─",
   [BORDER_CORNER_LEFT] = "┌",
   [BORDER_CORNER_RIGHT] = "┐",
@@ -21,13 +21,13 @@ static const char *borders[BORDER_MAX] = {
   [BORDER_VERTICAL] = "│",
 };
 
-static const char *field_names[FIELD_MAX] = {
+static const char *const field_names[FIELD_MAX] = {
   [FIELD_MXID] = "Username",
   [FIELD_PASSWORD] = "Password",
   [FIELD_HOMESERVER] = "Homeserver",
 };
 
-static const char *button_names[FIELD_BUTTON_MAX]
+static const char *const button_names[FIELD_BUTTON_MAX]
   = {[FIELD_BUTTON_LOGIN] = "Login", [FIELD_BUTTON_REGISTER] = "Register"};
 
 int
@@ -82,14 +82,16 @@ form_handle_event(struct form *form, enum form_event event) {
 		if ((form->current_field + 1) < FIELD_MAX) {
 			form->current_field++;
 			return WIDGET_REDRAW;
-		} else {
-			if (!form->button_is_selected) {
-				form->button_is_selected = true;
-				return WIDGET_REDRAW;
-			} else if ((form->current_button + 1) < FIELD_BUTTON_MAX) {
-				form->current_button++;
-				return WIDGET_REDRAW;
-			}
+		}
+
+		if (!form->button_is_selected) {
+			form->button_is_selected = true;
+			return WIDGET_REDRAW;
+		}
+
+		if ((form->current_button + 1) < FIELD_BUTTON_MAX) {
+			form->current_button++;
+			return WIDGET_REDRAW;
 		}
 		break;
 	default:
