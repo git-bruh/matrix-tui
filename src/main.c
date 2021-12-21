@@ -144,7 +144,6 @@ redraw(struct state *state) {
 		bar_height = 1,
 		input_height = 5,
 		form_width = 68,
-		form_height = (FIELD_MAX * COLS_PER_FIELD) + FIELD_BUTTON_MAX,
 		form_art_gap = 2,
 	};
 
@@ -162,7 +161,7 @@ redraw(struct state *state) {
 		assert(state->ui_data.active_widget == WIDGET_FORM);
 
 		int padding_x = widget_pad_center(form_width, width);
-		int padding_y = widget_pad_center(form_height, height - bar_height);
+		int padding_y = widget_pad_center(FORM_HEIGHT, height - bar_height);
 
 		int padding_art = widget_pad_center(widget_str_width(*art), width);
 		int art_y = (bar_height + padding_y) - form_art_gap;

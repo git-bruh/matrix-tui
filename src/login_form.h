@@ -6,7 +6,12 @@ enum field_buttons {
 	FIELD_BUTTON_REGISTER,
 	FIELD_BUTTON_MAX
 };
-enum { COLS_PER_FIELD = 3 };
+
+enum {
+	FORM_COLS_PER_FIELD = 3,
+	/* +3 for gap and buttons + 1 */
+	FORM_HEIGHT = (FORM_COLS_PER_FIELD * FIELD_MAX) + 3
+};
 
 enum form_event { FORM_UP = 0, FORM_DOWN };
 

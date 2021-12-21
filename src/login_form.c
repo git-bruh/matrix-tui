@@ -143,7 +143,7 @@ field_border_redraw(
 	assert(form);
 	assert(points);
 
-	int y = points->y1 + ((int) field * COLS_PER_FIELD);
+	int y = points->y1 + ((int) field * FORM_COLS_PER_FIELD);
 	int x = points->x1;
 
 	uintattr_t fg
@@ -190,9 +190,9 @@ form_redraw(struct form *form, struct widget_points *points) {
 	int y_selected = -1;
 	int lines = 0;
 
-	int y = 2;
+	int y = FORM_COLS_PER_FIELD - 1;
 
-	for (enum field i = start; i < FIELD_MAX; i++, y += 3) {
+	for (enum field i = start; i < FIELD_MAX; i++, y += FORM_COLS_PER_FIELD) {
 		field_border_redraw(form, points, i);
 
 		if (i == form->current_field) {
@@ -219,7 +219,7 @@ form_redraw(struct form *form, struct widget_points *points) {
 
 	int x_split_per_button = (points->x2 - points->x1) / FIELD_BUTTON_MAX;
 
-	int y_button = points->y1 + (COLS_PER_FIELD * FIELD_MAX) + 1;
+	int y_button = points->y1 + (FORM_HEIGHT - 2);
 
 	if (form->button_is_selected) {
 		tb_hide_cursor();
