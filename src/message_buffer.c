@@ -35,6 +35,11 @@ message_buffer_insert(struct message_buffer *buf, struct widget_points *points,
 		return -1;
 	}
 
+	if (buf->zeroed) {
+		buf->zeroed = false;
+		buf->last_points = *points;
+	}
+
 	int x = start_x;
 
 	for (size_t i = 0, start = 0; message->body[i]; i++) {
@@ -124,7 +129,7 @@ void
 message_buffer_zero(struct message_buffer *buf) {
 	assert(buf);
 	arrsetlen(buf->buf, 0);
-	buf->points_valid = false;
+	buf->zeroed = true;
 }
 
 void
@@ -148,6 +153,10 @@ message_buffer_should_recalculate(
 
 	struct widget_points *cmp = &buf->last_points;
 
+	if ((arrlenu(buf->buf)) == 0) {
+		return false;
+	}
+
 	/* No need to compare y axis since that doesn't impact how messages should
 	 * be rendered, only the start and endpoint of the whole buffer. */
 	return !(cmp->x1 == points->x1 && cmp->x2 == points->x2);
@@ -160,10 +169,16 @@ message_buffer_handle_event(
 
 	switch (event) {
 	case MESSAGE_BUFFER_UP:
-		if (buf->points_valid) {
+		{
 			size_t len = arrlenu(buf->buf);
 
 			if (len > 0) {
+				assert(!buf->zeroed);
+
+				if (buf->zeroed) {
+					break;
+				}
+
 				int height = (buf->last_points.y2 - buf->last_points.y1);
 
 				assert(height >= 0);
@@ -196,22 +211,19 @@ message_buffer_redraw(
 	assert(buf);
 	assert(points);
 
-	if (buf->points_valid) {
-		assert(!(message_buffer_should_recalculate(buf, points)));
-	} else {
-		buf->points_valid = true;
-	}
+	size_t len = arrlenu(buf->buf);
 
-	if ((arrlenu(buf->buf)) == 0) {
+	if (len == 0) {
 		return;
 	}
+
+	assert(!buf->zeroed);
 
 	buf->last_points = *points;
 
 	int y = points->y2 - 1;
 
-	for (size_t len = arrlenu(buf->buf), i = (len - buf->scroll);
-		 i > 0 && y > points->y1; i--, y--) {
+	for (size_t i = (len - buf->scroll); i > 0 && y > points->y1; i--, y--) {
 		assert(i <= len);
 
 		struct buf_item *item = &buf->buf[i - 1];

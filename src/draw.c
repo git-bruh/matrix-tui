@@ -61,6 +61,12 @@ tab_login_redraw(struct form *form, const char *error) {
 }
 
 void
+tab_room_get_buffer_points(struct widget_points *points) {
+	assert(points);
+	widget_points_set(points, 0, tb_width(), 0, 0);
+}
+
+void
 tab_room_redraw(struct input *input, struct room *room) {
 	assert(input);
 	assert(room);

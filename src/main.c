@@ -54,6 +54,7 @@ struct queue_item {
 
 enum read_or_write { READ = 0, WRITE };
 
+/* Wrapper for read() / write() immune to EINTR. */
 static ssize_t
 safe_read_or_write(
   int fildes, void *buf, size_t nbyte, enum read_or_write what) {
@@ -77,7 +78,6 @@ safe_read_or_write(
 	return 0;
 }
 
-/* Immune to EINTR. */
 #define read(fildes, buf, byte) safe_read_or_write(fildes, buf, byte, READ)
 #define write(fildes, buf, nbyte) safe_read_or_write(fildes, buf, nbyte, WRITE)
 
@@ -382,6 +382,76 @@ get_fds(struct state *state, struct pollfd fds[FD_MAX]) {
 	return 0;
 }
 
+static struct room *
+hm_first_room(struct state *state) {
+	assert(state);
+
+	struct room *room = NULL;
+
+	pthread_mutex_lock(&state->rooms_mutex);
+
+	if ((shlenu(state->rooms)) > 0) {
+		room = state->rooms[0].value;
+	}
+
+	pthread_mutex_unlock(&state->rooms_mutex);
+
+	return room;
+}
+
+static void
+reset_message_buffer_if_recalculate(struct room *room) {
+	assert(room);
+
+	void tab_room_get_buffer_points(struct widget_points * points);
+
+	struct widget_points points = {0};
+	tab_room_get_buffer_points(&points);
+
+	pthread_mutex_lock(&room->realloc_or_modify_mutex);
+
+	struct message **buf = room->timelines[TIMELINE_FORWARD].buf;
+	size_t len = room->timelines[TIMELINE_FORWARD].len;
+
+	message_buffer_zero(&room->buffer);
+
+	for (size_t i = 0; i < len; i++) {
+		if (!buf[i]->redacted) {
+			message_buffer_insert(&room->buffer, &points, buf[i]);
+		}
+	}
+
+	message_buffer_ensure_sane_scroll(&room->buffer);
+
+	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
+}
+
+static size_t
+fill_new_events(struct room *room, size_t already_consumed) {
+	assert(room);
+
+	void tab_room_get_buffer_points(struct widget_points * points);
+
+	struct widget_points points = {0};
+	tab_room_get_buffer_points(&points);
+
+	pthread_mutex_lock(&room->realloc_or_modify_mutex);
+
+	struct message **buf = room->timelines[TIMELINE_FORWARD].buf;
+	size_t len = room->timelines[TIMELINE_FORWARD].len;
+
+	for (; already_consumed < len; already_consumed++) {
+		if (!buf[already_consumed]->redacted) {
+			message_buffer_insert(
+			  &room->buffer, &points, buf[already_consumed]);
+		}
+	}
+
+	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
+
+	return already_consumed;
+}
+
 static void
 ui_loop(struct state *state) {
 	assert(state);
@@ -401,7 +471,8 @@ ui_loop(struct state *state) {
 		return;
 	}
 
-	struct room *room = NULL;
+	struct room *room = hm_first_room(state);
+	size_t already_consumed = 0;
 
 	for (bool redraw = true;;) {
 		if (redraw) {
@@ -436,13 +507,10 @@ ui_loop(struct state *state) {
 				  == 0
 				&& read_room == (uintptr_t) room) {
 				if (!room) {
-					pthread_mutex_lock(&state->rooms_mutex);
-					if ((shlenu(state->rooms)) > 0) {
-						room = state->rooms[0].value;
-					}
-					pthread_mutex_unlock(&state->rooms_mutex);
+					room = hm_first_room(state);
 				}
 
+				already_consumed = fill_new_events(room, already_consumed);
 				redraw = true;
 			}
 		}
@@ -455,28 +523,7 @@ ui_loop(struct state *state) {
 
 		if (event.type == TB_EVENT_RESIZE) {
 			if (room) {
-				struct widget_points points = {0};
-				widget_points_set(&points, 0, tb_width(), 0, 0);
-
-				pthread_mutex_lock(&room->realloc_or_modify_mutex);
-
-				struct message **buf = room->timelines[TIMELINE_FORWARD].buf;
-				size_t len = room->timelines[TIMELINE_FORWARD].len;
-
-				if ((message_buffer_should_recalculate(
-					  &room->buffer, &points))) {
-					message_buffer_zero(&room->buffer);
-
-					for (size_t i = 0; i < len; i++) {
-						if (!buf[i]->redacted) {
-							message_buffer_insert(
-							  &room->buffer, &points, buf[i]);
-						}
-					}
-
-					message_buffer_ensure_sane_scroll(&room->buffer);
-				}
-				pthread_mutex_unlock(&room->realloc_or_modify_mutex);
+				reset_message_buffer_if_recalculate(room);
 			}
 
 			redraw = true;
