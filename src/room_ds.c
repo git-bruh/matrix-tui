@@ -81,6 +81,7 @@ room_bsearch(struct room *room, uint64_t index, struct room_index *out_index) {
 	struct timeline *timeline = NULL;
 	int (*cmp)(const void *, const void *) = NULL;
 
+	/* Don't need NULL checks since we arrsetcap() */
 	if (room->timelines[TIMELINE_FORWARD].buf[0]->index <= index) {
 		timeline = &room->timelines[TIMELINE_FORWARD];
 		cmp = cmp_forward;

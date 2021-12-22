@@ -30,6 +30,7 @@ OBJ = \
 	src/header_libs.o \
 	src/queue.o \
 	src/cache.o \
+	src/draw.o \
 	src/room_ds.o \
 	src/login_form.o \
 	src/message_buffer.o \

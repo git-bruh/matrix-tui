@@ -74,6 +74,10 @@ int
 message_buffer_redact(struct message_buffer *buf, uint64_t index) {
 	assert(buf);
 
+	if (!buf->buf) {
+		return -1;
+	}
+
 	size_t len = arrlenu(buf->buf);
 
 	struct buf_item *message
