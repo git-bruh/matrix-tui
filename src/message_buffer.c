@@ -6,12 +6,17 @@
 #include "stb_ds.h"
 
 #include <assert.h>
+#include <wctype.h>
 
 struct buf_item {
-	int padding;  /* Padding for sender. */
-	size_t start; /* Index to begin in the message body. */
+	int padding; /* Padding for sender. */
+	/* Start/End indices into the message body. */
+	size_t start;
+	size_t end;
 	struct message *message;
 };
+
+enum { WIDTH_NEWLINE = 0 };
 
 void
 message_buffer_finish(struct message_buffer *buf) {
@@ -19,6 +24,75 @@ message_buffer_finish(struct message_buffer *buf) {
 		arrfree(buf->buf);
 		memset(buf, 0, sizeof(*buf));
 	}
+}
+
+static bool
+ch_can_split_word(uint32_t ch) {
+	if ((iswspace((wint_t) ch))) {
+		return true;
+	}
+
+	/* We split on spaces or punctuations (for wrapping). */
+	switch ((wint_t) ch) {
+#include "punctuation_marks.h"
+		return true;
+	default:
+		return false;
+	}
+}
+
+static int
+find_word_start_end(
+  const uint32_t *buf, size_t current, size_t len, size_t *start, size_t *end) {
+	assert(buf);
+	assert(start);
+	assert(end);
+
+	int tmp_width = 0;
+	int width = 0;
+
+	for (*start = current; *start > 0; (*start)--) {
+		if ((ch_can_split_word(buf[*start - 1]))) {
+			break;
+		}
+
+		widget_uc_sanitize(buf[*start - 1], &tmp_width);
+		width += tmp_width;
+	}
+
+	for (*end = current; *end < len; (*end)++) {
+		if ((ch_can_split_word(buf[*end]))) {
+			break;
+		}
+
+		widget_uc_sanitize(buf[*end], &tmp_width);
+		width += tmp_width;
+	}
+
+	return width;
+}
+
+static size_t
+find_next_word_start(
+  const uint32_t *buf, size_t current, size_t len, int x, int max_x) {
+	assert(buf);
+
+	size_t last_large_word_start = current;
+
+	for (; current < len; current++) {
+		int width = 0;
+
+		if ((ch_can_split_word(widget_uc_sanitize(buf[current], &width)))
+			|| (current + 1) == len) {
+			last_large_word_start = current + 1;
+		}
+
+		if ((x += width) >= max_x || width == WIDTH_NEWLINE) {
+			break;
+		}
+	}
+
+	return last_large_word_start;
 }
 
 int
@@ -31,7 +105,7 @@ message_buffer_insert(struct message_buffer *buf, struct widget_points *points,
 	int padding = widget_str_width(message->sender) + widget_str_width("<> ");
 	int start_x = points->x1 + padding + 1;
 
-	if (start_x > points->x2) {
+	if (start_x >= points->x2) {
 		return -1;
 	}
 
@@ -42,17 +116,55 @@ message_buffer_insert(struct message_buffer *buf, struct widget_points *points,
 
 	int x = start_x;
 
-	for (size_t i = 0, start = 0; message->body[i]; i++) {
+	for (size_t i = 0, prev_end = i, len = arrlenu(message->body); i < len;
+		 i++) {
 		int width = 0;
-		widget_uc_sanitize((uint32_t) message->body[i], &width);
+		widget_uc_sanitize(message->body[i], &width);
 
-		if ((x += width) >= points->x2 || width == 0 /* Newline */
-			|| message->body[i + 1] == '\0') {
-			arrput(buf->buf,
-			  ((struct buf_item) {
-				.padding = padding, .start = start, .message = message}));
-			start = i;
-			x = start_x + width; /* Account for start character. */
+		bool overflow = (x += width) >= points->x2;
+		bool newline = (width == WIDTH_NEWLINE);
+
+		if (overflow || newline || (i + 1) == len) {
+			if (overflow) {
+				size_t word_start = 0;
+				size_t word_end = 0;
+
+				/* We could keep track of the words in-place but that gets
+				 * pretty messy so we just find it on-demand. */
+				int word_width = find_word_start_end(
+				  message->body, i, len, &word_start, &word_end);
+
+				if (word_width < (points->x2 - start_x)) {
+					arrput(buf->buf, ((struct buf_item) {.padding = padding,
+									   .start = prev_end,
+									   .end = word_start,
+									   .message = message}));
+
+					size_t next_word_start = find_next_word_start(message->body,
+					  word_end, len, start_x + word_width, points->x2);
+
+					arrput(buf->buf, ((struct buf_item) {.padding = padding,
+									   .start = word_start,
+									   .end = next_word_start,
+									   .message = message}));
+
+					i = next_word_start;
+					prev_end = i;
+					x = start_x;
+
+					continue;
+				}
+			}
+
+			arrput(
+			  buf->buf, ((struct buf_item) {.padding = padding,
+						  .start = prev_end,
+						  /* Skip the current character if it's a newline. */
+						  .end = (newline ? i : i + 1),
+						  .message = message}));
+
+			prev_end = i + 1;
+			x = start_x;
 		}
 	}
 
@@ -121,6 +233,7 @@ message_buffer_redact(struct message_buffer *buf, uint64_t index) {
 	assert(((end - start) + 1) <= len);
 
 	arrdeln(buf->buf, start, (end - start) + 1);
+	message_buffer_ensure_sane_scroll(buf);
 
 	return 0;
 }
@@ -228,6 +341,8 @@ message_buffer_redraw(
 
 		struct buf_item *item = &buf->buf[i - 1];
 
+		assert(!item->message->redacted);
+
 		if (item->start == 0) {
 			int x = points->x1;
 
@@ -247,7 +362,16 @@ message_buffer_redraw(
 		}
 
 		assert((widget_points_in_bounds(points, item->padding, y)));
-		widget_print_str(item->padding, y, points->x2, TB_DEFAULT, TB_DEFAULT,
-		  &item->message->body[item->start]);
+
+		int x = item->padding;
+		int width = 0;
+
+		for (size_t msg = item->start; msg < item->end; msg++) {
+			uint32_t uc = widget_uc_sanitize(item->message->body[msg], &width);
+			/* Newline characters should've been stripped. */
+			assert(width != 0);
+			tb_set_cell(x, y, uc, TB_DEFAULT, TB_DEFAULT);
+			x += width;
+		}
 	}
 }

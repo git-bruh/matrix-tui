@@ -34,8 +34,8 @@ struct message {
 	bool reply;
 	uint64_t index; /* Index from database. */
 	uint64_t
-	  index_reply; /* Index (from database) of the message being replied to. */
-	char *body;	   /* HTML, if formatted is true. */
+	  index_reply;	/* Index (from database) of the message being replied to. */
+	uint32_t *body; /* HTML, if formatted is true. */
 	char *sender;
 };
 

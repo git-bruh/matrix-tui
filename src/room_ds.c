@@ -44,6 +44,8 @@ cmp_backward(const void *key, const void *array_item) {
 struct message *
 message_alloc(char *body, char *sender, uint64_t index,
   const uint64_t *index_reply, bool formatted) {
+	uint32_t *buf_to_uint32_t(const char *buf);
+
 	struct message *message = malloc(sizeof(*message));
 
 	if (message) {
@@ -51,7 +53,7 @@ message_alloc(char *body, char *sender, uint64_t index,
 		  .reply = !!index_reply,
 		  .index = index,
 		  .index_reply = (index_reply ? *index_reply : 0),
-		  .body = strdup(body),
+		  .body = buf_to_uint32_t(body),
 		  .sender = strdup(sender)};
 
 		if (!message->body || !message->sender) {

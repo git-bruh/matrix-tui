@@ -16,7 +16,8 @@ XCFLAGS = \
 	-Werror=int-conversion \
 	-Werror=implicit-function-declaration \
 	-Werror=incompatible-pointer-types \
-	-DCLIENT_NAME=\"matrix-client\"
+	-DTB_OPT_TRUECOLOR \
+	-DCLIENT_NAME=\"matrix-tui\"
 
 XLDLIBS = $(LDLIBS) `curl-config --libs` -lcjson -llmdb -lpthread
 
@@ -33,6 +34,7 @@ OBJ = \
 	src/draw.o \
 	src/room_ds.o \
 	src/login_form.o \
+	src/render_message.o \
 	src/message_buffer.o \
 	src/main.o \
 	third_party/libmatrix/api.o \

@@ -430,8 +430,6 @@ static size_t
 fill_new_events(struct room *room, size_t already_consumed) {
 	assert(room);
 
-	void tab_room_get_buffer_points(struct widget_points * points);
-
 	struct widget_points points = {0};
 	tab_room_get_buffer_points(&points);
 
@@ -540,7 +538,9 @@ ui_loop(struct state *state) {
 		case TAB_ROOM:
 			if (event.type == TB_EVENT_MOUSE) {
 				if (room) {
+					pthread_mutex_lock(&room->realloc_or_modify_mutex);
 					ret = handle_message_buffer(&room->buffer, &event);
+					pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 				}
 			} else {
 				switch (widget) {
@@ -794,7 +794,7 @@ redact(struct room *room, uint64_t index) {
 	struct message *to_redact
 	  = room->timelines[out_index.index_timeline].buf[out_index.index_buf];
 	to_redact->redacted = true;
-	free(to_redact->body);
+	arrfree(to_redact->body);
 	to_redact->body = NULL;
 	message_buffer_redact(&room->buffer, index);
 	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
