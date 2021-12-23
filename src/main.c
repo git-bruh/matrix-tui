@@ -874,7 +874,7 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 				switch (tevent->type) {
 				case MATRIX_ROOM_MESSAGE:
-					lock_if_grow(timeline->buf, &room->realloc_or_modify_mutex);
+					LOCK_IF_GROW(timeline->buf, &room->realloc_or_modify_mutex);
 
 					assert(tevent->base.sender);
 					assert(tevent->message.body);

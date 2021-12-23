@@ -9,7 +9,7 @@
 #include <pthread.h>
 #include <stdatomic.h>
 
-#define lock_if_grow(arr, mutex)                                               \
+#define LOCK_IF_GROW(arr, mutex)                                               \
 	do {                                                                       \
 		if (!((stbds_header(arr)->length + 1)                                  \
 			  > stbds_header(arr)->capacity)) {                                \
