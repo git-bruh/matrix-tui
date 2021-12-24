@@ -68,7 +68,7 @@ message_alloc(char *body, char *sender, uint64_t index,
 void
 message_destroy(struct message *message) {
 	if (message) {
-		free(message->body);
+		arrfree(message->body);
 		free(message->sender);
 		free(message);
 	}

@@ -28,11 +28,11 @@ message_buffer_finish(struct message_buffer *buf) {
 
 static bool
 ch_can_split_word(uint32_t ch) {
+	/* We split on spaces or punctuations (for wrapping). */
 	if ((iswspace((wint_t) ch))) {
 		return true;
 	}
 
-	/* We split on spaces or punctuations (for wrapping). */
 	switch ((wint_t) ch) {
 #include "punctuation_marks.h"
 		return true;
@@ -122,9 +122,8 @@ message_buffer_insert(struct message_buffer *buf, struct widget_points *points,
 		widget_uc_sanitize(message->body[i], &width);
 
 		bool overflow = (x += width) >= points->x2;
-		bool newline = (width == WIDTH_NEWLINE);
 
-		if (overflow || newline || (i + 1) == len) {
+		if (overflow || width == WIDTH_NEWLINE || (i + 1) == len) {
 			if (overflow) {
 				size_t word_start = 0;
 				size_t word_end = 0;
@@ -148,20 +147,20 @@ message_buffer_insert(struct message_buffer *buf, struct widget_points *points,
 									   .end = next_word_start,
 									   .message = message}));
 
-					i = next_word_start;
-					prev_end = i;
+					/* We must subtract 1 as i will be iterated after continue.
+					 */
+					i = next_word_start - 1;
+					prev_end = next_word_start;
 					x = start_x;
 
 					continue;
 				}
 			}
 
-			arrput(
-			  buf->buf, ((struct buf_item) {.padding = padding,
-						  .start = prev_end,
-						  /* Skip the current character if it's a newline. */
-						  .end = (newline ? i : i + 1),
-						  .message = message}));
+			arrput(buf->buf, ((struct buf_item) {.padding = padding,
+							   .start = prev_end,
+							   .end = i + 1,
+							   .message = message}));
 
 			prev_end = i + 1;
 			x = start_x;
@@ -366,10 +365,18 @@ message_buffer_redraw(
 		int x = item->padding;
 		int width = 0;
 
-		for (size_t msg = item->start; msg < item->end; msg++) {
-			uint32_t uc = widget_uc_sanitize(item->message->body[msg], &width);
-			/* Newline characters should've been stripped. */
-			assert(width != 0);
+		for (size_t msg_index = item->start; msg_index < item->end;
+			 msg_index++) {
+			uint32_t uc
+			  = widget_uc_sanitize(item->message->body[msg_index], &width);
+
+			if (width == WIDTH_NEWLINE) {
+				/* Newlines should only exist before a break,
+				 * i.e. be the last character. */
+				assert((msg_index + 1) == item->end);
+				continue;
+			}
+
 			tb_set_cell(x, y, uc, TB_DEFAULT, TB_DEFAULT);
 			x += width;
 		}
