@@ -352,6 +352,8 @@ message_buffer_redraw(
 			x += widget_print_str(
 			  x, y, points->x2, TB_DEFAULT, TB_DEFAULT, "> ");
 
+			(void) x;
+
 			/* Screen too small. */
 			if (item->padding >= points->x2) {
 				continue;

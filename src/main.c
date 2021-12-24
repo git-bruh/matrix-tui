@@ -52,18 +52,15 @@ struct queue_item {
 	void *data;
 };
 
-enum read_or_write { READ = 0, WRITE };
-
 /* Wrapper for read() / write() immune to EINTR. */
-static ssize_t
-safe_read_or_write(
-  int fildes, void *buf, size_t nbyte, enum read_or_write what) {
+ssize_t
+safe_read_or_write(int fildes, void *buf, size_t nbyte, int what) {
 	ssize_t ret = 0;
 
 	while (nbyte > 0) {
 		do {
-			ret = (what == READ) ? (read(fildes, buf, nbyte))
-								 : (write(fildes, buf, nbyte));
+			ret = (what == 0) ? (read(fildes, buf, nbyte))
+							  : (write(fildes, buf, nbyte));
 		} while ((ret < 0) && (errno == EINTR || errno == EAGAIN));
 
 		if (ret < 0) {
@@ -78,8 +75,8 @@ safe_read_or_write(
 	return 0;
 }
 
-#define read(fildes, buf, byte) safe_read_or_write(fildes, buf, byte, READ)
-#define write(fildes, buf, nbyte) safe_read_or_write(fildes, buf, nbyte, WRITE)
+#define read(fildes, buf, byte) safe_read_or_write(fildes, buf, byte, 0)
+#define write(fildes, buf, nbyte) safe_read_or_write(fildes, buf, nbyte, 1)
 
 static void
 handle_command(struct state *state, void *data) {
@@ -113,14 +110,9 @@ handle_login(struct state *state, void *data) {
 		assert(mxid);
 		assert(homeserver);
 
-		int ret = -1;
-
-		ret = cache_auth_set(&state->cache, DB_KEY_ACCESS_TOKEN, access_token);
-		assert(ret == 0);
-		ret = cache_auth_set(&state->cache, DB_KEY_MXID, mxid);
-		assert(ret == 0);
-		ret = cache_auth_set(&state->cache, DB_KEY_HOMESERVER, homeserver);
-		assert(ret == 0);
+		cache_auth_set(&state->cache, DB_KEY_ACCESS_TOKEN, access_token);
+		cache_auth_set(&state->cache, DB_KEY_MXID, mxid);
+		cache_auth_set(&state->cache, DB_KEY_HOMESERVER, homeserver);
 	}
 
 	write(state->thread_comm_pipe[PIPE_WRITE], &code, sizeof(code));
@@ -399,11 +391,12 @@ hm_first_room(struct state *state) {
 	return room;
 }
 
+void
+tab_room_get_buffer_points(struct widget_points *points);
+
 static void
 reset_message_buffer_if_recalculate(struct room *room) {
 	assert(room);
-
-	void tab_room_get_buffer_points(struct widget_points * points);
 
 	struct widget_points points = {0};
 	tab_room_get_buffer_points(&points);
@@ -969,14 +962,21 @@ main() {
 					 &state.threads[THREAD_QUEUE], NULL, queue_listener, &state)
 					 == 0,
 		  "Failed to initialize queue thread.\n")
-		&& (login(&state)) == 0
-		&& (hm_init(&state)) == 0
-		/* TODO die and log function */
-		&& (pthread_create(&state.threads[THREAD_SYNC], NULL, syncer, &state))
-			 == 0) {
-		ui_loop(&state); /* Blocks forever. */
-		cleanup(&state);
+		&& (login(&state)) == 0 && (hm_init(&state)) == 0) {
+		bool thread_created
+		  = (pthread_create(&state.threads[THREAD_SYNC], NULL, syncer, &state)
+			 == 0);
 
+		if (!thread_created) {
+			cleanup(&state);
+			ERRLOG(thread_created, "Failed to initialize syncer thread.\n");
+
+			return EXIT_FAILURE;
+		}
+
+		ui_loop(&state); /* Blocks forever. */
+
+		cleanup(&state);
 		return EXIT_SUCCESS;
 	}
 
