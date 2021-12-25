@@ -22,10 +22,10 @@ XCFLAGS = \
 XLDLIBS = $(LDLIBS) `curl-config --libs` -lcjson -llmdb -lpthread -lm
 
 INCLUDES = \
-	-I src \
 	-I third_party/libmatrix \
 	-I third_party/termbox-widgets \
-	-isystem third_party
+	-isystem third_party/stb \
+	-isystem third_party/termbox2
 
 OBJ = \
 	src/header_libs.o \
@@ -36,7 +36,6 @@ OBJ = \
 	src/login_form.o \
 	src/render_message.o \
 	src/message_buffer.o \
-	src/fatal.o \
 	src/main.o \
 	third_party/libmatrix/api.o \
 	third_party/libmatrix/linked_list.o \
