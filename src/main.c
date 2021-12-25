@@ -355,6 +355,10 @@ handle_message_buffer(struct message_buffer *buf, struct tb_event *event) {
 		break;
 	case TB_KEY_MOUSE_WHEEL_DOWN:
 		return message_buffer_handle_event(buf, MESSAGE_BUFFER_DOWN);
+	case TB_KEY_MOUSE_RELEASE:
+		return message_buffer_handle_event(
+		  buf, MESSAGE_BUFFER_SELECT, event->x, event->y);
+		break;
 	default:
 		break;
 	}

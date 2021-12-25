@@ -10,6 +10,7 @@ struct message;
 struct message_buffer {
 	bool zeroed;
 	size_t scroll;
+	struct message *selected;
 	struct buf_item *buf;
 	struct widget_points last_points;
 };

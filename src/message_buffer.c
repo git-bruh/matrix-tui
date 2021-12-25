@@ -311,6 +311,56 @@ message_buffer_handle_event(
 		}
 		break;
 	case MESSAGE_BUFFER_SELECT:
+		{
+			va_list vl = {0};
+			va_start(vl, event);
+			/* https://bugs.llvm.org/show_bug.cgi?id=41311
+			 * NOLINTNEXTLINE(clang-analyzer-valist.Uninitialized) */
+			int x = va_arg(vl, int);
+			/* NOLINTNEXTLINE(clang-analyzer-valist.Uninitialized) */
+			int y = va_arg(vl, int);
+			va_end(vl);
+
+			int relative_x = x - buf->last_points.x1;
+			int relative_y = y - buf->last_points.y1;
+
+			if (relative_x < 0 || relative_y < 0) {
+				break;
+			}
+
+			size_t len = arrlenu(buf->buf);
+
+			if (len > 0) {
+				assert(!buf->zeroed);
+
+				if (buf->zeroed) {
+					break;
+				}
+
+				size_t index
+				  = (len - buf->scroll)
+				  - (size_t) ((buf->last_points.y2 - buf->last_points.y1)
+							  - relative_y);
+
+				/* Underflow. */
+				if (index >= len) {
+					if (buf->selected) {
+						buf->selected = NULL;
+						return WIDGET_REDRAW;
+					}
+
+					break;
+				}
+
+				if (buf->buf[index].message == buf->selected) {
+					buf->selected = NULL;
+				} else {
+					buf->selected = buf->buf[index].message;
+				}
+
+				return WIDGET_REDRAW;
+			}
+		}
 		break;
 	}
 
@@ -342,15 +392,20 @@ message_buffer_redraw(
 
 		assert(!item->message->redacted);
 
+		uintattr_t fg = TB_DEFAULT;
+		uintattr_t bg = TB_DEFAULT;
+
+		if (item->message == buf->selected) {
+			fg |= TB_BOLD;
+		}
+
 		if (item->start == 0) {
 			int x = points->x1;
 
+			x += widget_print_str(x, y, points->x2, fg, bg, "<");
 			x += widget_print_str(
-			  x, y, points->x2, TB_DEFAULT, TB_DEFAULT, "<");
-			x += widget_print_str(
-			  x, y, points->x2, TB_DEFAULT, TB_DEFAULT, item->message->sender);
-			x += widget_print_str(
-			  x, y, points->x2, TB_DEFAULT, TB_DEFAULT, "> ");
+			  x, y, points->x2, fg, bg, item->message->sender);
+			x += widget_print_str(x, y, points->x2, fg, bg, "> ");
 
 			(void) x;
 
@@ -379,7 +434,7 @@ message_buffer_redraw(
 				continue;
 			}
 
-			tb_set_cell(x, y, uc, TB_DEFAULT, TB_DEFAULT);
+			tb_set_cell(x, y, uc, fg, bg);
 			x += width;
 		}
 	}
