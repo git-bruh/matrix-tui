@@ -34,7 +34,7 @@ ch_can_split_word(uint32_t ch) {
 	}
 
 	switch ((wint_t) ch) {
-#include "punctuation_marks.h"
+#include "punctuation_marks.inl"
 		return true;
 	default:
 		return false;
