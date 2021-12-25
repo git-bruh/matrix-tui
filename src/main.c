@@ -52,6 +52,14 @@ struct queue_item {
 	void *data;
 };
 
+/* Extend the matrix_code enumeration. */
+enum login_error {
+	LOGIN_DB_FAIL = MATRIX_CODE_MAX + 1,
+};
+
+_Static_assert(
+  sizeof(enum matrix_code) == sizeof(enum login_error), "enum size mismatch.");
+
 /* Wrapper for read() / write() immune to EINTR. */
 ssize_t
 safe_read_or_write(int fildes, void *buf, size_t nbyte, int what) {
@@ -110,9 +118,13 @@ handle_login(struct state *state, void *data) {
 		assert(mxid);
 		assert(homeserver);
 
-		cache_auth_set(&state->cache, DB_KEY_ACCESS_TOKEN, access_token);
-		cache_auth_set(&state->cache, DB_KEY_MXID, mxid);
-		cache_auth_set(&state->cache, DB_KEY_HOMESERVER, homeserver);
+		if ((cache_auth_set(&state->cache, DB_KEY_ACCESS_TOKEN, access_token))
+			  != 0
+			|| (cache_auth_set(&state->cache, DB_KEY_MXID, mxid)) != 0
+			|| (cache_auth_set(&state->cache, DB_KEY_HOMESERVER, homeserver))
+				 != 0) {
+			code = (enum matrix_code) LOGIN_DB_FAIL;
+		}
 	}
 
 	write(state->thread_comm_pipe[PIPE_WRITE], &code, sizeof(code));
@@ -701,7 +713,21 @@ login(struct state *state) {
 					error = NULL;
 					ret = 0;
 				} else {
-					error = matrix_strerror(code);
+					assert(code != MATRIX_CODE_MAX);
+
+					if (code < MATRIX_CODE_MAX) {
+						error = matrix_strerror(code);
+					} else {
+						assert(code == LOGIN_DB_FAIL);
+
+						/* Clear the unsaved access token. */
+						int ret_logout = matrix_logout(state->matrix);
+
+						assert(ret_logout == 0);
+						(void) ret_logout;
+
+						error = "Failed to save to database";
+					}
 				}
 
 				tb_clear();
