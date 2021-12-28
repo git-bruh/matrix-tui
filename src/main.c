@@ -3,6 +3,7 @@
 #include "login_form.h"
 #include "queue.h"
 #include "room_ds.h"
+#include "ui.h"
 
 #include <assert.h>
 #include <langinfo.h>
@@ -45,7 +46,7 @@ struct state {
 
 struct queue_item {
 	enum queue_item_type {
-		QUEUE_ITEM_COMMAND = 0,
+		QUEUE_ITEM_MESSAGE = 0,
 		QUEUE_ITEM_LOGIN,
 		QUEUE_ITEM_MAX
 	} type;
@@ -86,13 +87,35 @@ safe_read_or_write(int fildes, void *buf, size_t nbyte, int what) {
 #define read(fildes, buf, byte) safe_read_or_write(fildes, buf, byte, 0)
 #define write(fildes, buf, nbyte) safe_read_or_write(fildes, buf, nbyte, 1)
 
+struct sent_message {
+	bool has_reply;		  /* This exists as reply can be <= UINT64_MAX. */
+	uint64_t reply_index; /* Reply index from DB. */
+	char *buf;			  /* Markdown. */
+	const char *room_id;  /* Current room's ID. */
+};
+
 static void
-handle_command(struct state *state, void *data) {
-	char *buf = data;
-	assert(buf);
+free_sent_message(void *data) {
+	struct sent_message *message = data;
+
+	if (message) {
+		free(message->buf);
+		free(message);
+	}
+}
+
+static void
+handle_sent_message(struct state *state, void *data) {
+	assert(state);
+	assert(data);
+
+	struct sent_message *sent_message = data;
+	assert(sent_message->buf);
+	assert(sent_message->room_id);
 
 	char *event_id = NULL;
-	matrix_send_message(state->matrix, &event_id, "", "m.text", buf, NULL);
+	matrix_send_message(state->matrix, &event_id, sent_message->room_id,
+	  "m.text", sent_message->buf, NULL);
 	free(event_id);
 }
 
@@ -136,8 +159,8 @@ static struct {
 	void (*cb)(struct state *, void *);
 	void (*free)(void *);
 } const queue_callbacks[QUEUE_ITEM_MAX] = {
-  [QUEUE_ITEM_COMMAND] = {handle_command, free},
-  [QUEUE_ITEM_LOGIN] = {	handle_login, free},
+  [QUEUE_ITEM_MESSAGE] = {handle_sent_message, free_sent_message},
+  [QUEUE_ITEM_LOGIN] = {		handle_login,			  free},
 };
 
 static void
@@ -391,7 +414,7 @@ get_fds(struct state *state, struct pollfd fds[FD_MAX]) {
 }
 
 static struct room *
-hm_first_room(struct state *state) {
+hm_first_room(struct state *state, const char **id) {
 	assert(state);
 
 	struct room *room = NULL;
@@ -400,6 +423,7 @@ hm_first_room(struct state *state) {
 
 	if ((shlenu(state->rooms)) > 0) {
 		room = state->rooms[0].value;
+		*id = state->rooms[0].key;
 	}
 
 	pthread_mutex_unlock(&state->rooms_mutex);
@@ -410,9 +434,11 @@ hm_first_room(struct state *state) {
 void
 tab_room_get_buffer_points(struct widget_points *points);
 
-static void
+static size_t
 reset_message_buffer_if_recalculate(struct room *room) {
 	assert(room);
+
+	size_t consumed = 0;
 
 	struct widget_points points = {0};
 	tab_room_get_buffer_points(&points);
@@ -422,17 +448,23 @@ reset_message_buffer_if_recalculate(struct room *room) {
 	struct message **buf = room->timelines[TIMELINE_FORWARD].buf;
 	size_t len = room->timelines[TIMELINE_FORWARD].len;
 
-	message_buffer_zero(&room->buffer);
+	if ((message_buffer_should_recalculate(&room->buffer, &points))) {
+		message_buffer_zero(&room->buffer);
 
-	for (size_t i = 0; i < len; i++) {
-		if (!buf[i]->redacted) {
-			message_buffer_insert(&room->buffer, &points, buf[i]);
+		for (size_t i = 0; i < len; i++) {
+			if (!buf[i]->redacted) {
+				message_buffer_insert(&room->buffer, &points, buf[i]);
+			}
 		}
+
+		message_buffer_ensure_sane_scroll(&room->buffer);
+
+		consumed = len;
 	}
 
-	message_buffer_ensure_sane_scroll(&room->buffer);
-
 	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
+
+	return consumed;
 }
 
 static size_t
@@ -459,12 +491,72 @@ fill_new_events(struct room *room, size_t already_consumed) {
 	return already_consumed;
 }
 
+static enum widget_error
+handle_tab_room(
+  struct state *state, struct tab_room *room, struct tb_event *event) {
+	enum widget_error ret = WIDGET_NOOP;
+
+	if (!room->room) {
+		return ret;
+	}
+
+	if (event->type == TB_EVENT_RESIZE) {
+		size_t consumed = reset_message_buffer_if_recalculate(room->room);
+
+		if (consumed > 0) {
+			room->already_consumed = consumed;
+		}
+
+		return WIDGET_REDRAW;
+	}
+
+	if (event->type == TB_EVENT_MOUSE) {
+		pthread_mutex_lock(&room->room->realloc_or_modify_mutex);
+		ret = handle_message_buffer(&room->room->buffer, event);
+		pthread_mutex_unlock(&room->room->realloc_or_modify_mutex);
+	} else {
+		bool enter_pressed = false;
+
+		switch (room->widget) {
+		case TAB_ROOM_INPUT:
+			ret = handle_input(room->input, event, &enter_pressed);
+
+			if (enter_pressed) {
+				char *buf = input_buf(room->input);
+
+				/* Empty field. */
+				if (!buf) {
+					break;
+				}
+
+				struct sent_message *message = malloc(sizeof(*message));
+
+				*message = (struct sent_message) {
+				  .has_reply = false,
+				  .reply_index = 0,
+				  .buf = buf,
+				  .room_id = room->id,
+				};
+
+				lock_and_push(
+				  state, queue_item_alloc(QUEUE_ITEM_MESSAGE, message));
+
+				ret = input_handle_event(room->input, INPUT_CLEAR);
+			}
+			break;
+		default:
+			break;
+		}
+	}
+
+	return ret;
+}
+
 static void
 ui_loop(struct state *state) {
 	assert(state);
-	void tab_room_redraw(struct input * input, struct room * room);
+	void tab_room_redraw(struct tab_room * room);
 
-	enum widget widget = WIDGET_INPUT;
 	enum tab tab = TAB_ROOM;
 
 	struct tb_event event = {0};
@@ -478,8 +570,12 @@ ui_loop(struct state *state) {
 		return;
 	}
 
-	struct room *room = hm_first_room(state);
-	size_t already_consumed = 0;
+	struct tab_room tab_room = {
+	  .widget = TAB_ROOM_INPUT,
+	  .input = &input,
+	  .room = hm_first_room(state, &tab_room.id),
+	  .already_consumed = 0,
+	};
 
 	for (bool redraw = true;;) {
 		if (redraw) {
@@ -491,9 +587,7 @@ ui_loop(struct state *state) {
 			case TAB_HOME:
 				break;
 			case TAB_ROOM:
-				if (room) {
-					tab_room_redraw(&input, room);
-				}
+				tab_room_redraw(&tab_room);
 				break;
 			default:
 				assert(0);
@@ -512,12 +606,13 @@ ui_loop(struct state *state) {
 			if ((read(state->thread_comm_pipe[PIPE_READ], &read_room,
 				  sizeof(read_room)))
 				  == 0
-				&& read_room == (uintptr_t) room) {
-				if (!room) {
-					room = hm_first_room(state);
+				&& read_room == (uintptr_t) tab_room.room) {
+				if (!tab_room.room) {
+					tab_room.room = hm_first_room(state, &tab_room.id);
 				}
 
-				already_consumed = fill_new_events(room, already_consumed);
+				tab_room.already_consumed
+				  = fill_new_events(tab_room.room, tab_room.already_consumed);
 				redraw = true;
 			}
 		}
@@ -528,38 +623,16 @@ ui_loop(struct state *state) {
 
 		enum widget_error ret = WIDGET_NOOP;
 
-		if (event.type == TB_EVENT_RESIZE) {
-			if (room) {
-				reset_message_buffer_if_recalculate(room);
-			}
-
-			redraw = true;
-			continue;
-		}
-
 		if (event.key == TB_KEY_CTRL_C) {
 			break;
 		}
 
 		switch (tab) {
 		case TAB_HOME:
+			// handle_tab_home();
 			break;
 		case TAB_ROOM:
-			if (event.type == TB_EVENT_MOUSE) {
-				if (room) {
-					pthread_mutex_lock(&room->realloc_or_modify_mutex);
-					ret = handle_message_buffer(&room->buffer, &event);
-					pthread_mutex_unlock(&room->realloc_or_modify_mutex);
-				}
-			} else {
-				switch (widget) {
-				case WIDGET_INPUT:
-					ret = handle_input(&input, &event, NULL);
-					break;
-				default:
-					break;
-				}
-			}
+			ret = handle_tab_room(state, &tab_room, &event);
 			break;
 		default:
 			assert(0);
@@ -722,7 +795,7 @@ login(struct state *state) {
 					if (code < MATRIX_CODE_MAX) {
 						error = matrix_strerror(code);
 					} else {
-						assert(code == LOGIN_DB_FAIL);
+						assert(code == (enum matrix_code) LOGIN_DB_FAIL);
 
 						/* Clear the unsaved access token. */
 						int ret_logout = matrix_logout(state->matrix);

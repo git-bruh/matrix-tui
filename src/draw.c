@@ -1,6 +1,7 @@
 #include "login_form.h"
 #include "message_buffer.h"
 #include "room_ds.h"
+#include "ui.h"
 #include "widgets.h"
 
 #include <assert.h>
@@ -67,9 +68,12 @@ tab_room_get_buffer_points(struct widget_points *points) {
 }
 
 void
-tab_room_redraw(struct input *input, struct room *room) {
-	assert(input);
+tab_room_redraw(struct tab_room *room) {
 	assert(room);
+
+	if (!room->room) {
+		return;
+	}
 
 	int height = tb_height();
 	int width = tb_width();
@@ -79,11 +83,11 @@ tab_room_redraw(struct input *input, struct room *room) {
 	widget_points_set(&points, 0, width, height - INPUT_HEIGHT, height);
 
 	int input_rows = 0;
-	input_redraw(input, &points, &input_rows);
+	input_redraw(room->input, &points, &input_rows);
 
 	widget_points_set(&points, 0, width, BAR_HEIGHT, height - input_rows);
 
-	pthread_mutex_lock(&room->realloc_or_modify_mutex);
-	message_buffer_redraw(&room->buffer, &points);
-	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
+	pthread_mutex_lock(&room->room->realloc_or_modify_mutex);
+	message_buffer_redraw(&room->room->buffer, &points);
+	pthread_mutex_unlock(&room->room->realloc_or_modify_mutex);
 }
