@@ -385,7 +385,7 @@ message_buffer_redraw(
 
 	int y = points->y2 - 1;
 
-	for (size_t i = (len - buf->scroll); i > 0 && y > points->y1; i--, y--) {
+	for (size_t i = (len - buf->scroll); i > 0 && y >= points->y1; i--, y--) {
 		assert(i <= len);
 
 		struct buf_item *item = &buf->buf[i - 1];
