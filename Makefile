@@ -16,7 +16,6 @@ XCFLAGS = \
 	-Werror=int-conversion \
 	-Werror=implicit-function-declaration \
 	-Werror=incompatible-pointer-types \
-	-DTB_OPT_TRUECOLOR \
 	-DCLIENT_NAME=\"matrix-tui\"
 
 XLDLIBS = $(LDLIBS) `curl-config --libs` -lcjson -llmdb -lpthread -lm

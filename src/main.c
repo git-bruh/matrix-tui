@@ -318,8 +318,7 @@ static int
 ui_init(void) {
 	if ((tb_init()) == TB_OK) {
 		tb_set_input_mode(TB_INPUT_ALT | TB_INPUT_MOUSE);
-		/* TODO tb_set_output_mode(TB_OUTPUT_256); */
-
+		tb_set_output_mode(TB_OUTPUT_256);
 		return 0;
 	}
 
@@ -459,7 +458,8 @@ reset_message_buffer_if_recalculate(struct room *room) {
 
 		for (size_t i = 0; i < len; i++) {
 			if (!buf[i]->redacted) {
-				message_buffer_insert(&room->buffer, &points, buf[i]);
+				message_buffer_insert(
+				  &room->buffer, room->members, &points, buf[i]);
 			}
 		}
 
@@ -488,7 +488,7 @@ fill_new_events(struct room *room, size_t already_consumed) {
 	for (; already_consumed < len; already_consumed++) {
 		if (!buf[already_consumed]->redacted) {
 			message_buffer_insert(
-			  &room->buffer, &points, buf[already_consumed]);
+			  &room->buffer, room->members, &points, buf[already_consumed]);
 		}
 	}
 
@@ -561,7 +561,6 @@ handle_tab_room(
 static void
 ui_loop(struct state *state) {
 	assert(state);
-	void tab_room_redraw(struct tab_room * room);
 
 	enum tab tab = TAB_ROOM;
 
@@ -736,7 +735,6 @@ login_with_info(struct state *state, struct form *form) {
 static int
 login(struct state *state) {
 	assert(state);
-	void tab_login_redraw(struct form * form, const char *error);
 
 	char *access_token = cache_auth_get(&state->cache, DB_KEY_ACCESS_TOKEN);
 	char *mxid = cache_auth_get(&state->cache, DB_KEY_MXID);
@@ -761,7 +759,7 @@ login(struct state *state) {
 
 	struct form form = {0};
 
-	if ((form_init(&form, TB_BLUE)) == -1) {
+	if ((form_init(&form, COLOR_BLUE)) == -1) {
 		return ret;
 	}
 
@@ -965,12 +963,38 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 			/* Declare variables here to avoid adding a new scope in the switch
 			 * as it increases the indentation level needlessly. */
+			struct matrix_state_event *sevent = NULL;
 			struct matrix_timeline_event *tevent = NULL;
 
 			switch (event.type) {
 			case MATRIX_EVENT_EPHEMERAL:
 				break;
 			case MATRIX_EVENT_STATE:
+				sevent = &event.state;
+
+				switch (sevent->type) {
+				case MATRIX_ROOM_MEMBER:
+					{
+						uint32_t *displayname_or_stripped_mxid
+						  = sevent->member.displayname
+							? buf_to_uint32_t(sevent->member.displayname)
+							: mxid_to_uint32_t(sevent->base.sender);
+
+						/* We lock for every member here, but it's not a big
+						 * issue since member events are very rare and we won't
+						 * have more than 1-2 of them per-sync
+						 * except for large syncs like the initial sync. */
+						if (displayname_or_stripped_mxid) {
+							pthread_mutex_lock(&room->realloc_or_modify_mutex);
+							shput(room->members, sevent->base.sender,
+							  displayname_or_stripped_mxid);
+							pthread_mutex_unlock(
+							  &room->realloc_or_modify_mutex);
+						}
+					}
+				default:
+					break;
+				}
 				break;
 			case MATRIX_EVENT_TIMELINE:
 				tevent = &event.timeline;
@@ -982,8 +1006,6 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 					assert(tevent->base.sender);
 					assert(tevent->message.body);
 
-					/* This is safe as the reader thread will have the old value
-					 * of len stored and not access anything beyond that. */
 					struct message *message
 					  = message_alloc(tevent->message.body, tevent->base.sender,
 						index, NULL, false);
@@ -992,13 +1014,14 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 						break;
 					}
 
+					/* This is safe as the reader thread will have the old value
+					 * of len stored and not access anything beyond that. */
 					arrput(timeline->buf, message);
 					break;
 				case MATRIX_ROOM_REDACTION:
 					if (ret == CACHE_GOT_REDACTION) {
 						/* Ensure that bsearch has access to new events. */
 						timeline->len = arrlenu(timeline->buf);
-
 						redact(room, txn.latest_redaction);
 					}
 					break;

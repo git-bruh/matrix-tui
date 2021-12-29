@@ -1,4 +1,3 @@
-#include "login_form.h"
 #include "message_buffer.h"
 #include "room_ds.h"
 #include "ui.h"
@@ -57,7 +56,7 @@ tab_login_redraw(struct form *form, const char *error) {
 
 	if (error) {
 		widget_print_str(widget_pad_center(widget_str_width(error), width),
-		  (height - padding_y) + 1, width, TB_RED, TB_DEFAULT, error);
+		  (height - padding_y) + 1, width, COLOR_RED, TB_DEFAULT, error);
 	}
 }
 
@@ -88,6 +87,6 @@ tab_room_redraw(struct tab_room *room) {
 	widget_points_set(&points, 0, width, BAR_HEIGHT, height - input_rows);
 
 	pthread_mutex_lock(&room->room->realloc_or_modify_mutex);
-	message_buffer_redraw(&room->room->buffer, &points);
+	message_buffer_redraw(&room->room->buffer, room->room->members, &points);
 	pthread_mutex_unlock(&room->room->realloc_or_modify_mutex);
 }

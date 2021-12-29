@@ -1,3 +1,5 @@
+#ifndef LOGIN_FORM_H
+#define LOGIN_FORM_H
 #include "widgets.h"
 
 enum field { FIELD_MXID = 0, FIELD_PASSWORD, FIELD_HOMESERVER, FIELD_MAX };
@@ -33,3 +35,4 @@ struct input *
 form_current_input(struct form *form);
 void
 form_redraw(struct form *form, struct widget_points *points);
+#endif /* !LOGIN_FORM_H */

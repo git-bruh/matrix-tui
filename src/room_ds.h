@@ -52,6 +52,7 @@ struct timeline {
 
 struct room {
 	struct room_info *info;
+	struct members_map *members;
 	/* Rendered message indices. */
 	struct message_buffer buffer;
 	/* .buf MUST have an initial capacity set with arrsetcap. Binary search is

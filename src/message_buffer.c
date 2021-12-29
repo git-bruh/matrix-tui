@@ -8,9 +8,12 @@
 #include <assert.h>
 #include <wctype.h>
 
+/* This struct must be small since 1 terminal row == 1 struct buf_item. Instead
+ * of breaking up message content into lines, we just store indices into
+ * the message buffer. This struct will be allocated very frequently. */
 struct buf_item {
 	int padding; /* Padding for sender. */
-	/* Start/End indices into the message body. */
+	/* TODO get rid of `end` and assert start == prev_index */
 	size_t start;
 	size_t end;
 	struct message *message;
@@ -95,14 +98,36 @@ find_next_word_start(
 	return last_large_word_start;
 }
 
+int /* NOLINTNEXTLINE(readability-non-const-parameter) */
+uint32_width(uint32_t *array) {
+	/* array can't be const due to stbds macros. */
+	assert(array);
+
+	int width = 0;
+	int tmp_width = 0;
+
+	for (size_t i = 0, len = arrlenu(array); i < len; i++) {
+		widget_uc_sanitize(array[i], &tmp_width);
+		width += tmp_width;
+	}
+
+	return width;
+}
+
 int
-message_buffer_insert(struct message_buffer *buf, struct widget_points *points,
+message_buffer_insert(struct message_buffer *buf,
+  struct members_map *members_map, struct widget_points *points,
   struct message *message) {
 	assert(buf);
 	assert(points);
+	assert(members_map);
 	assert(message);
 
-	int padding = widget_str_width(message->sender) + widget_str_width("<> ");
+	uint32_t *sender = shget(members_map, message->sender);
+	assert(sender);
+
+	int padding = uint32_width(sender) + widget_str_width("<> ");
+
 	int start_x = points->x1 + padding + 1;
 
 	if (start_x >= points->x2) {
@@ -368,9 +393,10 @@ message_buffer_handle_event(
 }
 
 void
-message_buffer_redraw(
-  struct message_buffer *buf, struct widget_points *points) {
+message_buffer_redraw(struct message_buffer *buf,
+  struct members_map *members_map, struct widget_points *points) {
 	assert(buf);
+	assert(members_map);
 	assert(points);
 
 	size_t len = arrlenu(buf->buf);
@@ -402,10 +428,19 @@ message_buffer_redraw(
 		if (item->start == 0) {
 			int x = points->x1;
 
-			x += widget_print_str(x, y, points->x2, fg, bg, "<");
-			x += widget_print_str(
-			  x, y, points->x2, fg, bg, item->message->sender);
-			x += widget_print_str(x, y, points->x2, fg, bg, "> ");
+			uint32_t *real_sender = shget(members_map, item->message->sender);
+			assert(real_sender);
+
+			uintattr_t sender_fg = str_attr(item->message->sender);
+
+			x += widget_print_str(x, y, points->x2, sender_fg, bg, "<");
+
+			for (size_t sender_index = 0, sender_len = arrlenu(real_sender);
+				 sender_index < sender_len; sender_index++) {
+				tb_set_cell(x++, y, real_sender[sender_index], sender_fg, bg);
+			}
+
+			x += widget_print_str(x, y, points->x2, sender_fg, bg, "> ");
 
 			(void) x;
 

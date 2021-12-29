@@ -4,6 +4,7 @@
 
 #include "message_buffer.h"
 #include "stb_ds.h"
+#include "ui.h"
 
 #include <assert.h>
 #include <stdlib.h>
@@ -44,8 +45,6 @@ cmp_backward(const void *key, const void *array_item) {
 struct message *
 message_alloc(char *body, char *sender, uint64_t index,
   const uint64_t *index_reply, bool formatted) {
-	uint32_t *buf_to_uint32_t(const char *buf);
-
 	struct message *message = malloc(sizeof(*message));
 
 	if (message) {
@@ -153,6 +152,8 @@ room_alloc(struct room_info *info) {
 		  .realloc_or_modify_mutex = PTHREAD_MUTEX_INITIALIZER,
 		};
 
+		sh_new_strdup(room->members);
+
 		for (size_t i = 0; i < TIMELINE_MAX; i++) {
 			if ((timeline_init(&room->timelines[i])) == -1) {
 				room_destroy(room);
@@ -172,6 +173,11 @@ room_destroy(struct room *room) {
 		for (size_t i = 0; i < TIMELINE_MAX; i++) {
 			timeline_finish(&room->timelines[i]);
 		}
+
+		for (size_t i = 0, len = shlenu(room->members); i < len; i++) {
+			free(room->members[i].value);
+		}
+		shfree(room->members);
 
 		message_buffer_finish(&room->buffer);
 		room_info_destroy(room->info);

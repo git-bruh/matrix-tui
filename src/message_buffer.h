@@ -2,6 +2,7 @@
 #define MESSAGE_BUFFER_H
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
+#include "ui.h"
 #include "widgets.h"
 
 struct buf_item;
@@ -24,7 +25,8 @@ enum message_buffer_event {
 void
 message_buffer_finish(struct message_buffer *buf);
 int
-message_buffer_insert(struct message_buffer *buf, struct widget_points *points,
+message_buffer_insert(struct message_buffer *buf,
+  struct members_map *members_map, struct widget_points *points,
   struct message *message);
 int
 message_buffer_redact(struct message_buffer *buf, uint64_t index);
@@ -39,5 +41,6 @@ enum widget_error
 message_buffer_handle_event(
   struct message_buffer *buf, enum message_buffer_event event, ...);
 void
-message_buffer_redraw(struct message_buffer *buf, struct widget_points *points);
+message_buffer_redraw(struct message_buffer *buf,
+  struct members_map *members_map, struct widget_points *points);
 #endif /* !MESSAGE_BUFFER_H */
