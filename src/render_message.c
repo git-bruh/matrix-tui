@@ -16,6 +16,8 @@ buf_to_uint32_t(const char *buf) {
 		size_t index = 0;
 
 		while (*buf) {
+			assert(index < (arrcap(uint32_buf)));
+
 			int len = tb_utf8_char_to_unicode(&uint32_buf[index], buf);
 
 			if (len == TB_ERR) {

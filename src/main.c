@@ -413,22 +413,28 @@ get_fds(struct state *state, struct pollfd fds[FD_MAX]) {
 	return 0;
 }
 
-static struct room *
-hm_first_room(struct state *state, const char **id) {
+static int
+hm_first_room(struct state *state, struct room **room, const char **id) {
 	assert(state);
+	assert(room);
+	assert(id);
 
-	struct room *room = NULL;
+	int ret = -1;
 
 	pthread_mutex_lock(&state->rooms_mutex);
 
+	/* We can't keep pointers into the hash map as the hash map itself is
+	 * an array which can be realloc'd.  */
 	if ((shlenu(state->rooms)) > 0) {
-		room = state->rooms[0].value;
+		*room = state->rooms[0].value;
 		*id = state->rooms[0].key;
+
+		ret = 0;
 	}
 
 	pthread_mutex_unlock(&state->rooms_mutex);
 
-	return room;
+	return ret;
 }
 
 void
@@ -573,9 +579,10 @@ ui_loop(struct state *state) {
 	struct tab_room tab_room = {
 	  .widget = TAB_ROOM_INPUT,
 	  .input = &input,
-	  .room = hm_first_room(state, &tab_room.id),
 	  .already_consumed = 0,
 	};
+
+	hm_first_room(state, &tab_room.room, &tab_room.id);
 
 	for (bool redraw = true;;) {
 		if (redraw) {
@@ -608,7 +615,7 @@ ui_loop(struct state *state) {
 				  == 0
 				&& read_room == (uintptr_t) tab_room.room) {
 				if (!tab_room.room) {
-					tab_room.room = hm_first_room(state, &tab_room.id);
+					hm_first_room(state, &tab_room.room, &tab_room.id);
 				}
 
 				tab_room.already_consumed
