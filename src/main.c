@@ -561,6 +561,51 @@ login_with_info(struct state *state, struct form *form) {
 	return ret;
 }
 
+static enum widget_error
+handle_tab_login(
+  struct state *state, struct tab_login *login, struct tb_event *event) {
+	assert(login);
+	assert(event);
+
+	if (event->type == TB_EVENT_RESIZE) {
+		return WIDGET_REDRAW;
+	}
+
+	if (login->logging_in) {
+		return WIDGET_NOOP;
+	}
+
+	switch (event->key) {
+	case TB_KEY_ARROW_UP:
+		return form_handle_event(&login->form, FORM_UP);
+	case TB_KEY_ARROW_DOWN:
+		return form_handle_event(&login->form, FORM_DOWN);
+	case TB_KEY_ENTER:
+		if (!login->form.button_is_selected) {
+			return WIDGET_NOOP;
+		}
+
+		if ((login_with_info(state, &login->form)) == 0) {
+			login->error = NULL;
+			login->logging_in = true;
+		} else {
+			login->error = "Invalid Information";
+		}
+
+		return WIDGET_REDRAW;
+	default:
+		{
+			struct input *input = form_current_input(&login->form);
+
+			if (input) {
+				return handle_input(input, event, NULL);
+			}
+
+			return WIDGET_NOOP;
+		}
+	}
+}
+
 static int
 login(struct state *state) {
 	assert(state);
@@ -586,9 +631,9 @@ login(struct state *state) {
 		return ret;
 	}
 
-	struct form form = {0};
+	struct tab_login login = {0};
 
-	if ((form_init(&form, COLOR_BLUE)) == -1) {
+	if ((form_init(&login.form, COLOR_BLUE)) == -1) {
 		return ret;
 	}
 
@@ -597,15 +642,12 @@ login(struct state *state) {
 	struct pollfd fds[FD_MAX] = {0};
 	get_fds(state, fds);
 
-	bool logging_in = false;
-	const char *error = NULL;
-
 	for (bool redraw = true;;) {
 		if (redraw) {
 			redraw = false;
 
 			tb_clear();
-			tab_login_redraw(&form, error);
+			tab_login_redraw(&login);
 			tb_present();
 		}
 
@@ -618,16 +660,16 @@ login(struct state *state) {
 
 			if ((read(state->thread_comm_pipe[PIPE_READ], &code, sizeof(code)))
 				== 0) {
-				logging_in = false;
+				login.logging_in = false;
 
 				if (code == MATRIX_SUCCESS) {
-					error = NULL;
+					login.error = NULL;
 					ret = 0;
 				} else {
 					assert(code != MATRIX_CODE_MAX);
 
 					if (code < MATRIX_CODE_MAX) {
-						error = matrix_strerror(code);
+						login.error = matrix_strerror(code);
 					} else {
 						assert(code == (enum matrix_code) LOGIN_DB_FAIL);
 
@@ -637,12 +679,12 @@ login(struct state *state) {
 						assert(ret_logout == 0);
 						(void) ret_logout;
 
-						error = "Failed to save to database";
+						login.error = "Failed to save to database";
 					}
 				}
 
 				tb_clear();
-				tab_login_redraw(&form, error);
+				tab_login_redraw(&login);
 				tb_present();
 
 				if (ret == 0) {
@@ -651,62 +693,31 @@ login(struct state *state) {
 			}
 		}
 
-		if (fds_with_data <= 0 || (tb_poll_event(&event)) != TB_OK) {
+		if (fds_with_data <= 0) {
 			continue;
 		}
 
-		if (event.type == TB_EVENT_RESIZE) {
-			redraw = true;
-			continue;
-		}
+		bool ctrl_c_pressed = false;
 
-		if (event.key == TB_KEY_CTRL_C) {
-			ret = -1; /* Transfer cancelled and thread killed in cleanup() */
-			break;
-		}
-
-		if (logging_in) {
-			continue;
-		}
-
-		enum widget_error should_redraw = WIDGET_NOOP;
-
-		switch (event.key) {
-		case TB_KEY_ARROW_UP:
-			should_redraw = form_handle_event(&form, FORM_UP);
-			break;
-		case TB_KEY_ARROW_DOWN:
-			should_redraw = form_handle_event(&form, FORM_DOWN);
-			break;
-		case TB_KEY_ENTER:
-			if (!form.button_is_selected) {
+		while ((tb_peek_event(&event, 0)) == TB_OK) {
+			if (event.key == TB_KEY_CTRL_C) {
+				ret
+				  = -1; /* Transfer cancelled and thread killed in cleanup() */
+				ctrl_c_pressed = true;
 				break;
 			}
 
-			if ((login_with_info(state, &form)) == 0) {
-				error = NULL;
-				logging_in = true;
-			} else {
-				error = "Invalid Information";
+			if ((handle_tab_login(state, &login, &event)) == WIDGET_REDRAW) {
+				redraw = true;
 			}
-
-			should_redraw = WIDGET_REDRAW;
-			break;
-		default:
-			{
-				struct input *input = form_current_input(&form);
-
-				if (input) {
-					should_redraw = handle_input(input, &event, NULL);
-				}
-			}
-			break;
 		}
 
-		redraw = (should_redraw == WIDGET_REDRAW);
+		if (ctrl_c_pressed) {
+			break;
+		}
 	}
 
-	form_finish(&form);
+	form_finish(&login.form);
 	return ret;
 }
 

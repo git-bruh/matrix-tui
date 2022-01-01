@@ -36,6 +36,12 @@ struct tab_room {
 	struct room *room;
 };
 
+struct tab_login {
+	bool logging_in;
+	struct form form;
+	const char *error;
+};
+
 uintattr_t
 hsl_to_rgb(double h, double s, double l);
 uint32_t *
@@ -50,5 +56,5 @@ tab_room_get_buffer_points(struct widget_points *points);
 void
 tab_room_redraw(struct tab_room *room);
 void
-tab_login_redraw(struct form *form, const char *error);
+tab_login_redraw(struct tab_login *login);
 #endif /* !UI_H */

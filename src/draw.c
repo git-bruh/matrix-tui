@@ -35,8 +35,8 @@ art_redraw(struct widget_points *points) {
 }
 
 void
-tab_login_redraw(struct form *form, const char *error) {
-	assert(form);
+tab_login_redraw(struct tab_login *login) {
+	assert(login);
 
 	int height = tb_height();
 	int width = tb_width();
@@ -52,11 +52,12 @@ tab_login_redraw(struct form *form, const char *error) {
 
 	widget_points_set(&points, padding_x, width - padding_x,
 	  BAR_HEIGHT + padding_y, height - padding_y);
-	form_redraw(form, &points);
+	form_redraw(&login->form, &points);
 
-	if (error) {
-		widget_print_str(widget_pad_center(widget_str_width(error), width),
-		  (height - padding_y) + 1, width, COLOR_RED, TB_DEFAULT, error);
+	if (login->error) {
+		widget_print_str(
+		  widget_pad_center(widget_str_width(login->error), width),
+		  (height - padding_y) + 1, width, COLOR_RED, TB_DEFAULT, login->error);
 	}
 }
 

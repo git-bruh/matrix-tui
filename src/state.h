@@ -30,7 +30,7 @@ struct state {
 };
 
 /* Wrapper for read() / write() immune to EINTR. */
-static inline ssize_t
+__attribute__((unused)) static ssize_t
 safe_read_or_write(int fildes, void *buf, size_t nbyte, int what) {
 	ssize_t ret = 0;
 
