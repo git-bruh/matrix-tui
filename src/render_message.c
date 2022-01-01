@@ -63,8 +63,10 @@ hsl_to_rgb(double h, double s, double l) {
 
 #ifndef TB_OPT_TRUECOLOR
 		/* https://stackoverflow.com/a/37874124 */
-		out += (uintattr_t) round(result * mults[i]) << lshifts[i];
-		assert(out <= rgb_max);
+		int tmp = (int) round(result * mults[i]) << lshifts[i];
+		assert(((int) out + tmp) <= rgb_max);
+
+		out += (uintattr_t) tmp;
 #else
 		/* https://haacked.com/archive/2009/12/29/convert-rgb-to-hex.aspx */
 		out |= ((uintattr_t) round(result * 255.0) << lshifts[i]); /* NOLINT */
