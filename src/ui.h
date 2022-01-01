@@ -17,9 +17,10 @@ enum colors {
 };
 
 struct members_map {
-	char *key;		 /* Full mxid, @user:domain.tld */
-	uint32_t *value; /* Rendered username, either stripped MXID odisplayname
-					  * set in state. */
+	char *key; /* Full mxid, @user:domain.tld */
+	/* Array of usernames receive throughout various sync responses. Either
+	 * stripped MXID or displayname from state events. */
+	uint32_t **value;
 };
 
 struct room;

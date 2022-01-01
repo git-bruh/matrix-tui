@@ -43,7 +43,7 @@ cmp_backward(const void *key, const void *array_item) {
 }
 
 struct message *
-message_alloc(char *body, char *sender, uint64_t index,
+message_alloc(char *body, char *sender, size_t index_username, uint64_t index,
   const uint64_t *index_reply, bool formatted) {
 	struct message *message = malloc(sizeof(*message));
 
@@ -52,6 +52,7 @@ message_alloc(char *body, char *sender, uint64_t index,
 		  .reply = !!index_reply,
 		  .index = index,
 		  .index_reply = (index_reply ? *index_reply : 0),
+		  .index_username = index_username,
 		  .body = buf_to_uint32_t(body),
 		  .sender = strdup(sender)};
 
@@ -175,6 +176,10 @@ room_destroy(struct room *room) {
 		}
 
 		for (size_t i = 0, len = shlenu(room->members); i < len; i++) {
+			for (size_t j = 0, usernames_len = arrlenu(room->members[i].value);
+				 j < usernames_len; j++) {
+				arrfree(room->members[i].value[j]);
+			}
 			arrfree(room->members[i].value);
 		}
 		shfree(room->members);

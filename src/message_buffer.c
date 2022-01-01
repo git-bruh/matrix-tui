@@ -123,11 +123,11 @@ message_buffer_insert(struct message_buffer *buf,
 	assert(members_map);
 	assert(message);
 
-	uint32_t *sender = shget(members_map, message->sender);
-	assert(sender);
+	uint32_t **usernames = shget(members_map, message->sender);
+	assert(usernames);
 
-	int padding = uint32_width(sender) + widget_str_width("<> ");
-
+	int padding = uint32_width(usernames[message->index_username])
+				+ widget_str_width("<> ");
 	int start_x = points->x1 + padding + 1;
 
 	if (start_x >= points->x2) {
@@ -428,26 +428,26 @@ message_buffer_redraw(struct message_buffer *buf,
 		if (item->start == 0) {
 			int x = points->x1;
 
-			uint32_t *real_sender = shget(members_map, item->message->sender);
-			assert(real_sender);
+			uint32_t **usernames = shget(members_map, item->message->sender);
+			assert(usernames);
 
+			uint32_t *username = usernames[item->message->index_username];
 			uintattr_t sender_fg = str_attr(item->message->sender);
 
 			x += widget_print_str(x, y, points->x2, sender_fg, bg, "<");
 
-			for (size_t sender_index = 0, sender_len = arrlenu(real_sender);
-				 sender_index < sender_len; sender_index++) {
-				tb_set_cell(x++, y, real_sender[sender_index], sender_fg, bg);
+			for (size_t user_index = 0, user_len = arrlenu(username);
+				 user_index < user_len; user_index++) {
+				int width = 0;
+				uint32_t uc = widget_uc_sanitize(username[user_index], &width);
+
+				if (width != 0) {
+					tb_set_cell(x++, y, uc, sender_fg, bg);
+				}
 			}
 
 			x += widget_print_str(x, y, points->x2, sender_fg, bg, "> ");
-
 			(void) x;
-
-			/* Screen too small. */
-			if (item->padding >= points->x2) {
-				continue;
-			}
 
 			assert(x == item->padding);
 		}

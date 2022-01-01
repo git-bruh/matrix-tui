@@ -815,22 +815,35 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 				switch (sevent->type) {
 				case MATRIX_ROOM_MEMBER:
 					{
+						/* If len < 1 then displayname has been removed. */
 						uint32_t *displayname_or_stripped_mxid
-						  = sevent->member.displayname
+						  = (sevent->member.displayname
+							  && (strnlen(sevent->member.displayname, 1)) > 0)
 							? buf_to_uint32_t(sevent->member.displayname)
 							: mxid_to_uint32_t(sevent->base.sender);
+
+						assert(displayname_or_stripped_mxid);
 
 						/* We lock for every member here, but it's not a big
 						 * issue since member events are very rare and we won't
 						 * have more than 1-2 of them per-sync
 						 * except for large syncs like the initial sync. */
-						if (displayname_or_stripped_mxid) {
-							pthread_mutex_lock(&room->realloc_or_modify_mutex);
-							shput(room->members, sevent->base.sender,
+						pthread_mutex_lock(&room->realloc_or_modify_mutex);
+
+						ptrdiff_t sh_index
+						  = shgeti(room->members, sevent->base.sender);
+
+						if (sh_index < 0) {
+							uint32_t **usernames = NULL;
+							arrput(usernames, displayname_or_stripped_mxid);
+							shput(
+							  room->members, sevent->base.sender, usernames);
+						} else {
+							arrput(room->members[sh_index].value,
 							  displayname_or_stripped_mxid);
-							pthread_mutex_unlock(
-							  &room->realloc_or_modify_mutex);
 						}
+
+						pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 					}
 				default:
 					break;
@@ -846,9 +859,23 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 					assert(tevent->base.sender);
 					assert(tevent->message.body);
 
+					/* Technically this is not thread safe, since shget() called
+					 * with a NULL pointer will make an allocation. But in this
+					 * case shget() will always be called once in this function
+					 * before it is ever used in the reader thread. */
+					uint32_t **usernames
+					  = shget(room->members, tevent->base.sender);
+					size_t usernames_len = arrlenu(usernames);
+
+					assert(usernames_len);
+
+					if (usernames_len == 0) {
+						break;
+					}
+
 					struct message *message
 					  = message_alloc(tevent->message.body, tevent->base.sender,
-						index, NULL, false);
+						usernames_len - 1, index, NULL, false);
 
 					if (!message) {
 						break;

@@ -34,8 +34,10 @@ struct message {
 	bool reply;
 	uint64_t index; /* Index from database. */
 	uint64_t
-	  index_reply;	/* Index (from database) of the message being replied to. */
-	uint32_t *body; /* HTML, if formatted is true. */
+	  index_reply; /* Index (from database) of the message being replied to. */
+	size_t
+	  index_username; /* Index of current username in the members hashmap. */
+	uint32_t *body;	  /* HTML, if formatted is true. */
 	char *sender;
 };
 
@@ -69,7 +71,7 @@ struct room_index {
 };
 
 struct message *
-message_alloc(char *body, char *sender, uint64_t index,
+message_alloc(char *body, char *sender, size_t index_username, uint64_t index,
   const uint64_t *index_reply, bool formatted);
 void
 message_destroy(struct message *message);
