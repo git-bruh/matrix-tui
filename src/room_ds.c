@@ -175,7 +175,7 @@ room_destroy(struct room *room) {
 		}
 
 		for (size_t i = 0, len = shlenu(room->members); i < len; i++) {
-			free(room->members[i].value);
+			arrfree(room->members[i].value);
 		}
 		shfree(room->members);
 
