@@ -30,6 +30,7 @@ INCLUDES = \
 OBJ = \
 	src/header_libs.o \
 	src/queue.o \
+	src/queue_callbacks.o \
 	src/cache.o \
 	src/draw.o \
 	src/room_ds.o \

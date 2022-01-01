@@ -1,7 +1,7 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "login_form.h"
-#include "queue.h"
+#include "queue_callbacks.h"
 #include "room_ds.h"
 #include "ui.h"
 
@@ -12,10 +12,6 @@
 #define ERRLOG(cond, ...)                                                      \
 	(!(cond) ? (fprintf(stderr, __VA_ARGS__), true) : false)
 
-enum { THREAD_SYNC = 0, THREAD_QUEUE, THREAD_MAX };
-enum { PIPE_READ = 0, PIPE_WRITE, PIPE_MAX };
-enum { FD_TTY = 0, FD_RESIZE, FD_PIPE, FD_MAX };
-
 enum widget {
 	WIDGET_INPUT = 0,
 	WIDGET_FORM,
@@ -23,170 +19,6 @@ enum widget {
 };
 
 enum tab { TAB_LOGIN = 0, TAB_HOME, TAB_ROOM };
-
-struct state {
-	_Atomic bool done;
-	pthread_t threads[THREAD_MAX];
-	pthread_mutex_t mutex;
-	pthread_cond_t cond;
-	struct matrix *matrix;
-	struct cache cache;
-	struct queue queue;
-	/* Pass data between the syncer thread and the UI thread. This exists as the
-	 * UI thread can't block forever, listening to a queue as it has to handle
-	 * input and resizes. Instead, we poll on this pipe along with polling for
-	 * events from the terminal. */
-	int thread_comm_pipe[PIPE_MAX];
-	struct {
-		char *key;
-		struct room *value;
-	} * rooms;
-	pthread_mutex_t rooms_mutex;
-};
-
-struct queue_item {
-	enum queue_item_type {
-		QUEUE_ITEM_MESSAGE = 0,
-		QUEUE_ITEM_LOGIN,
-		QUEUE_ITEM_MAX
-	} type;
-	void *data;
-};
-
-/* Extend the matrix_code enumeration. */
-enum login_error {
-	LOGIN_DB_FAIL = MATRIX_CODE_MAX + 1,
-};
-
-_Static_assert(
-  sizeof(enum matrix_code) == sizeof(enum login_error), "enum size mismatch.");
-
-/* Wrapper for read() / write() immune to EINTR. */
-ssize_t
-safe_read_or_write(int fildes, void *buf, size_t nbyte, int what) {
-	ssize_t ret = 0;
-
-	while (nbyte > 0) {
-		do {
-			ret = (what == 0) ? (read(fildes, buf, nbyte))
-							  : (write(fildes, buf, nbyte));
-		} while ((ret < 0) && (errno == EINTR || errno == EAGAIN));
-
-		if (ret < 0) {
-			return ret;
-		}
-
-		nbyte -= (size_t) ret;
-		/* Increment buffer */
-		buf = &((unsigned char *) buf)[ret];
-	}
-
-	return 0;
-}
-
-#define read(fildes, buf, byte) safe_read_or_write(fildes, buf, byte, 0)
-#define write(fildes, buf, nbyte) safe_read_or_write(fildes, buf, nbyte, 1)
-
-struct sent_message {
-	bool has_reply;		  /* This exists as reply can be <= UINT64_MAX. */
-	uint64_t reply_index; /* Reply index from DB. */
-	char *buf;			  /* Markdown. */
-	const char *room_id;  /* Current room's ID. */
-};
-
-static void
-free_sent_message(void *data) {
-	struct sent_message *message = data;
-
-	if (message) {
-		free(message->buf);
-		free(message);
-	}
-}
-
-static void
-handle_sent_message(struct state *state, void *data) {
-	assert(state);
-	assert(data);
-
-	struct sent_message *sent_message = data;
-	assert(sent_message->buf);
-	assert(sent_message->room_id);
-
-	char *event_id = NULL;
-	matrix_send_message(state->matrix, &event_id, sent_message->room_id,
-	  "m.text", sent_message->buf, NULL);
-	free(event_id);
-}
-
-static void
-handle_login(struct state *state, void *data) {
-	assert(state);
-	assert(data);
-
-	char *password = data;
-	char *access_token = NULL;
-
-	enum matrix_code code
-	  = matrix_login(state->matrix, password, NULL, NULL, &access_token);
-
-	if (code == MATRIX_SUCCESS) {
-		assert(access_token);
-
-		char *mxid = NULL;
-		char *homeserver = NULL;
-
-		matrix_get_mxid_homeserver(state->matrix, &mxid, &homeserver);
-
-		assert(mxid);
-		assert(homeserver);
-
-		if ((cache_auth_set(&state->cache, DB_KEY_ACCESS_TOKEN, access_token))
-			  != 0
-			|| (cache_auth_set(&state->cache, DB_KEY_MXID, mxid)) != 0
-			|| (cache_auth_set(&state->cache, DB_KEY_HOMESERVER, homeserver))
-				 != 0) {
-			code = (enum matrix_code) LOGIN_DB_FAIL;
-		}
-	}
-
-	write(state->thread_comm_pipe[PIPE_WRITE], &code, sizeof(code));
-
-	free(access_token);
-}
-
-static struct {
-	void (*cb)(struct state *, void *);
-	void (*free)(void *);
-} const queue_callbacks[QUEUE_ITEM_MAX] = {
-  [QUEUE_ITEM_MESSAGE] = {handle_sent_message, free_sent_message},
-  [QUEUE_ITEM_LOGIN] = {		handle_login,			  free},
-};
-
-static void
-queue_item_free(struct queue_item *item) {
-	if (item) {
-		queue_callbacks[item->type].free(item->data);
-		free(item);
-	}
-}
-
-static struct queue_item *
-queue_item_alloc(enum queue_item_type type, void *data) {
-	struct queue_item *item
-	  = (type < QUEUE_ITEM_MAX && data) ? malloc(sizeof(*item)) : NULL;
-
-	if (item) {
-		*item = (struct queue_item) {
-		  .type = type,
-		  .data = data,
-		};
-	} else {
-		queue_callbacks[type].free(data);
-	}
-
-	return item;
-}
 
 static void
 cleanup(struct state *state) {
@@ -435,9 +267,6 @@ hm_first_room(struct state *state, struct room **room, const char **id) {
 
 	return ret;
 }
-
-void
-tab_room_get_buffer_points(struct widget_points *points);
 
 static size_t
 reset_message_buffer_if_recalculate(struct room *room) {

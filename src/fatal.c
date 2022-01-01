@@ -4,14 +4,11 @@
 #undef strdup
 #undef strndup
 
+#include "state.h"
+
 #include <string.h>
-#include <unistd.h>
+
 #define SIZE(arr) (sizeof(arr) / sizeof(*(arr)))
-
-ssize_t
-safe_read_or_write(int fildes, void *buf, size_t nbyte, int what);
-
-#define write(fildes, buf, nbyte) safe_read_or_write(fildes, buf, nbyte, 1)
 
 _Noreturn void
 fatal_die(void) {

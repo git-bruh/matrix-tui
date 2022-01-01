@@ -46,6 +46,8 @@ uintattr_t
 str_attr(const char *str);
 
 void
+tab_room_get_buffer_points(struct widget_points *points);
+void
 tab_room_redraw(struct tab_room *room);
 void
 tab_login_redraw(struct form *form, const char *error);
