@@ -47,7 +47,7 @@ mkdir_parents(char path[], mode_t mode) {
 			path[i + 1] = tmp;
 
 			if (ret == -1 && errno != EEXIST) {
-				return -1;
+				return errno;
 			}
 		}
 	}
@@ -68,10 +68,6 @@ get_dbi(enum room_db db, MDB_txn *txn, MDB_dbi *dbi, const char *room_id) {
 	assert(dbi);
 	assert(room_id);
 
-	if (!txn || !dbi || !room_id) {
-		return -1;
-	}
-
 	unsigned flags = MDB_CREATE;
 
 	if (db == ROOM_DB_ORDER_TO_EVENTS) {
@@ -81,38 +77,31 @@ get_dbi(enum room_db db, MDB_txn *txn, MDB_dbi *dbi, const char *room_id) {
 	char *room = NULL;
 
 	if ((asprintf(&room, "%s/%s", room_id, room_db_names[db])) == -1) {
-		return -1;
+		return ENOMEM;
 	}
 
 	int ret = mdb_dbi_open(txn, room, flags, dbi);
-
 	free(room);
 
-	return ret == MDB_SUCCESS ? 0 : -1;
+	return ret;
 }
 
 static int
 del_str(MDB_txn *txn, MDB_dbi dbi, char *key) {
 	if (!key) {
-		return -1;
+		return EINVAL;
 	}
 
-	return (mdb_del(txn, dbi, &(MDB_val) {strlen(key) + 1, key}, NULL)
-			 == MDB_SUCCESS)
-		   ? 0
-		   : -1;
+	return mdb_del(txn, dbi, &(MDB_val) {strlen(key) + 1, key}, NULL);
 }
 
 static int
 get_str(MDB_txn *txn, MDB_dbi dbi, char *key, MDB_val *data) {
 	if (!txn || !key || !data) {
-		return -1;
+		return EINVAL;
 	}
 
-	return (mdb_get(txn, dbi, &(MDB_val) {strlen(key) + 1, key}, data)
-			 == MDB_SUCCESS)
-		   ? 0
-		   : -1;
+	return mdb_get(txn, dbi, &(MDB_val) {strlen(key) + 1, key}, data);
 }
 
 static char *
@@ -120,7 +109,7 @@ get_str_and_dup(MDB_txn *txn, MDB_dbi dbi, char *key) {
 	if (txn && key) {
 		MDB_val data = {0};
 
-		if ((get_str(txn, dbi, key, &data)) == 0) {
+		if ((get_str(txn, dbi, key, &data)) == MDB_SUCCESS) {
 			return strndup(data.mv_data, data.mv_size);
 		}
 	}
@@ -131,53 +120,39 @@ get_str_and_dup(MDB_txn *txn, MDB_dbi dbi, char *key) {
 static int
 put_str(MDB_txn *txn, MDB_dbi dbi, char *key, char *data, unsigned flags) {
 	if (!txn || !key || !data) {
-		return -1;
+		return EINVAL;
 	}
 
-	return (mdb_put(txn, dbi, &(MDB_val) {strlen(key) + 1, key},
-			  &(MDB_val) {strlen(data) + 1, data}, flags)
-			 == MDB_SUCCESS)
-		   ? 0
-		   : -1;
+	return mdb_put(txn, dbi, &(MDB_val) {strlen(key) + 1, key},
+	  &(MDB_val) {strlen(data) + 1, data}, flags);
 }
 
 static int
 put_int(MDB_txn *txn, MDB_dbi dbi, uint64_t key, char *data, unsigned flags) {
 	if (!txn || !data) {
-		return -1;
+		return EINVAL;
 	}
 
-	return (mdb_put(txn, dbi, &(MDB_val) {sizeof(key), &key},
-			  &(MDB_val) {strlen(data) + 1, data}, flags)
-			 == MDB_SUCCESS)
-		   ? 0
-		   : -1;
+	return mdb_put(txn, dbi, &(MDB_val) {sizeof(key), &key},
+	  &(MDB_val) {strlen(data) + 1, data}, flags);
 }
 
 static int
 put_str_int(
   MDB_txn *txn, MDB_dbi dbi, char *key, uint64_t data, unsigned flags) {
 	if (!txn || !key) {
-		return -1;
+		return EINVAL;
 	}
 
-	return (mdb_put(txn, dbi, &(MDB_val) {strlen(key) + 1, key},
-			  &(MDB_val) {sizeof(data), &data}, flags)
-			 == MDB_SUCCESS)
-		   ? 0
-		   : -1;
+	return mdb_put(txn, dbi, &(MDB_val) {strlen(key) + 1, key},
+	  &(MDB_val) {sizeof(data), &data}, flags);
 }
 
-static MDB_txn *
-get_txn(struct cache *cache, unsigned flags) {
-	MDB_txn *txn = NULL;
+static int
+get_txn(struct cache *cache, unsigned flags, MDB_txn **txn) {
+	assert(cache);
 
-	if (cache
-		&& (mdb_txn_begin(cache->env, NULL, flags, &txn)) != MDB_SUCCESS) {
-		return NULL;
-	}
-
-	return txn;
+	return mdb_txn_begin(cache->env, NULL, flags, txn);
 }
 
 static int
@@ -188,19 +163,20 @@ cache_iterator_init(struct cache *cache, struct cache_iterator *iterator,
 	assert(iterator);
 
 	*iterator = (struct cache_iterator) {
-	  .txn = get_txn(cache, txn_flags),
 	  .iter_cb = iter_cb,
 	  .data = data,
 	};
 
-	if (iterator->txn
-		&& (mdb_cursor_open(iterator->txn, dbi, &iterator->cursor))
+	int ret = get_txn(cache, txn_flags, &iterator->txn);
+
+	if (ret == MDB_SUCCESS
+		&& (ret = mdb_cursor_open(iterator->txn, dbi, &iterator->cursor))
 			 == MDB_SUCCESS) {
-		return 0;
+		return ret;
 	}
 
 	cache_iterator_finish(iterator);
-	return -1;
+	return ret;
 }
 
 void
@@ -215,9 +191,7 @@ cache_iterator_finish(struct cache_iterator *iterator) {
 
 int
 cache_init(struct cache *cache) {
-	if (!cache) {
-		return -1;
-	}
+	assert(cache);
 
 	*cache = (struct cache) {0};
 
@@ -231,27 +205,31 @@ cache_init(struct cache *cache) {
 
 	char dir[] = "/tmp/db";
 
-	if ((mkdir_parents(dir, dir_perms)) == -1) {
-		return -1;
+	int ret = 0;
+
+	if ((ret = mkdir_parents(dir, dir_perms)) != 0) {
+		return ret;
 	}
 
 	MDB_txn *txn = NULL;
 
 	unsigned multiple_readonly_txn_per_thread = MDB_NOTLS;
 
-	if ((mdb_env_create(&cache->env)) == MDB_SUCCESS
-		&& (mdb_env_set_maxdbs(cache->env, max_dbs)) == MDB_SUCCESS
-		&& (mdb_env_open(
-			 cache->env, dir, multiple_readonly_txn_per_thread, db_perms))
+	if ((ret = mdb_env_create(&cache->env)) == MDB_SUCCESS
+		&& (ret = mdb_env_set_maxdbs(cache->env, max_dbs)) == MDB_SUCCESS
+		&& (ret = mdb_env_open(
+			  cache->env, dir, multiple_readonly_txn_per_thread, db_perms))
 			 == MDB_SUCCESS
-		&& (txn = get_txn(cache, 0))) {
+		&& (ret = get_txn(cache, 0, &txn)) == MDB_SUCCESS) {
 
 		for (size_t i = 0; i < DB_MAX; i++) {
-			if ((mdb_dbi_open(txn, db_names[i], MDB_CREATE, &cache->dbs[i]))
+			if ((ret
+				  = mdb_dbi_open(txn, db_names[i], MDB_CREATE, &cache->dbs[i]))
 				!= MDB_SUCCESS) {
 				cache_finish(cache);
 				mdb_txn_commit(txn);
-				return -1;
+
+				return ret;
 			}
 		}
 
@@ -261,7 +239,8 @@ cache_init(struct cache *cache) {
 
 	cache_finish(cache);
 	mdb_txn_commit(txn);
-	return -1;
+
+	return ret;
 }
 
 void
@@ -278,11 +257,10 @@ char *
 cache_auth_get(struct cache *cache, enum auth_key key) {
 	assert(cache);
 
-	MDB_txn *txn = get_txn(cache, 0);
-
+	MDB_txn *txn = NULL;
 	char *ret = NULL;
 
-	if (txn) {
+	if ((get_txn(cache, 0, &txn)) == MDB_SUCCESS && txn) {
 		ret = get_str_and_dup(txn, cache->dbs[DB_AUTH], noconst(db_keys[key]));
 	}
 
@@ -296,16 +274,11 @@ cache_auth_set(struct cache *cache, enum auth_key key, char *auth) {
 	assert(cache);
 	assert(auth);
 
-	MDB_txn *txn = get_txn(cache, 0);
+	MDB_txn *txn = NULL;
+	int ret = get_txn(cache, 0, &txn);
 
-	int ret = -1;
-
-	if (txn) {
-		ret
-		  = ((put_str(txn, cache->dbs[DB_AUTH], noconst(db_keys[key]), auth, 0))
-			  == 0)
-			? 0
-			: -1;
+	if (ret == MDB_SUCCESS) {
+		ret = put_str(txn, cache->dbs[DB_AUTH], noconst(db_keys[key]), auth, 0);
 	}
 
 	mdb_txn_commit(txn);
@@ -319,15 +292,15 @@ cache_room_name(struct cache *cache, MDB_txn *txn, const char *room_id) {
 		char *res = NULL;
 		matrix_json_t *json = NULL;
 
-		if (get_dbi(ROOM_DB_STATE, txn, &dbi, room_id) == 0) {
+		if (get_dbi(ROOM_DB_STATE, txn, &dbi, room_id) == MDB_SUCCESS) {
 			char state_key[] = "m.room.name";
 			char state_fallback[] = "m.room.canonical_alias";
 
 			MDB_val value = {0};
 			struct matrix_state_event sevent;
 
-			if (((get_str(txn, dbi, state_key, &value)) == 0
-				  || (get_str(txn, dbi, state_fallback, &value)) == 0)
+			if (((get_str(txn, dbi, state_key, &value)) == MDB_SUCCESS
+				  || (get_str(txn, dbi, state_fallback, &value)) == MDB_SUCCESS)
 				&& (json
 					= matrix_json_parse((char *) value.mv_data, value.mv_size))
 				&& (matrix_event_state_parse(&sevent, json)) == 0) {
@@ -365,13 +338,13 @@ cache_room_topic(struct cache *cache, MDB_txn *txn, const char *room_id) {
 		char *res = NULL;
 		matrix_json_t *json = NULL;
 
-		if (get_dbi(ROOM_DB_STATE, txn, &dbi, room_id) == 0) {
+		if (get_dbi(ROOM_DB_STATE, txn, &dbi, room_id) == MDB_SUCCESS) {
 			char state_key[] = "m.room.topic";
 
 			MDB_val value = {0};
 			struct matrix_state_event sevent;
 
-			if ((get_str(txn, dbi, state_key, &value)) == 0
+			if ((get_str(txn, dbi, state_key, &value)) == MDB_SUCCESS
 				&& (json
 					= matrix_json_parse((char *) value.mv_data, value.mv_size))
 				&& (matrix_event_state_parse(&sevent, json)) == 0
@@ -396,16 +369,13 @@ int
 cache_iterator_next(struct cache_iterator *iterator) {
 	assert(iterator);
 
-	if (!iterator) {
-		return -1;
-	}
-
 	MDB_val key = {0};
 	MDB_val data = {0};
 
-	if ((mdb_cursor_get(iterator->cursor, &key, &data, MDB_NEXT))
-		!= MDB_SUCCESS) {
-		return -1;
+	int ret = mdb_cursor_get(iterator->cursor, &key, &data, MDB_NEXT);
+
+	if (ret != MDB_SUCCESS) {
+		return ret;
 	}
 
 	return iterator->iter_cb(iterator, &key, &data);
@@ -419,9 +389,9 @@ cache_room_info(struct cache *cache, const char *room_id) {
 	struct room_info *info = malloc(sizeof(*info));
 
 	if (info) {
-		MDB_txn *txn = get_txn(cache, MDB_RDONLY);
+		MDB_txn *txn = NULL;
 
-		if (txn) {
+		if ((get_txn(cache, MDB_RDONLY, &txn)) == MDB_SUCCESS) {
 			*info = (struct room_info) {
 			  .invite = false,
 			  .space = false,
@@ -457,8 +427,8 @@ cache_rooms_next(struct cache_iterator *iterator, MDB_val *key, MDB_val *data) {
 	assert(key->mv_data);
 
 	return (*((char **) iterator->data) = strndup(key->mv_data, key->mv_size))
-		   ? 0
-		   : -1;
+		   ? MDB_SUCCESS
+		   : ENOMEM;
 }
 
 int
@@ -481,10 +451,9 @@ cache_save_txn_init(struct cache *cache, struct cache_save_txn *txn) {
 	  /* Start in the middle so we can easily backfill while filling in
 	   * events forward aswell. */
 	  .index = UINT64_MAX / 2,
-	  .txn = get_txn(cache, 0),
 	  .cache = cache};
 
-	return txn->txn ? 0 : -1;
+	return get_txn(cache, 0, &txn->txn);
 }
 
 void
@@ -496,13 +465,15 @@ cache_save_txn_finish(struct cache_save_txn *txn) {
 
 int
 cache_set_room_dbs(struct cache_save_txn *txn, struct matrix_room *room) {
-	if (!txn || !room) {
-		return -1;
-	}
+	assert(txn);
+	assert(room);
+
+	int ret = 0;
 
 	for (enum room_db i = 0; i < ROOM_DB_MAX; i++) {
-		if ((get_dbi(i, txn->txn, &txn->dbs[i], room->id)) == -1) {
-			return -1;
+		if ((ret = get_dbi(i, txn->txn, &txn->dbs[i], room->id))
+			!= MDB_SUCCESS) {
+			return ret;
 		}
 	}
 
@@ -511,25 +482,21 @@ cache_set_room_dbs(struct cache_save_txn *txn, struct matrix_room *room) {
 			mdb_drop(txn->txn, txn->dbs[i], true);
 		}
 
-		return -1;
+		return EINVAL; /* TODO better return code. */
 	}
 
 	MDB_cursor *cursor = NULL;
 
-	if ((mdb_cursor_open(txn->txn, txn->dbs[ROOM_DB_ORDER_TO_EVENTS], &cursor))
+	if ((ret = mdb_cursor_open(
+		   txn->txn, txn->dbs[ROOM_DB_ORDER_TO_EVENTS], &cursor))
 		== MDB_SUCCESS) {
 		MDB_val key = {0};
 		MDB_val val = {0};
 
-		if ((mdb_cursor_get(cursor, &key, &val, MDB_LAST)) == MDB_SUCCESS) {
+		if ((ret = mdb_cursor_get(cursor, &key, &val, MDB_LAST))
+			== MDB_SUCCESS) {
 			assert(key.mv_size == sizeof(txn->index));
-			if (key.mv_size == sizeof(txn->index)) {
-				memcpy(&txn->index, key.mv_data, sizeof(txn->index));
-			} else {
-				/* TODO what to do here? */
-				mdb_cursor_close(cursor);
-				return -1;
-			}
+			memcpy(&txn->index, key.mv_data, sizeof(txn->index));
 
 			txn->index++; /* Don't overwrite the last event. */
 		}
@@ -537,14 +504,13 @@ cache_set_room_dbs(struct cache_save_txn *txn, struct matrix_room *room) {
 		mdb_cursor_close(cursor);
 	}
 
-	return 0;
+	return MDB_SUCCESS;
 }
 
 int
 cache_save_room(struct cache_save_txn *txn, struct matrix_room *room) {
-	if (!txn || !room) {
-		return -1;
-	}
+	assert(txn);
+	assert(room);
 
 	/* TODO dump summary. */
 	return put_str(
@@ -553,9 +519,8 @@ cache_save_room(struct cache_save_txn *txn, struct matrix_room *room) {
 
 enum cache_save_error
 cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
-	if (!txn || !event) {
-		return CACHE_FAIL;
-	}
+	assert(txn);
+	assert(event);
 
 	switch (event->type) {
 	case MATRIX_EVENT_STATE:
@@ -597,7 +562,7 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 
 				if ((get_str(txn->txn, txn->dbs[ROOM_DB_EVENTS_TO_ORDER],
 					  tevent->redaction.redacts, &del_index))
-					== 0) {
+					== MDB_SUCCESS) {
 					mdb_del(txn->txn, txn->dbs[ROOM_DB_ORDER_TO_EVENTS],
 					  &del_index, NULL);
 
@@ -621,9 +586,11 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 
 				if ((get_str(txn->txn, txn->dbs[ROOM_DB_EVENTS],
 					  tevent->base.event_id, &value))
-					== 0) {
+					== MDB_SUCCESS) {
+					fprintf(stderr, "Got duplicate event '%s'\n",
+					  tevent->base.event_id);
 					(void) value;
-					/* TODO warn about duplicates. */
+
 					return CACHE_FAIL;
 				}
 

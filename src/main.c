@@ -64,7 +64,7 @@ cleanup(struct state *state) {
 	close(state->log_fd);
 	memset(state, 0, sizeof(*state));
 
-	printf("%s\n", "Any errors have been logged to '" LOG_PATH "'");
+	printf("%s\n", "Any errors will been logged to '" LOG_PATH "'");
 }
 
 static void
@@ -477,28 +477,34 @@ populate_from_cache(struct state *state) {
 	struct cache_iterator iterator = {0};
 	char *id = NULL;
 
-	if ((cache_rooms_iterator(&state->cache, &iterator, &id)) == 0) {
-		while ((cache_iterator_next(&iterator)) == 0) {
-			assert(id);
-			struct room_info *info = cache_room_info(&state->cache, id);
+	int ret = cache_rooms_iterator(&state->cache, &iterator, &id);
 
-			if (info) {
-				struct room *room = room_alloc(info);
+	if (ret != MDB_SUCCESS) {
+		fprintf(
+		  stderr, "Failed to create room iterator: %s\n", mdb_strerror(ret));
+		return -1;
+	}
 
-				if (room) {
-					shput(state->rooms, id, room);
-				} else {
-					room_info_destroy(info);
-				}
+	while ((cache_iterator_next(&iterator)) == MDB_SUCCESS) {
+		assert(id);
+		struct room_info *info = cache_room_info(&state->cache, id);
+
+		if (info) {
+			struct room *room = room_alloc(info);
+
+			if (room) {
+				shput(state->rooms, id, room);
+			} else {
+				room_info_destroy(info);
 			}
-
-			free(id);
-			id = NULL; /* Fix false positive in static analyzers, id is
-						* reassigned by cache_iterator_next. */
 		}
 
-		cache_iterator_finish(&iterator);
+		free(id);
+		id = NULL; /* Fix false positive in static analyzers, id is
+					* reassigned by cache_iterator_next. */
 	}
+
+	cache_iterator_finish(&iterator);
 
 	return 0;
 }
@@ -741,9 +747,14 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 	struct matrix_room sync_room;
 	struct cache_save_txn txn = {0};
 
-	if ((cache_auth_set(&state->cache, DB_KEY_NEXT_BATCH, response->next_batch))
-		  != 0
-		|| (cache_save_txn_init(&state->cache, &txn)) != 0) {
+	int ret = 0;
+
+	if ((ret = cache_auth_set(
+		   &state->cache, DB_KEY_NEXT_BATCH, response->next_batch))
+		  != MDB_SUCCESS
+		|| (ret = cache_save_txn_init(&state->cache, &txn)) != MDB_SUCCESS) {
+		fprintf(stderr, "Failed to set next_batch and start save txn: %s\n",
+		  mdb_strerror(ret));
 		return;
 	}
 
@@ -759,8 +770,10 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 			assert(0);
 		}
 
-		if ((cache_set_room_dbs(&txn, &sync_room)) != 0
-			|| (cache_save_room(&txn, &sync_room)) != 0) {
+		if ((ret = cache_set_room_dbs(&txn, &sync_room)) != 0
+			|| (ret = cache_save_room(&txn, &sync_room)) != 0) {
+			fprintf(stderr, "Failed to save room '%s': %s\n", sync_room.id,
+			  mdb_strerror(ret));
 			continue;
 		}
 
@@ -784,9 +797,16 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 		while ((matrix_sync_event_next(&sync_room, &event)) == 0) {
 			uint64_t index = txn.index;
-			enum cache_save_error ret = CACHE_FAIL;
+			enum cache_save_error cache_ret = CACHE_FAIL;
 
-			if ((ret = cache_save_event(&txn, &event)) == CACHE_FAIL) {
+			if ((cache_ret = cache_save_event(&txn, &event)) == CACHE_FAIL) {
+				const char *id = matrix_sync_event_id(&event);
+
+				if (id) {
+					fprintf(stderr, "Failed to save event '%s' for room '%s'\n",
+					  id, sync_room.id);
+				}
+
 				continue;
 			}
 
@@ -875,7 +895,7 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 					arrput(timeline->buf, message);
 					break;
 				case MATRIX_ROOM_REDACTION:
-					if (ret == CACHE_GOT_REDACTION) {
+					if (cache_ret == CACHE_GOT_REDACTION) {
 						/* Ensure that bsearch has access to new events. */
 						timeline->len = arrlenu(timeline->buf);
 						redact(room, txn.latest_redaction);
@@ -963,11 +983,14 @@ init_everything(struct state *state) {
 		return -1;
 	}
 
-	if ((cache_init(&state->cache)) != 0) {
-		return -1;
-	}
-
 	int ret = -1;
+
+	ret = cache_init(&state->cache);
+
+	if (ret != 0) {
+		fprintf(
+		  stderr, "Failed to initialize database: %s\n", mdb_strerror(ret));
+	}
 
 	ret = pthread_create(
 	  &state->threads[THREAD_QUEUE], NULL, queue_listener, state);
