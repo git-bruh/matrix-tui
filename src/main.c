@@ -935,16 +935,6 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 	cache_save_txn_finish(&txn);
 }
 
-int
-hm_init(struct state *state) {
-	/* sh_new_strdup is important to avoid use after frees. Must call these
-	 * 2 functions here before the syncer thread starts. */
-	sh_new_strdup(state->rooms);
-	populate_from_cache(state);
-
-	return 0;
-}
-
 static int
 redirect_stderr_log(int *fd) {
 	assert(fd);
@@ -1014,7 +1004,16 @@ init_everything(struct state *state) {
 		return -1;
 	}
 
-	populate_from_cache(state);
+	/* sh_new_strdup is important to avoid use after frees since stb_ds just
+	 * uses the original pointer, by default. */
+	sh_new_strdup(state->rooms);
+
+	ret = populate_from_cache(state);
+
+	if (ret != 0) {
+		fprintf(stderr, "Failed to populate rooms from cache\n");
+		return -1;
+	}
 
 	ret = pthread_create(&state->threads[THREAD_SYNC], NULL, syncer, state);
 

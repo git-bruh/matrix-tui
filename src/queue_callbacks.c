@@ -1,6 +1,7 @@
 #include "queue_callbacks.h"
 
 #include <assert.h>
+#include <stdio.h>
 
 void
 queue_item_free(struct queue_item *item) {
@@ -49,8 +50,15 @@ handle_sent_message(struct state *state, void *data) {
 	assert(sent_message->room_id);
 
 	char *event_id = NULL;
-	matrix_send_message(state->matrix, &event_id, sent_message->room_id,
-	  "m.text", sent_message->buf, NULL);
+
+	enum matrix_code code = matrix_send_message(state->matrix, &event_id,
+	  sent_message->room_id, "m.text", sent_message->buf, NULL);
+
+	if (code != MATRIX_SUCCESS) {
+		fprintf(stderr, "Failed to send message to room '%s': %s\n",
+		  sent_message->room_id, matrix_strerror(code));
+	}
+
 	free(event_id);
 }
 
