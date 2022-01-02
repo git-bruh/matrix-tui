@@ -55,7 +55,7 @@ DEP = $(OBJ:.o=.d)
 -include $(DEP)
 
 .c.o:
-	$(CC) $(XCFLAGS) $(INCLUDES) $(CPPFLAGS) -MMD -c $< -o $@
+	$(CC) $(XCFLAGS) $(INCLUDES) $(CPPFLAGS) -MD -c $< -o $@
 
 $(BIN): $(OBJ)
 	$(CC) $(XCFLAGS) -o $@ $(OBJ) $(XLDLIBS) $(LDFLAGS)
