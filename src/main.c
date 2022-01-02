@@ -9,9 +9,6 @@
 #include <langinfo.h>
 #include <locale.h>
 
-#define ERRLOG(cond, ...)                                                      \
-	(!(cond) ? (fprintf(stderr, __VA_ARGS__), true) : false)
-
 enum widget {
 	WIDGET_INPUT = 0,
 	WIDGET_FORM,
@@ -64,7 +61,10 @@ cleanup(struct state *state) {
 	}
 	shfree(state->rooms);
 
+	close(state->log_fd);
 	memset(state, 0, sizeof(*state));
+
+	printf("%s\n", "Any errors have been logged to '" LOG_PATH "'");
 }
 
 static void
@@ -144,17 +144,6 @@ queue_listener(void *arg) {
 	}
 
 	pthread_exit(NULL);
-}
-
-static int
-ui_init(void) {
-	if ((tb_init()) == TB_OK) {
-		tb_set_input_mode(TB_INPUT_ALT | TB_INPUT_MOUSE);
-		tb_set_output_mode(TB_OUTPUT_256);
-		return 0;
-	}
-
-	return -1;
 }
 
 static enum widget_error
@@ -936,11 +925,102 @@ hm_init(struct state *state) {
 	return 0;
 }
 
+static int
+redirect_stderr_log(int *fd) {
+	assert(fd);
+
+	const mode_t perms = 0600;
+
+	if ((*fd = open(LOG_PATH, O_CREAT | O_RDWR | O_TRUNC, perms)) == -1
+		|| (dup2(*fd, STDERR_FILENO)) == -1) {
+		return -1;
+	}
+
+	return 0;
+}
+
+static int
+ui_init(void) {
+	int ret = tb_init();
+
+	if (ret == TB_OK) {
+		tb_set_input_mode(TB_INPUT_ALT | TB_INPUT_MOUSE);
+		tb_set_output_mode(TB_OUTPUT_256);
+	}
+
+	return ret;
+}
+
+static int
+init_everything(struct state *state) {
+	if ((matrix_global_init()) != 0) {
+		fprintf(stderr, "Failed to initialize matrix globals\n");
+		return -1;
+	}
+
+	if ((pipe(state->thread_comm_pipe)) != 0) {
+		perror("Failed to initialize pipe");
+		return -1;
+	}
+
+	if ((cache_init(&state->cache)) != 0) {
+		return -1;
+	}
+
+	int ret = -1;
+
+	ret = pthread_create(
+	  &state->threads[THREAD_QUEUE], NULL, queue_listener, state);
+
+	if (ret != 0) {
+		errno = ret;
+		perror("Failed to initialize queue thread");
+
+		return -1;
+	}
+
+	ret = ui_init();
+
+	if (ret != TB_OK) {
+		fprintf(stderr, "Failed to initialize UI: %s\n", tb_strerror(ret));
+		return -1;
+	}
+
+	if ((login(state)) != 0) {
+		fprintf(stderr, "Login cancelled\n");
+		return -1;
+	}
+
+	populate_from_cache(state);
+
+	ret = pthread_create(&state->threads[THREAD_SYNC], NULL, syncer, state);
+
+	if (ret != 0) {
+		errno = ret;
+		perror("Failed to initialize syncer thread");
+
+		return -1;
+	}
+
+	return 0;
+}
+
 int
 main() {
-	if (ERRLOG(setlocale(LC_ALL, ""), "Failed to set locale.\n")
-		|| ERRLOG(strcmp("UTF-8", nl_langinfo(CODESET)) == 0,
-		  "Locale is not UTF-8.\n")) {
+	if (!(setlocale(LC_ALL, ""))) {
+		fprintf(stderr, "Failed to set locale\n");
+		return EXIT_FAILURE;
+	}
+
+	if ((strcmp("UTF-8", nl_langinfo(CODESET)) != 0)) {
+		fprintf(stderr, "Locale is not UTF-8\n");
+		return EXIT_FAILURE;
+	}
+
+	int log_fd = -1;
+
+	if ((redirect_stderr_log(&log_fd)) == -1) {
+		perror("Failed to open log file '" LOG_PATH "'");
 		return EXIT_FAILURE;
 	}
 
@@ -948,32 +1028,11 @@ main() {
 	  .cond = PTHREAD_COND_INITIALIZER,
 	  .mutex = PTHREAD_MUTEX_INITIALIZER,
 	  .rooms_mutex = PTHREAD_MUTEX_INITIALIZER,
-	  .thread_comm_pipe = {-1, -1}
-	  };
+	  .log_fd = log_fd,
+	  .thread_comm_pipe = {-1, -1},
+	};
 
-	if (!ERRLOG(
-		  matrix_global_init() == 0, "Failed to initialize matrix globals.\n")
-		&& !ERRLOG(
-		  pipe(state.thread_comm_pipe) == 0, "Failed to initialize pipe.\n")
-		&& !ERRLOG(
-		  cache_init(&state.cache) == 0, "Failed to initialize database.\n")
-		&& !ERRLOG(ui_init() == 0, "Failed to initialize UI.\n")
-		&& !ERRLOG(pthread_create(
-					 &state.threads[THREAD_QUEUE], NULL, queue_listener, &state)
-					 == 0,
-		  "Failed to initialize queue thread.\n")
-		&& (login(&state)) == 0 && (hm_init(&state)) == 0) {
-		bool thread_created
-		  = (pthread_create(&state.threads[THREAD_SYNC], NULL, syncer, &state)
-			 == 0);
-
-		if (!thread_created) {
-			cleanup(&state);
-			ERRLOG(thread_created, "Failed to initialize syncer thread.\n");
-
-			return EXIT_FAILURE;
-		}
-
+	if ((init_everything(&state)) == 0) {
 		ui_loop(&state); /* Blocks forever. */
 
 		cleanup(&state);

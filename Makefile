@@ -16,6 +16,7 @@ XCFLAGS = \
 	-Werror=int-conversion \
 	-Werror=implicit-function-declaration \
 	-Werror=incompatible-pointer-types \
+	-DLOG_PATH=\"/tmp/matrix-tui.log\" \
 	-DCLIENT_NAME=\"matrix-tui\"
 
 XLDLIBS = $(LDLIBS) `curl-config --libs` -lcjson -llmdb -lpthread -lm
