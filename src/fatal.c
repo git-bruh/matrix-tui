@@ -21,8 +21,8 @@ fatal_die(void) {
 	char oom[] = "Out Of Memory\n";
 
 	/* Reset the terminal first. */
-	write(STDERR_FILENO, reset, SIZE(reset) - 1);
-	write(STDERR_FILENO, oom, SIZE(oom) - 1);
+	write(STDOUT_FILENO, reset, SIZE(reset) - 1);
+	write(STDOUT_FILENO, oom, SIZE(oom) - 1);
 
 	abort();
 }
