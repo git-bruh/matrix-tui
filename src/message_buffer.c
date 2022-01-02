@@ -442,7 +442,8 @@ message_buffer_redraw(struct message_buffer *buf,
 				uint32_t uc = widget_uc_sanitize(username[user_index], &width);
 
 				if (width != 0) {
-					tb_set_cell(x++, y, uc, sender_fg, bg);
+					tb_set_cell(x, y, uc, sender_fg, bg);
+					x += width;
 				}
 			}
 
