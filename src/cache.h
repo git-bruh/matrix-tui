@@ -44,15 +44,36 @@ struct cache {
 	MDB_dbi dbs[DB_MAX];
 };
 
-/* A limited iterator interface that just allows returning heap-allocated data.
- */
+struct cache_iterator_event {
+	uint64_t index;
+	struct matrix_timeline_event event;
+	matrix_json_t *json;
+};
+
+struct cache_iterator_member {
+	char *mxid;
+	char *username;
+	matrix_json_t *json;
+};
+
 struct cache_iterator {
+	enum cache_iterator_type {
+		CACHE_ITERATOR_ROOMS = 0,
+		CACHE_ITERATOR_EVENTS,
+		CACHE_ITERATOR_MEMBER,
+		CACHE_ITERATOR_MAX
+	} type;
 	MDB_txn *txn;
 	MDB_cursor *cursor;
 	struct cache *cache;
-	void *data; /* The data that will be filled with contents. */
-	int (*iter_cb)(
-	  struct cache_iterator *iterator, MDB_val *key, MDB_val *data);
+	union {
+		char **room_id;
+		struct {
+			struct cache_iterator_event *event;
+			MDB_dbi events_to_order;
+		};
+		struct cache_iterator_member *member;
+	};
 };
 
 struct cache_save_txn {
@@ -94,8 +115,14 @@ cache_iterator_next(struct cache_iterator *iterator);
 void
 cache_iterator_finish(struct cache_iterator *iterator);
 int
-cache_rooms_iterator(
-  struct cache *cache, struct cache_iterator *iterator, char **id);
+cache_iterator_rooms(
+  struct cache *cache, struct cache_iterator *iterator, char **room_id);
+int
+cache_iterator_events(struct cache *cache, struct cache_iterator *iterator,
+  const char *room_id, struct cache_iterator_event *event);
+int
+cache_iterator_member(struct cache *cache, struct cache_iterator *iterator,
+  const char *room_id, struct cache_iterator_member *member);
 struct room_info *
 cache_room_info(struct cache *cache, const char *room_id);
 void

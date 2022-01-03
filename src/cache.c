@@ -155,27 +155,195 @@ get_txn(struct cache *cache, unsigned flags, MDB_txn **txn) {
 	return mdb_txn_begin(cache->env, NULL, flags, txn);
 }
 
+static bool
+is_str(MDB_val *val) {
+	assert(val);
+
+	return (
+	  val->mv_size > 0 && ((char *) val->mv_data)[val->mv_size - 1] == '\0');
+}
+
 static int
-cache_iterator_init(struct cache *cache, struct cache_iterator *iterator,
-  MDB_dbi dbi, unsigned txn_flags,
-  int (*iter_cb)(struct cache_iterator *iterator, MDB_val *key, MDB_val *data),
-  void *data) {
+cache_rooms_next(struct cache_iterator *iterator, MDB_val *key, MDB_val *data) {
 	assert(iterator);
+	assert(iterator->type == CACHE_ITERATOR_ROOMS);
+	assert(is_str(key));
+	assert(is_str(data));
 
-	*iterator = (struct cache_iterator) {
-	  .iter_cb = iter_cb,
-	  .data = data,
-	};
+	return ((*iterator->room_id) = strndup(key->mv_data, key->mv_size))
+		   ? MDB_SUCCESS
+		   : ENOMEM;
+}
 
-	int ret = get_txn(cache, txn_flags, &iterator->txn);
+static int
+cache_event_next(struct cache_iterator *iterator, MDB_val *key, MDB_val *data) {
+	assert(iterator);
+	assert(iterator->type == CACHE_ITERATOR_EVENTS);
+	assert(is_str(key));
+	assert(is_str(data));
 
-	if (ret == MDB_SUCCESS
-		&& (ret = mdb_cursor_open(iterator->txn, dbi, &iterator->cursor))
-			 == MDB_SUCCESS) {
+	MDB_val data_index = {0};
+	int ret = get_str(
+	  iterator->txn, iterator->events_to_order, key->mv_data, &data_index);
+
+	if (ret != 0) {
 		return ret;
 	}
 
-	cache_iterator_finish(iterator);
+	uint64_t index = 0;
+	assert(data_index.mv_size == sizeof(index));
+	memcpy(&index, data_index.mv_data, sizeof(index));
+
+	matrix_json_t *json = matrix_json_parse(data->mv_data, data->mv_size);
+	assert(json);
+
+	*iterator->event
+	  = (struct cache_iterator_event) {.json = json, .index = index};
+
+	ret = matrix_event_timeline_parse(&iterator->event->event, json);
+
+	if (ret != 0) {
+		matrix_json_delete(json);
+		return EINVAL;
+	}
+
+	return 0;
+}
+
+static int
+cache_member_next(
+  struct cache_iterator *iterator, MDB_val *key, MDB_val *data) {
+	assert(iterator);
+	assert(iterator->type == CACHE_ITERATOR_MEMBER);
+	assert(is_str(key));
+	assert(is_str(data));
+
+	matrix_json_t *json = matrix_json_parse(data->mv_data, data->mv_size);
+	struct matrix_state_event event = {0};
+
+	int ret = matrix_event_state_parse(&event, json);
+
+	if (ret != 0) {
+		return ret;
+	}
+
+	assert(event.type == MATRIX_ROOM_MEMBER);
+
+	*iterator->member = (struct cache_iterator_member) {
+	  .mxid = key->mv_data,
+	  .username = event.member.displayname,
+	  .json = json,
+	};
+
+	return 0;
+}
+
+int
+cache_iterator_rooms(
+  struct cache *cache, struct cache_iterator *iterator, char **room_id) {
+	assert(cache);
+	assert(iterator);
+
+	MDB_txn *txn = NULL;
+	int ret = get_txn(cache, MDB_RDONLY, &txn);
+
+	if (ret != 0) {
+		return ret;
+	}
+
+	MDB_cursor *cursor = NULL;
+	ret = mdb_cursor_open(txn, cache->dbs[DB_ROOMS], &cursor);
+
+	*iterator = (struct cache_iterator) {
+	  .type = CACHE_ITERATOR_ROOMS,
+	  .txn = txn,
+	  .cursor = cursor,
+	  .cache = cache,
+	  .room_id = room_id,
+	};
+
+	if (ret != 0) {
+		cache_iterator_finish(iterator);
+	}
+
+	return ret;
+}
+
+int
+cache_iterator_events(struct cache *cache, struct cache_iterator *iterator,
+  const char *room_id, struct cache_iterator_event *event) {
+	assert(cache);
+	assert(iterator);
+	assert(room_id);
+	assert(event);
+
+	MDB_txn *txn = NULL;
+	int ret = get_txn(cache, MDB_RDONLY, &txn);
+
+	if (ret != 0) {
+		return ret;
+	}
+
+	MDB_dbi events_dbi = 0;
+	MDB_dbi order_dbi = 0;
+	MDB_cursor *cursor = NULL;
+
+	if ((ret = get_dbi(ROOM_DB_EVENTS, txn, &events_dbi, room_id)) == 0
+		&& (ret = get_dbi(ROOM_DB_EVENTS_TO_ORDER, txn, &order_dbi, room_id))
+			 == 0
+		&& (ret = mdb_cursor_open(txn, events_dbi, &cursor)) == 0) {
+	}
+
+	*iterator = (struct cache_iterator) {
+	  .type = CACHE_ITERATOR_EVENTS,
+	  .txn = txn,
+	  .cursor = cursor,
+	  .cache = cache,
+	  .event = event,
+	  .events_to_order = order_dbi,
+	};
+
+	if (ret != 0) {
+		cache_iterator_finish(iterator);
+	}
+
+	return ret;
+}
+
+int
+cache_iterator_member(struct cache *cache, struct cache_iterator *iterator,
+  const char *room_id, struct cache_iterator_member *member) {
+	assert(cache);
+	assert(iterator);
+	assert(room_id);
+	assert(member);
+
+	MDB_txn *txn = NULL;
+	int ret = get_txn(cache, MDB_RDONLY, &txn);
+
+	if (ret != 0) {
+		return ret;
+	}
+
+	MDB_dbi dbi = 0;
+	MDB_cursor *cursor = NULL;
+
+	if ((ret = get_dbi(ROOM_DB_MEMBERS, txn, &dbi, room_id)) == 0
+		&& (ret = mdb_cursor_open(txn, dbi, &cursor)) == 0) {
+	}
+
+	*iterator = (struct cache_iterator) {
+	  .type = CACHE_ITERATOR_MEMBER,
+	  .txn = txn,
+	  .cursor = cursor,
+	  .cache = cache,
+	  .member = member,
+	};
+
+	if (ret != 0) {
+		cache_iterator_finish(iterator);
+	}
+
 	return ret;
 }
 
@@ -378,7 +546,17 @@ cache_iterator_next(struct cache_iterator *iterator) {
 		return ret;
 	}
 
-	return iterator->iter_cb(iterator, &key, &data);
+	switch (iterator->type) {
+	case CACHE_ITERATOR_ROOMS:
+		return cache_rooms_next(iterator, &key, &data);
+	case CACHE_ITERATOR_EVENTS:
+		return cache_event_next(iterator, &key, &data);
+	case CACHE_ITERATOR_MEMBER:
+		return cache_member_next(iterator, &key, &data);
+	default:
+		assert(0);
+		return EINVAL;
+	};
 }
 
 struct room_info *
@@ -417,28 +595,6 @@ room_info_destroy(struct room_info *info) {
 		free(info->topic);
 		free(info);
 	}
-}
-
-static int
-cache_rooms_next(struct cache_iterator *iterator, MDB_val *key, MDB_val *data) {
-	assert(iterator);
-	assert(key);
-	assert(data);
-	assert(key->mv_data);
-
-	return (*((char **) iterator->data) = strndup(key->mv_data, key->mv_size))
-		   ? MDB_SUCCESS
-		   : ENOMEM;
-}
-
-int
-cache_rooms_iterator(
-  struct cache *cache, struct cache_iterator *iterator, char **id) {
-	assert(cache);
-	assert(iterator);
-
-	return cache_iterator_init(
-	  cache, iterator, cache->dbs[DB_ROOMS], MDB_RDONLY, cache_rooms_next, id);
 }
 
 int

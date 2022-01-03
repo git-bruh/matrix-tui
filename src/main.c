@@ -471,13 +471,136 @@ ui_loop(struct state *state) {
 }
 
 static int
+room_put_member(struct room *room, char *mxid, char *username) {
+	assert(room);
+	assert(mxid);
+
+	/* If len < 1 then displayname has been removed. */
+	uint32_t *username_or_stripped_mxid
+	  = (username && (strnlen(username, 1)) > 0) ? buf_to_uint32_t(username)
+												 : mxid_to_uint32_t(mxid);
+
+	assert(username_or_stripped_mxid);
+
+	ptrdiff_t sh_index = shgeti(room->members, mxid);
+
+	if (sh_index < 0) {
+		uint32_t **usernames = NULL;
+		arrput(usernames, username_or_stripped_mxid);
+		shput(room->members, mxid, usernames);
+	} else {
+		arrput(room->members[sh_index].value, username_or_stripped_mxid);
+	}
+
+	return 0;
+}
+
+static int
+room_put_message_event(struct room *room, struct timeline *timeline,
+  uint64_t index, struct matrix_timeline_event *event) {
+	assert(event->base.sender);
+	assert(event->message.body);
+	assert(event->type == MATRIX_ROOM_MESSAGE);
+
+	uint32_t **usernames = shget(room->members, event->base.sender);
+	size_t usernames_len = arrlenu(usernames);
+
+	assert(usernames_len);
+
+	if (usernames_len == 0) {
+		return -1;
+	}
+
+	struct message *message = message_alloc(event->message.body,
+	  event->base.sender, usernames_len - 1, index, NULL, false);
+
+	if (!message) {
+		return -1;
+	}
+
+	/* This is safe as the reader thread will have the old value
+	 * of len stored and not access anything beyond that. */
+	arrput(timeline->buf, message);
+
+	return 0;
+}
+
+static int
+populate_room_users(struct state *state, char *room_id) {
+	assert(state);
+	assert(room_id);
+
+	struct cache_iterator iterator = {0};
+
+	struct room *room = shget(state->rooms, room_id);
+	struct cache_iterator_member member = {0};
+
+	assert(room);
+
+	int ret = cache_iterator_member(&state->cache, &iterator, room_id, &member);
+
+	if (ret != MDB_SUCCESS) {
+		fprintf(stderr, "Failed to create member iterator for room '%s': %s\n",
+		  room_id, mdb_strerror(ret));
+		return ret;
+	}
+
+	while ((cache_iterator_next(&iterator)) == MDB_SUCCESS) {
+		room_put_member(room, member.mxid, member.username);
+		matrix_json_delete(member.json);
+	}
+
+	cache_iterator_finish(&iterator);
+
+	return 0;
+}
+
+static int
+populate_room_from_cache(struct state *state, char *room_id) {
+	assert(state);
+	assert(room_id);
+
+	struct cache_iterator iterator = {0};
+
+	populate_room_users(state, room_id);
+
+	struct room *room = shget(state->rooms, room_id);
+	struct cache_iterator_event event = {0};
+
+	assert(room);
+
+	int ret = cache_iterator_events(&state->cache, &iterator, room_id, &event);
+
+	if (ret != MDB_SUCCESS) {
+		fprintf(stderr, "Failed to create events iterator for room '%s': %s\n",
+		  room_id, mdb_strerror(ret));
+		return ret;
+	}
+
+	struct timeline *timeline = &room->timelines[TIMELINE_FORWARD];
+
+	while ((cache_iterator_next(&iterator)) == MDB_SUCCESS) {
+		if (event.event.type == MATRIX_ROOM_MESSAGE) {
+			room_put_message_event(room, timeline, event.index, &event.event);
+		}
+
+		matrix_json_delete(event.json);
+	}
+
+	timeline->len = arrlenu(timeline->buf);
+	cache_iterator_finish(&iterator);
+
+	return ret;
+}
+
+static int
 populate_from_cache(struct state *state) {
 	assert(state);
 
 	struct cache_iterator iterator = {0};
 	char *id = NULL;
 
-	int ret = cache_rooms_iterator(&state->cache, &iterator, &id);
+	int ret = cache_iterator_rooms(&state->cache, &iterator, &id);
 
 	if (ret != MDB_SUCCESS) {
 		fprintf(
@@ -494,6 +617,7 @@ populate_from_cache(struct state *state) {
 
 			if (room) {
 				shput(state->rooms, id, room);
+				populate_room_from_cache(state, id);
 			} else {
 				room_info_destroy(info);
 			}
@@ -810,89 +934,30 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 				continue;
 			}
 
-			/* Declare variables here to avoid adding a new scope in the switch
-			 * as it increases the indentation level needlessly. */
-			struct matrix_state_event *sevent = NULL;
-			struct matrix_timeline_event *tevent = NULL;
-
 			switch (event.type) {
 			case MATRIX_EVENT_EPHEMERAL:
 				break;
 			case MATRIX_EVENT_STATE:
-				sevent = &event.state;
-
-				switch (sevent->type) {
+				switch (event.state.type) {
 				case MATRIX_ROOM_MEMBER:
-					{
-						/* If len < 1 then displayname has been removed. */
-						uint32_t *displayname_or_stripped_mxid
-						  = (sevent->member.displayname
-							  && (strnlen(sevent->member.displayname, 1)) > 0)
-							? buf_to_uint32_t(sevent->member.displayname)
-							: mxid_to_uint32_t(sevent->base.sender);
-
-						assert(displayname_or_stripped_mxid);
-
-						/* We lock for every member here, but it's not a big
-						 * issue since member events are very rare and we won't
-						 * have more than 1-2 of them per-sync
-						 * except for large syncs like the initial sync. */
-						pthread_mutex_lock(&room->realloc_or_modify_mutex);
-
-						ptrdiff_t sh_index
-						  = shgeti(room->members, sevent->base.sender);
-
-						if (sh_index < 0) {
-							uint32_t **usernames = NULL;
-							arrput(usernames, displayname_or_stripped_mxid);
-							shput(
-							  room->members, sevent->base.sender, usernames);
-						} else {
-							arrput(room->members[sh_index].value,
-							  displayname_or_stripped_mxid);
-						}
-
-						pthread_mutex_unlock(&room->realloc_or_modify_mutex);
-					}
+					/* We lock for every member here, but it's not a big
+					 * issue since member events are very rare and we won't
+					 * have more than 1-2 of them per-sync
+					 * except for large syncs like the initial sync. */
+					pthread_mutex_lock(&room->realloc_or_modify_mutex);
+					room_put_member(room, event.state.base.sender,
+					  event.state.member.displayname);
+					pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 				default:
 					break;
 				}
 				break;
 			case MATRIX_EVENT_TIMELINE:
-				tevent = &event.timeline;
-
-				switch (tevent->type) {
+				switch (event.timeline.type) {
 				case MATRIX_ROOM_MESSAGE:
 					LOCK_IF_GROW(timeline->buf, &room->realloc_or_modify_mutex);
-
-					assert(tevent->base.sender);
-					assert(tevent->message.body);
-
-					/* Technically this is not thread safe, since shget() called
-					 * with a NULL pointer will make an allocation. But in this
-					 * case shget() will always be called once in this function
-					 * before it is ever used in the reader thread. */
-					uint32_t **usernames
-					  = shget(room->members, tevent->base.sender);
-					size_t usernames_len = arrlenu(usernames);
-
-					assert(usernames_len);
-
-					if (usernames_len == 0) {
-						break;
-					}
-
-					struct message *message
-					  = message_alloc(tevent->message.body, tevent->base.sender,
-						usernames_len - 1, index, NULL, false);
-
-					if (!message) {
-						break;
-					}
-
-					/* This is safe as the reader thread will have the old value
-					 * of len stored and not access anything beyond that. */
-					arrput(timeline->buf, message);
+					room_put_message_event(
+					  room, timeline, index, &event.timeline);
 					break;
 				case MATRIX_ROOM_REDACTION:
 					if (cache_ret == CACHE_GOT_REDACTION) {
