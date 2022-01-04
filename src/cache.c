@@ -176,25 +176,26 @@ cache_rooms_next(struct cache_iterator *iterator, MDB_val *key, MDB_val *data) {
 }
 
 static int
-cache_event_next(struct cache_iterator *iterator, MDB_val *key, MDB_val *data) {
+cache_event_next(
+  struct cache_iterator *iterator, MDB_val *db_index, MDB_val *id) {
 	assert(iterator);
 	assert(iterator->type == CACHE_ITERATOR_EVENTS);
-	assert(is_str(key));
-	assert(is_str(data));
+	assert(is_str(id));
 
-	MDB_val data_index = {0};
-	int ret = get_str(
-	  iterator->txn, iterator->events_to_order, key->mv_data, &data_index);
+	MDB_val db_json = {0};
+	int ret = mdb_get(iterator->txn, iterator->events_dbi, id, &db_json);
 
 	if (ret != 0) {
 		return ret;
 	}
 
-	uint64_t index = 0;
-	assert(data_index.mv_size == sizeof(index));
-	memcpy(&index, data_index.mv_data, sizeof(index));
+	assert(is_str(&db_json));
 
-	matrix_json_t *json = matrix_json_parse(data->mv_data, data->mv_size);
+	uint64_t index = 0;
+	assert(db_index->mv_size == sizeof(index));
+	memcpy(&index, db_index->mv_data, sizeof(index));
+
+	matrix_json_t *json = matrix_json_parse(db_json.mv_data, db_json.mv_size);
 	assert(json);
 
 	*iterator->event
@@ -271,7 +272,8 @@ cache_iterator_rooms(
 
 int
 cache_iterator_events(struct cache *cache, struct cache_iterator *iterator,
-  const char *room_id, struct cache_iterator_event *event) {
+  const char *room_id, struct cache_iterator_event *event, uint64_t end_index,
+  uint64_t num_fetch) {
 	assert(cache);
 	assert(iterator);
 	assert(room_id);
@@ -289,9 +291,20 @@ cache_iterator_events(struct cache *cache, struct cache_iterator *iterator,
 	MDB_cursor *cursor = NULL;
 
 	if ((ret = get_dbi(ROOM_DB_EVENTS, txn, &events_dbi, room_id)) == 0
-		&& (ret = get_dbi(ROOM_DB_EVENTS_TO_ORDER, txn, &order_dbi, room_id))
+		&& (ret = get_dbi(ROOM_DB_ORDER_TO_EVENTS, txn, &order_dbi, room_id))
 			 == 0
-		&& (ret = mdb_cursor_open(txn, events_dbi, &cursor)) == 0) {
+		&& (ret = mdb_cursor_open(txn, order_dbi, &cursor)) == 0) {
+		MDB_val start_key = {sizeof(end_index), &end_index};
+
+		if (end_index == (uint64_t) -1) {
+			MDB_val start_value = {0};
+			ret = mdb_cursor_get(cursor, &start_key, &start_value, MDB_LAST);
+		}
+
+		if (ret == 0) {
+			/* Position at given index. */
+			ret = mdb_cursor_get(cursor, &start_key, NULL, MDB_SET);
+		}
 	}
 
 	*iterator = (struct cache_iterator) {
@@ -300,7 +313,8 @@ cache_iterator_events(struct cache *cache, struct cache_iterator *iterator,
 	  .cursor = cursor,
 	  .cache = cache,
 	  .event = event,
-	  .events_to_order = order_dbi,
+	  .events_dbi = events_dbi,
+	  .num_fetch = num_fetch,
 	};
 
 	if (ret != 0) {
@@ -330,6 +344,7 @@ cache_iterator_member(struct cache *cache, struct cache_iterator *iterator,
 
 	if ((ret = get_dbi(ROOM_DB_MEMBERS, txn, &dbi, room_id)) == 0
 		&& (ret = mdb_cursor_open(txn, dbi, &cursor)) == 0) {
+		/* Success */
 	}
 
 	*iterator = (struct cache_iterator) {
@@ -540,23 +555,44 @@ cache_iterator_next(struct cache_iterator *iterator) {
 	MDB_val key = {0};
 	MDB_val data = {0};
 
-	int ret = mdb_cursor_get(iterator->cursor, &key, &data, MDB_NEXT);
-
-	if (ret != MDB_SUCCESS) {
-		return ret;
-	}
+	int ret = 0;
 
 	switch (iterator->type) {
 	case CACHE_ITERATOR_ROOMS:
-		return cache_rooms_next(iterator, &key, &data);
+		if ((ret = mdb_cursor_get(iterator->cursor, &key, &data, MDB_NEXT))
+			== MDB_SUCCESS) {
+			return cache_rooms_next(iterator, &key, &data);
+		}
+		break;
 	case CACHE_ITERATOR_EVENTS:
-		return cache_event_next(iterator, &key, &data);
+		if (iterator->num_fetch == 0) {
+			ret = EINVAL;
+			break;
+		}
+
+		ret = (iterator->fetched_once
+				 ? (mdb_cursor_get(iterator->cursor, &key, &data, MDB_PREV))
+				 : (iterator->fetched_once = true,
+				   mdb_cursor_get(
+					 iterator->cursor, &key, &data, MDB_GET_CURRENT)));
+
+		if (ret == MDB_SUCCESS) {
+			iterator->num_fetch--;
+			ret = cache_event_next(iterator, &key, &data);
+		}
+		break;
 	case CACHE_ITERATOR_MEMBER:
-		return cache_member_next(iterator, &key, &data);
+		if ((ret = mdb_cursor_get(iterator->cursor, &key, &data, MDB_NEXT))
+			== MDB_SUCCESS) {
+			return cache_member_next(iterator, &key, &data);
+		}
+		break;
 	default:
 		assert(0);
-		return EINVAL;
+		ret = EINVAL;
 	};
+
+	return ret;
 }
 
 struct room_info *

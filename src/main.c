@@ -257,38 +257,22 @@ hm_first_room(struct state *state, struct room **room, const char **id) {
 	return ret;
 }
 
-static size_t
-reset_message_buffer_if_recalculate(struct room *room) {
+static void
+fill_old_events(struct room *room) {
 	assert(room);
-
-	size_t consumed = 0;
 
 	struct widget_points points = {0};
 	tab_room_get_buffer_points(&points);
 
-	pthread_mutex_lock(&room->realloc_or_modify_mutex);
+	struct message **buf = room->timelines[TIMELINE_BACKWARD].buf;
+	size_t len = room->timelines[TIMELINE_BACKWARD].len;
 
-	struct message **buf = room->timelines[TIMELINE_FORWARD].buf;
-	size_t len = room->timelines[TIMELINE_FORWARD].len;
-
-	if ((message_buffer_should_recalculate(&room->buffer, &points))) {
-		message_buffer_zero(&room->buffer);
-
-		for (size_t i = 0; i < len; i++) {
-			if (!buf[i]->redacted) {
-				message_buffer_insert(
-				  &room->buffer, room->members, &points, buf[i]);
-			}
+	for (size_t i = len; i > 0; i--) {
+		if (!buf[i - 1]->redacted) {
+			message_buffer_insert(
+			  &room->buffer, room->members, &points, buf[i - 1]);
 		}
-
-		message_buffer_ensure_sane_scroll(&room->buffer);
-
-		consumed = len;
 	}
-
-	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
-
-	return consumed;
 }
 
 static size_t
@@ -313,6 +297,30 @@ fill_new_events(struct room *room, size_t already_consumed) {
 	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 
 	return already_consumed;
+}
+
+static size_t
+reset_message_buffer_if_recalculate(struct room *room) {
+	assert(room);
+
+	size_t consumed = 0;
+
+	struct widget_points points = {0};
+	tab_room_get_buffer_points(&points);
+
+	pthread_mutex_lock(&room->realloc_or_modify_mutex);
+	bool recalculate
+	  = message_buffer_should_recalculate(&room->buffer, &points);
+	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
+
+	if (recalculate) {
+		message_buffer_zero(&room->buffer);
+		fill_old_events(room);
+		consumed = fill_new_events(room, 0);
+		message_buffer_ensure_sane_scroll(&room->buffer);
+	}
+
+	return consumed;
 }
 
 static enum widget_error
@@ -399,7 +407,9 @@ ui_loop(struct state *state) {
 	  .already_consumed = 0,
 	};
 
-	hm_first_room(state, &tab_room.room, &tab_room.id);
+	if ((hm_first_room(state, &tab_room.room, &tab_room.id)) == 0) {
+		fill_old_events(tab_room.room);
+	}
 
 	for (bool redraw = true;;) {
 		if (redraw) {
@@ -569,7 +579,10 @@ populate_room_from_cache(struct state *state, char *room_id) {
 
 	assert(room);
 
-	int ret = cache_iterator_events(&state->cache, &iterator, room_id, &event);
+	const uint64_t num_paginate = 50;
+
+	int ret = cache_iterator_events(
+	  &state->cache, &iterator, room_id, &event, (uint64_t) -1, num_paginate);
 
 	if (ret != MDB_SUCCESS) {
 		fprintf(stderr, "Failed to create events iterator for room '%s': %s\n",
@@ -577,7 +590,7 @@ populate_room_from_cache(struct state *state, char *room_id) {
 		return ret;
 	}
 
-	struct timeline *timeline = &room->timelines[TIMELINE_FORWARD];
+	struct timeline *timeline = &room->timelines[TIMELINE_BACKWARD];
 
 	while ((cache_iterator_next(&iterator)) == MDB_SUCCESS) {
 		if (event.event.type == MATRIX_ROOM_MESSAGE) {

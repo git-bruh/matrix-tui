@@ -22,9 +22,10 @@
 
 enum {
 	TIMELINE_FORWARD = 0, /* New messages. */
-	TIMELINE_BACKWARD,	  /* Backfilled messages. */
+	TIMELINE_BACKWARD,	  /* Backfilled messages iterated in reverse order. */
 	TIMELINE_MAX
 };
+
 enum { TIMELINE_INITIAL_RESERVE = 50 };
 
 struct message {

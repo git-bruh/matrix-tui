@@ -69,8 +69,10 @@ struct cache_iterator {
 	union {
 		char **room_id;
 		struct {
+			bool fetched_once;
+			MDB_dbi events_dbi;
+			uint64_t num_fetch;
 			struct cache_iterator_event *event;
-			MDB_dbi events_to_order;
 		};
 		struct cache_iterator_member *member;
 	};
@@ -117,9 +119,12 @@ cache_iterator_finish(struct cache_iterator *iterator);
 int
 cache_iterator_rooms(
   struct cache *cache, struct cache_iterator *iterator, char **room_id);
+/* Fetch num_fetch events, starting from end_index and going backwards.
+ * end_index == (uint64_t) -1 means start from end. */
 int
 cache_iterator_events(struct cache *cache, struct cache_iterator *iterator,
-  const char *room_id, struct cache_iterator_event *event);
+  const char *room_id, struct cache_iterator_event *event, uint64_t end_index,
+  uint64_t num_fetch);
 int
 cache_iterator_member(struct cache *cache, struct cache_iterator *iterator,
   const char *room_id, struct cache_iterator_member *member);
