@@ -696,7 +696,7 @@ cache_set_room_dbs(struct cache_save_txn *txn, struct matrix_room *room) {
 		mdb_cursor_close(cursor);
 	}
 
-	return MDB_SUCCESS;
+	return ret;
 }
 
 int
