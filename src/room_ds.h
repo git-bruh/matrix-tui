@@ -20,6 +20,9 @@
 		pthread_mutex_unlock(mutex);                                           \
 	} while (0)
 
+/* stb_ds doesn't duplicate strings by default. */
+#define SHMAP_INIT(map) sh_new_strdup(map)
+
 enum {
 	TIMELINE_FORWARD = 0, /* New messages. */
 	TIMELINE_BACKWARD,	  /* Backfilled messages iterated in reverse order. */

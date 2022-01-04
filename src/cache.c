@@ -685,7 +685,7 @@ cache_set_room_dbs(struct cache_save_txn *txn, struct matrix_room *room) {
 		MDB_val key = {0};
 		MDB_val val = {0};
 
-		if ((ret = mdb_cursor_get(cursor, &key, &val, MDB_LAST))
+		if ((mdb_cursor_get(cursor, &key, &val, MDB_LAST))
 			== MDB_SUCCESS) {
 			assert(key.mv_size == sizeof(txn->index));
 			memcpy(&txn->index, key.mv_data, sizeof(txn->index));

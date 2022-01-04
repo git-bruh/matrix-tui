@@ -25,8 +25,8 @@ INCLUDES = \
 	--include src/fatal.h \
 	-I third_party/libmatrix \
 	-I third_party/termbox-widgets \
-	-isystem third_party/stb \
-	-isystem third_party/termbox2
+	-isystem third_party/termbox2 \
+	-isystem third_party # /stb
 
 OBJ = \
 	src/header_libs.o \

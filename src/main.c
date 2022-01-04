@@ -492,7 +492,8 @@ room_put_member(struct room *room, char *mxid, char *username) {
 
 	assert(username_or_stripped_mxid);
 
-	ptrdiff_t sh_index = shgeti(room->members, mxid);
+	ptrdiff_t tmp = 0;
+	ptrdiff_t sh_index = shgeti_ts(room->members, mxid, tmp);
 
 	if (sh_index < 0) {
 		uint32_t **usernames = NULL;
@@ -512,7 +513,8 @@ room_put_message_event(struct room *room, struct timeline *timeline,
 	assert(event->message.body);
 	assert(event->type == MATRIX_ROOM_MESSAGE);
 
-	uint32_t **usernames = shget(room->members, event->base.sender);
+	ptrdiff_t tmp = 0;
+	uint32_t **usernames = shget_ts(room->members, event->base.sender, tmp);
 	size_t usernames_len = arrlenu(usernames);
 
 	assert(usernames_len);
@@ -542,7 +544,8 @@ populate_room_users(struct state *state, char *room_id) {
 
 	struct cache_iterator iterator = {0};
 
-	struct room *room = shget(state->rooms, room_id);
+	ptrdiff_t tmp = 0;
+	struct room *room = shget_ts(state->rooms, room_id, tmp);
 	struct cache_iterator_member member = {0};
 
 	assert(room);
@@ -574,7 +577,8 @@ populate_room_from_cache(struct state *state, char *room_id) {
 
 	populate_room_users(state, room_id);
 
-	struct room *room = shget(state->rooms, room_id);
+	ptrdiff_t tmp = 0;
+	struct room *room = shget_ts(state->rooms, room_id, tmp);
 	struct cache_iterator_event event = {0};
 
 	assert(room);
@@ -917,7 +921,8 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 		struct matrix_sync_event event;
 
 		pthread_mutex_lock(&state->rooms_mutex);
-		struct room *room = shget(state->rooms, sync_room.id);
+		ptrdiff_t tmp = 0;
+		struct room *room = shget_ts(state->rooms, sync_room.id, tmp);
 		pthread_mutex_unlock(&state->rooms_mutex);
 
 		bool room_needs_info = !room;
@@ -1082,9 +1087,7 @@ init_everything(struct state *state) {
 		return -1;
 	}
 
-	/* sh_new_strdup is important to avoid use after frees since stb_ds just
-	 * uses the original pointer, by default. */
-	sh_new_strdup(state->rooms);
+	SHMAP_INIT(state->rooms);
 
 	ret = populate_from_cache(state);
 

@@ -123,7 +123,8 @@ message_buffer_insert(struct message_buffer *buf,
 	assert(members_map);
 	assert(message);
 
-	uint32_t **usernames = shget(members_map, message->sender);
+	ptrdiff_t tmp = 0;
+	uint32_t **usernames = shget_ts(members_map, message->sender, tmp);
 	assert(usernames);
 
 	int padding = uint32_width(usernames[message->index_username])
@@ -428,7 +429,9 @@ message_buffer_redraw(struct message_buffer *buf,
 		if (item->start == 0) {
 			int x = points->x1;
 
-			uint32_t **usernames = shget(members_map, item->message->sender);
+			ptrdiff_t tmp = 0;
+			uint32_t **usernames
+			  = shget_ts(members_map, item->message->sender, tmp);
 			assert(usernames);
 
 			uint32_t *username = usernames[item->message->index_username];

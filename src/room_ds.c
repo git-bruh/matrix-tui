@@ -153,7 +153,7 @@ room_alloc(struct room_info *info) {
 		  .realloc_or_modify_mutex = PTHREAD_MUTEX_INITIALIZER,
 		};
 
-		sh_new_strdup(room->members);
+		SHMAP_INIT(room->members);
 
 		for (size_t i = 0; i < TIMELINE_MAX; i++) {
 			if ((timeline_init(&room->timelines[i])) == -1) {
