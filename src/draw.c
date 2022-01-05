@@ -68,10 +68,12 @@ tab_room_get_buffer_points(struct widget_points *points) {
 }
 
 void
-tab_room_redraw(struct tab_room *room) {
-	assert(room);
+tab_room_redraw(struct tab_room *tab_room) {
+	assert(tab_room);
 
-	if (!room->room) {
+	struct room *room = tab_room->current_room.room;
+
+	if (!room) {
 		return;
 	}
 
@@ -80,14 +82,34 @@ tab_room_redraw(struct tab_room *room) {
 
 	struct widget_points points = {0};
 
+	pthread_mutex_lock(tab_room->rooms_mutex);
+	int x = 0;
+
+	for (size_t i = tab_room->current_room.index, len = shlenu(tab_room->rooms);
+		 i < len; i++) {
+		const char *name_or_id = tab_room->rooms[i].value->info->name
+								 ? tab_room->rooms[i].value->info->name
+								 : tab_room->rooms[i].key;
+		assert(name_or_id);
+
+		uintattr_t attr = str_attr(name_or_id);
+
+		x += widget_print_str(x, 0, width, TB_DEFAULT, attr, " ");
+		x += widget_print_str(x, 0, width,
+		  COLOR_BLACK | (i == tab_room->current_room.index ? TB_UNDERLINE : 0),
+		  attr, name_or_id);
+		x += widget_print_str(x, 0, width, TB_DEFAULT, attr, " ");
+	}
+	pthread_mutex_unlock(tab_room->rooms_mutex);
+
 	widget_points_set(&points, 0, width, height - INPUT_HEIGHT, height);
 
 	int input_rows = 0;
-	input_redraw(room->input, &points, &input_rows);
+	input_redraw(tab_room->input, &points, &input_rows);
 
 	widget_points_set(&points, 0, width, BAR_HEIGHT, height - input_rows);
 
-	pthread_mutex_lock(&room->room->realloc_or_modify_mutex);
-	message_buffer_redraw(&room->room->buffer, room->room->members, &points);
-	pthread_mutex_unlock(&room->room->realloc_or_modify_mutex);
+	pthread_mutex_lock(&room->realloc_or_modify_mutex);
+	message_buffer_redraw(&room->buffer, room->members, &points);
+	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 }

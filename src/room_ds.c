@@ -53,7 +53,7 @@ message_alloc(char *body, char *sender, size_t index_username, uint64_t index,
 		  .index = index,
 		  .index_reply = (index_reply ? *index_reply : 0),
 		  .index_username = index_username,
-		  .body = buf_to_uint32_t(body),
+		  .body = buf_to_uint32_t(body, 0),
 		  .sender = strdup(sender)};
 
 		if (!message->body || !message->sender) {

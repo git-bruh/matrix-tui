@@ -234,25 +234,22 @@ get_fds(struct state *state, struct pollfd fds[FD_MAX]) {
 }
 
 static int
-hm_first_room(struct state *state, struct room **room, const char **id) {
-	assert(state);
-	assert(room);
-	assert(id);
+tab_room_set(struct tab_room *tab_room, size_t index) {
+	assert(tab_room);
 
 	int ret = -1;
 
-	pthread_mutex_lock(&state->rooms_mutex);
-
-	/* We can't keep pointers into the hash map as the hash map itself is
-	 * an array which can be realloc'd.  */
-	if ((shlenu(state->rooms)) > 0) {
-		*room = state->rooms[0].value;
-		*id = state->rooms[0].key;
+	pthread_mutex_lock(tab_room->rooms_mutex);
+	if ((shlenu(tab_room->rooms)) > index) {
+		tab_room->current_room = (struct tab_room_current_room) {
+		  .id = tab_room->rooms[index].key,
+		  .room = tab_room->rooms[index].value,
+		  .index = index,
+		};
 
 		ret = 0;
 	}
-
-	pthread_mutex_unlock(&state->rooms_mutex);
+	pthread_mutex_unlock(tab_room->rooms_mutex);
 
 	return ret;
 }
@@ -325,36 +322,57 @@ reset_message_buffer_if_recalculate(struct room *room) {
 
 static enum widget_error
 handle_tab_room(
-  struct state *state, struct tab_room *room, struct tb_event *event) {
+  struct state *state, struct tab_room *tab_room, struct tb_event *event) {
 	enum widget_error ret = WIDGET_NOOP;
+	struct room *room = tab_room->current_room.room;
 
-	if (!room->room) {
+	if (!room) {
 		return ret;
 	}
 
 	if (event->type == TB_EVENT_RESIZE) {
-		size_t consumed = reset_message_buffer_if_recalculate(room->room);
+		size_t consumed = reset_message_buffer_if_recalculate(room);
 
 		if (consumed > 0) {
-			room->already_consumed = consumed;
+			tab_room->current_room.already_consumed = consumed;
 		}
 
 		return WIDGET_REDRAW;
 	}
 
 	if (event->type == TB_EVENT_MOUSE) {
-		pthread_mutex_lock(&room->room->realloc_or_modify_mutex);
-		ret = handle_message_buffer(&room->room->buffer, event);
-		pthread_mutex_unlock(&room->room->realloc_or_modify_mutex);
+		pthread_mutex_lock(&room->realloc_or_modify_mutex);
+		ret = handle_message_buffer(&room->buffer, event);
+		pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 	} else {
 		bool enter_pressed = false;
 
-		switch (room->widget) {
+		/* Shortcuts */
+		if (event->type == TB_EVENT_KEY && event->mod & TB_MOD_CTRL) {
+			int room_change_ret = -1;
+
+			switch (event->key) {
+			case CTRL('n'):
+				room_change_ret
+				  = tab_room_set(tab_room, tab_room->current_room.index + 1);
+				break;
+			case CTRL('p'):
+				room_change_ret
+				  = tab_room_set(tab_room, tab_room->current_room.index - 1);
+				break;
+			}
+
+			if (room_change_ret == 0) {
+				return WIDGET_REDRAW;
+			}
+		}
+
+		switch (tab_room->widget) {
 		case TAB_ROOM_INPUT:
-			ret = handle_input(room->input, event, &enter_pressed);
+			ret = handle_input(tab_room->input, event, &enter_pressed);
 
 			if (enter_pressed) {
-				char *buf = input_buf(room->input);
+				char *buf = input_buf(tab_room->input);
 
 				/* Empty field. */
 				if (!buf) {
@@ -367,13 +385,13 @@ handle_tab_room(
 				  .has_reply = false,
 				  .reply_index = 0,
 				  .buf = buf,
-				  .room_id = room->id,
+				  .room_id = tab_room->current_room.id,
 				};
 
 				lock_and_push(
 				  state, queue_item_alloc(QUEUE_ITEM_MESSAGE, message));
 
-				ret = input_handle_event(room->input, INPUT_CLEAR);
+				ret = input_handle_event(tab_room->input, INPUT_CLEAR);
 			}
 			break;
 		default:
@@ -404,11 +422,12 @@ ui_loop(struct state *state) {
 	struct tab_room tab_room = {
 	  .widget = TAB_ROOM_INPUT,
 	  .input = &input,
-	  .already_consumed = 0,
+	  .rooms = state->rooms,
+	  .rooms_mutex = &state->rooms_mutex,
 	};
 
-	if ((hm_first_room(state, &tab_room.room, &tab_room.id)) == 0) {
-		fill_old_events(tab_room.room);
+	if ((tab_room_set(&tab_room, 0)) == 0) {
+		fill_old_events(tab_room.current_room.room);
 	}
 
 	for (bool redraw = true;;) {
@@ -440,13 +459,15 @@ ui_loop(struct state *state) {
 			if ((read(state->thread_comm_pipe[PIPE_READ], &read_room,
 				  sizeof(read_room)))
 				  == 0
-				&& read_room == (uintptr_t) tab_room.room) {
-				if (!tab_room.room) {
-					hm_first_room(state, &tab_room.room, &tab_room.id);
+				&& read_room == (uintptr_t) tab_room.current_room.room) {
+				if (!tab_room.current_room.room) {
+					int ret = tab_room_set(&tab_room, 0);
+					assert(ret == 0);
 				}
 
-				tab_room.already_consumed
-				  = fill_new_events(tab_room.room, tab_room.already_consumed);
+				tab_room.current_room.already_consumed
+				  = fill_new_events(tab_room.current_room.room,
+					tab_room.current_room.already_consumed);
 				redraw = true;
 			}
 		}
@@ -487,7 +508,7 @@ room_put_member(struct room *room, char *mxid, char *username) {
 
 	/* If len < 1 then displayname has been removed. */
 	uint32_t *username_or_stripped_mxid
-	  = (username && (strnlen(username, 1)) > 0) ? buf_to_uint32_t(username)
+	  = (username && (strnlen(username, 1)) > 0) ? buf_to_uint32_t(username, 0)
 												 : mxid_to_uint32_t(mxid);
 
 	assert(username_or_stripped_mxid);
@@ -890,12 +911,6 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 	int ret = 0;
 
-	if ((ret = cache_save_txn_init(&state->cache, &txn)) != MDB_SUCCESS) {
-		fprintf(stderr, "Failed to start save txn: %s\n", mdb_strerror(ret));
-		assert(0);
-		return;
-	}
-
 	while ((matrix_sync_room_next(response, &sync_room)) == 0) {
 		switch (sync_room.type) {
 		case MATRIX_ROOM_LEAVE:
@@ -906,6 +921,12 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 			break;
 		default:
 			assert(0);
+		}
+
+		if ((ret = cache_save_txn_init(&state->cache, &txn)) != MDB_SUCCESS) {
+			fprintf(stderr, "Failed to start save txn for room '%s': %s\n",
+			  sync_room.id, mdb_strerror(ret));
+			continue;
 		}
 
 		if ((ret = cache_set_room_dbs(&txn, &sync_room)) != MDB_SUCCESS) {
@@ -1015,9 +1036,9 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 			uintptr_t ptr = (uintptr_t) room;
 			write(state->thread_comm_pipe[PIPE_WRITE], &ptr, sizeof(ptr));
 		}
-	}
 
-	cache_save_txn_finish(&txn);
+		cache_save_txn_finish(&txn);
+	}
 
 	if ((ret = cache_auth_set(
 		   &state->cache, DB_KEY_NEXT_BATCH, response->next_batch))

@@ -204,6 +204,10 @@ cache_event_next(
 	ret = matrix_event_timeline_parse(&iterator->event->event, json);
 
 	if (ret != 0) {
+		fprintf(stderr, "Failed to parse event JSON '%.*s'\n", db_json.mv_size,
+		  db_json.mv_data);
+		assert(0);
+
 		matrix_json_delete(json);
 		return EINVAL;
 	}
@@ -220,15 +224,20 @@ cache_member_next(
 	assert(is_str(data));
 
 	matrix_json_t *json = matrix_json_parse(data->mv_data, data->mv_size);
+	assert(json);
+
 	struct matrix_state_event event = {0};
 
 	int ret = matrix_event_state_parse(&event, json);
 
-	if (ret != 0) {
-		return ret;
-	}
+	if (ret != 0 || event.type != MATRIX_ROOM_MEMBER) {
+		fprintf(stderr, "Failed to parse member JSON '%.*s'\n", data->mv_size,
+		  data->mv_data);
+		assert(0);
 
-	assert(event.type == MATRIX_ROOM_MEMBER);
+		matrix_json_delete(json);
+		return EINVAL;
+	}
 
 	*iterator->member = (struct cache_iterator_member) {
 	  .mxid = key->mv_data,
@@ -719,9 +728,10 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 			struct matrix_state_event *sevent = &event->state;
 
 			if (sevent->type == MATRIX_ROOM_MEMBER) {
-				assert(sevent->state_key);
-
-				if (!sevent->state_key) {
+				if (!sevent->state_key
+					|| (strnlen(sevent->state_key, 1)) == 0) {
+					fprintf(stderr, "Member event with no state_key!\n");
+					assert(0);
 					return CACHE_FAIL;
 				}
 

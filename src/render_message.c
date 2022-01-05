@@ -77,28 +77,32 @@ hsl_to_rgb(double h, double s, double l) {
 }
 
 uint32_t *
-buf_to_uint32_t(const char *buf) {
+buf_to_uint32_t(const char *buf, size_t len) {
 	assert(buf);
 
 	/* uint32_t has a larger capacity than char so the buffer will always
 	 * fit in <= strlen(buf) */
 	uint32_t *uint32_buf = NULL;
-	arrsetcap(uint32_buf, strlen(buf));
+
+	if (len == 0) {
+		len = strlen(buf);
+	}
+
+	arrsetcap(uint32_buf, len);
 
 	if (uint32_buf) {
 		size_t index = 0;
 
-		while (*buf) {
-			assert(index < (arrcap(uint32_buf)));
+		for (size_t i = 0; i < len; index++) {
+			assert(i < (arrcap(uint32_buf)));
 
-			int len = tb_utf8_char_to_unicode(&uint32_buf[index], buf);
+			int len_ch = tb_utf8_char_to_unicode(&uint32_buf[index], &buf[i]);
 
-			if (len == TB_ERR) {
+			if (len_ch == TB_ERR) {
 				break;
 			}
 
-			index++;
-			buf += len;
+			i += (size_t) len_ch;
 		}
 
 		arrsetlen(uint32_buf, index);
@@ -128,12 +132,7 @@ mxid_to_uint32_t(char *mxid) {
 		return NULL;
 	}
 
-	char tmp = *end_colon;
-	*end_colon = '\0';
-	uint32_t *res = buf_to_uint32_t(&mxid[start_index]);
-	*end_colon = tmp;
-
-	return res;
+	return buf_to_uint32_t(&mxid[start_index], (size_t) (end_colon - mxid));
 }
 
 uintattr_t
