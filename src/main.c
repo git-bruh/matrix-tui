@@ -363,6 +363,7 @@ handle_tab_room(
 			}
 
 			if (room_change_ret == 0) {
+				fill_old_events(tab_room->current_room.room);
 				return WIDGET_REDRAW;
 			}
 		}
@@ -1018,6 +1019,9 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 			}
 		}
 
+		/* Save here to fetch the topic/name below. */
+		cache_save_txn_finish(&txn);
+
 		timeline->len = arrlenu(timeline->buf);
 
 		if (room_needs_info) {
@@ -1036,10 +1040,11 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 			uintptr_t ptr = (uintptr_t) room;
 			write(state->thread_comm_pipe[PIPE_WRITE], &ptr, sizeof(ptr));
 		}
-
-		cache_save_txn_finish(&txn);
 	}
 
+	/* Set the next_batch key at the end in case we somehow exited during the
+	 * above loop. This will ensure that we receive the left out events on the
+	 * next boot. */
 	if ((ret = cache_auth_set(
 		   &state->cache, DB_KEY_NEXT_BATCH, response->next_batch))
 		!= MDB_SUCCESS) {
