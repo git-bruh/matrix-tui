@@ -890,12 +890,9 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 	int ret = 0;
 
-	if ((ret = cache_auth_set(
-		   &state->cache, DB_KEY_NEXT_BATCH, response->next_batch))
-		  != MDB_SUCCESS
-		|| (ret = cache_save_txn_init(&state->cache, &txn)) != MDB_SUCCESS) {
-		fprintf(stderr, "Failed to set next_batch and start save txn: %s\n",
-		  mdb_strerror(ret));
+	if ((ret = cache_save_txn_init(&state->cache, &txn)) != MDB_SUCCESS) {
+		fprintf(stderr, "Failed to start save txn: %s\n", mdb_strerror(ret));
+		assert(0);
 		return;
 	}
 
@@ -911,8 +908,13 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 			assert(0);
 		}
 
-		if ((ret = cache_set_room_dbs(&txn, &sync_room)) != 0
-			|| (ret = cache_save_room(&txn, &sync_room)) != 0) {
+		if ((ret = cache_set_room_dbs(&txn, &sync_room)) != MDB_SUCCESS) {
+			fprintf(stderr, "Failed to open room DBs for room '%s': %s\n",
+			  sync_room.id, mdb_strerror(ret));
+			continue;
+		}
+
+		if ((ret = cache_save_room(&txn, &sync_room)) != MDB_SUCCESS) {
 			fprintf(stderr, "Failed to save room '%s': %s\n", sync_room.id,
 			  mdb_strerror(ret));
 			continue;
@@ -1016,6 +1018,12 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 	}
 
 	cache_save_txn_finish(&txn);
+
+	if ((ret = cache_auth_set(
+		   &state->cache, DB_KEY_NEXT_BATCH, response->next_batch))
+		!= MDB_SUCCESS) {
+		fprintf(stderr, "Failed to save next batch: %s\n", mdb_strerror(ret));
+	}
 }
 
 static int
