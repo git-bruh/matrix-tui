@@ -204,8 +204,8 @@ cache_event_next(
 	ret = matrix_event_timeline_parse(&iterator->event->event, json);
 
 	if (ret != 0) {
-		fprintf(stderr, "Failed to parse event JSON '%.*s'\n", db_json.mv_size,
-		  db_json.mv_data);
+		fprintf(stderr, "Failed to parse event JSON '%s'\n",
+		  (char *) db_json.mv_data);
 		assert(0);
 
 		matrix_json_delete(json);
@@ -231,8 +231,8 @@ cache_member_next(
 	int ret = matrix_event_state_parse(&event, json);
 
 	if (ret != 0 || event.type != MATRIX_ROOM_MEMBER) {
-		fprintf(stderr, "Failed to parse member JSON '%.*s'\n", data->mv_size,
-		  data->mv_data);
+		fprintf(
+		  stderr, "Failed to parse member JSON '%s'\n", (char *) data->mv_data);
 		assert(0);
 
 		matrix_json_delete(json);
