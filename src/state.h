@@ -23,7 +23,6 @@ struct state {
 	struct matrix *matrix;
 	struct cache cache;
 	struct queue queue;
-	int log_fd;
 	/* Pass data between the syncer thread and the UI thread. This exists as the
 	 * UI thread can't block forever, listening to a queue as it has to handle
 	 * input and resizes. Instead, we poll on this pipe along with polling for

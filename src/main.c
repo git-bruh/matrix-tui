@@ -61,7 +61,6 @@ cleanup(struct state *state) {
 	}
 	shfree(state->rooms);
 
-	close(state->log_fd);
 	memset(state, 0, sizeof(*state));
 
 	printf("%s\n", "Any errors will been logged to '" LOG_PATH "'");
@@ -1053,16 +1052,16 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 }
 
 static int
-redirect_stderr_log(int *fd) {
-	assert(fd);
-
+redirect_stderr_log(void) {
 	const mode_t perms = 0600;
+	int fd = open(LOG_PATH, O_CREAT | O_RDWR | O_TRUNC, perms);
 
-	if ((*fd = open(LOG_PATH, O_CREAT | O_RDWR | O_TRUNC, perms)) == -1
-		|| (dup2(*fd, STDERR_FILENO)) == -1) {
+	if (fd == -1 || (dup2(fd, STDERR_FILENO)) == -1) {
 		return -1;
 	}
 
+	/* Duplicated. */
+	close(fd);
 	return 0;
 }
 
@@ -1154,9 +1153,7 @@ main() {
 		return EXIT_FAILURE;
 	}
 
-	int log_fd = -1;
-
-	if ((redirect_stderr_log(&log_fd)) == -1) {
+	if ((redirect_stderr_log()) == -1) {
 		perror("Failed to open log file '" LOG_PATH "'");
 		return EXIT_FAILURE;
 	}
@@ -1165,7 +1162,6 @@ main() {
 	  .cond = PTHREAD_COND_INITIALIZER,
 	  .mutex = PTHREAD_MUTEX_INITIALIZER,
 	  .rooms_mutex = PTHREAD_MUTEX_INITIALIZER,
-	  .log_fd = log_fd,
 	  .thread_comm_pipe = {-1, -1},
 	};
 
