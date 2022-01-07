@@ -6,24 +6,35 @@
 
 #include "state.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #define SIZE(arr) (sizeof(arr) / sizeof(*(arr)))
 
-_Noreturn void
-fatal_die(void) {
+static void
+reset_term(void) {
 #define ESC "\033"
 	/* Stolen from busybox's 'console-tools/reset.c'.
 	 * We can't call tb_shutdown() as it is not thread safe. */
 	char reset[] = ESC "c" ESC "(B" ESC "[m" ESC "[J" ESC "[?25h";
 #undef ESC
 
-	char oom[] = "Out Of Memory\n";
-
-	/* Reset the terminal first. */
 	write(STDOUT_FILENO, reset, SIZE(reset) - 1);
-	write(STDOUT_FILENO, oom, SIZE(oom) - 1);
+}
 
+_Noreturn void
+fatal_die(void) {
+	reset_term();
+	char oom[] = "Out Of Memory\n";
+	write(STDOUT_FILENO, oom, SIZE(oom) - 1);
+	abort();
+}
+
+_Noreturn void
+fatal_assert_fail(
+  const char *expr, const char *file, int line, const char *func) {
+	reset_term();
+	printf("Assertion failed: %s (%s: %s: %d)\n", expr, file, func, line);
 	abort();
 }
 

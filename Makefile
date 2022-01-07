@@ -23,6 +23,7 @@ XLDLIBS = $(LDLIBS) `curl-config --libs` -lcjson -llmdb -lpthread -lm
 
 INCLUDES = \
 	--include src/fatal.h \
+	-I src \
 	-I third_party/libmatrix \
 	-I third_party/termbox-widgets \
 	-isystem third_party/termbox2 \

@@ -133,6 +133,7 @@ message_buffer_insert(struct message_buffer *buf,
 	assert(points);
 	assert(members_map);
 	assert(message);
+	/* XXX: Expensive assertion, maybe disable it. */
 	assert(message_is_not_duplicate(buf, message));
 
 	ptrdiff_t tmp = 0;
