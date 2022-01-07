@@ -114,6 +114,17 @@ uint32_width(uint32_t *array) {
 	return width;
 }
 
+static bool
+message_is_not_duplicate(struct message_buffer *buf, struct message *message) {
+	for (size_t i = 0, len = arrlenu(buf->buf); i < len; i++) {
+		if (buf->buf[i].message == message) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
 int
 message_buffer_insert(struct message_buffer *buf,
   struct members_map *members_map, struct widget_points *points,
@@ -122,6 +133,7 @@ message_buffer_insert(struct message_buffer *buf,
 	assert(points);
 	assert(members_map);
 	assert(message);
+	assert(message_is_not_duplicate(buf, message));
 
 	ptrdiff_t tmp = 0;
 	uint32_t **usernames = shget_ts(members_map, message->sender, tmp);

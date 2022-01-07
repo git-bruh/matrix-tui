@@ -363,8 +363,8 @@ handle_tab_room(
 			}
 
 			if (room_change_ret == 0) {
-				fill_old_events(tab_room->current_room.room);
-				return WIDGET_REDRAW;
+				event->type = TB_EVENT_RESIZE;
+				return handle_tab_room(state, tab_room, event);
 			}
 		}
 

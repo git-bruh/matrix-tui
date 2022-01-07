@@ -85,20 +85,19 @@ tab_room_redraw(struct tab_room *tab_room) {
 	pthread_mutex_lock(tab_room->rooms_mutex);
 	int x = 0;
 
-	for (size_t i = tab_room->current_room.index, len = shlenu(tab_room->rooms);
+	for (size_t i = 0, len = shlenu(tab_room->rooms);
 		 i < len; i++) {
 		const char *name_or_id = tab_room->rooms[i].value->info->name
 								 ? tab_room->rooms[i].value->info->name
 								 : tab_room->rooms[i].key;
 		assert(name_or_id);
 
-		uintattr_t attr = str_attr(name_or_id);
+		uintattr_t fg = str_attr(name_or_id) | TB_REVERSE;
 
-		x += widget_print_str(x, 0, width, TB_DEFAULT, attr, " ");
-		x += widget_print_str(x, 0, width,
-		  COLOR_BLACK | (i == tab_room->current_room.index ? TB_UNDERLINE : 0),
-		  attr, name_or_id);
-		x += widget_print_str(x, 0, width, TB_DEFAULT, attr, " ");
+		x += widget_print_str(x, 0, width, fg, TB_DEFAULT, " ");
+		x += widget_print_str(x, 0, width, fg | (i == tab_room->current_room.index ? TB_UNDERLINE : 0), TB_DEFAULT, name_or_id);
+		x += widget_print_str(x, 0, width, fg, TB_DEFAULT, " ");
+		/* TODO > at end, highlight if further items have events. */
 	}
 	pthread_mutex_unlock(tab_room->rooms_mutex);
 
