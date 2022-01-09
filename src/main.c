@@ -271,35 +271,31 @@ fill_old_events(struct room *room) {
 	}
 }
 
-static size_t
-fill_new_events(struct room *room, size_t already_consumed) {
+static bool
+fill_new_events(struct room *room) {
 	assert(room);
 
 	struct widget_points points = {0};
 	tab_room_get_buffer_points(&points);
 
-	pthread_mutex_lock(&room->realloc_or_modify_mutex);
+	size_t original_consumed = room->already_consumed;
 
 	struct message **buf = room->timelines[TIMELINE_FORWARD].buf;
 	size_t len = room->timelines[TIMELINE_FORWARD].len;
 
-	for (; already_consumed < len; already_consumed++) {
-		if (!buf[already_consumed]->redacted) {
-			message_buffer_insert(
-			  &room->buffer, room->members, &points, buf[already_consumed]);
+	for (; room->already_consumed < len; room->already_consumed++) {
+		if (!buf[room->already_consumed]->redacted) {
+			message_buffer_insert(&room->buffer, room->members, &points,
+			  buf[room->already_consumed]);
 		}
 	}
 
-	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
-
-	return already_consumed;
+	return (room->already_consumed > original_consumed);
 }
 
-static size_t
+static bool
 reset_message_buffer_if_recalculate(struct room *room) {
 	assert(room);
-
-	size_t consumed = 0;
 
 	struct widget_points points = {0};
 	tab_room_get_buffer_points(&points);
@@ -307,16 +303,17 @@ reset_message_buffer_if_recalculate(struct room *room) {
 	pthread_mutex_lock(&room->realloc_or_modify_mutex);
 	bool recalculate
 	  = message_buffer_should_recalculate(&room->buffer, &points);
-	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 
 	if (recalculate) {
+		room->already_consumed = 0;
 		message_buffer_zero(&room->buffer);
 		fill_old_events(room);
-		consumed = fill_new_events(room, 0);
+		fill_new_events(room);
 		message_buffer_ensure_sane_scroll(&room->buffer);
 	}
+	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 
-	return consumed;
+	return recalculate;
 }
 
 static enum widget_error
@@ -330,10 +327,15 @@ handle_tab_room(
 	}
 
 	if (event->type == TB_EVENT_RESIZE) {
-		size_t consumed = reset_message_buffer_if_recalculate(room);
+		bool reset = reset_message_buffer_if_recalculate(room);
 
-		if (consumed > 0) {
-			tab_room->current_room.room->already_consumed = consumed;
+		/* Ensure that new events are filled if we didn't reset. */
+		if (!reset) {
+			pthread_mutex_lock(
+			  &tab_room->current_room.room->realloc_or_modify_mutex);
+			fill_new_events(tab_room->current_room.room);
+			pthread_mutex_unlock(
+			  &tab_room->current_room.room->realloc_or_modify_mutex);
 		}
 
 		return WIDGET_REDRAW;
@@ -465,9 +467,12 @@ ui_loop(struct state *state) {
 					assert(ret == 0);
 				}
 
-				tab_room.current_room.room->already_consumed
-				  = fill_new_events(tab_room.current_room.room,
-					tab_room.current_room.room->already_consumed);
+				pthread_mutex_lock(
+				  &tab_room.current_room.room->realloc_or_modify_mutex);
+				fill_new_events(tab_room.current_room.room);
+				pthread_mutex_unlock(
+				  &tab_room.current_room.room->realloc_or_modify_mutex);
+
 				redraw = true;
 			}
 		}
