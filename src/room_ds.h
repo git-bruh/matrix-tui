@@ -57,6 +57,7 @@ struct timeline {
 };
 
 struct room {
+	size_t already_consumed; /* No. of items consumed from timeline. */
 	struct room_info *info;
 	struct members_map *members;
 	/* Rendered message indices. */

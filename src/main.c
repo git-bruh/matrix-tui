@@ -241,9 +241,9 @@ tab_room_set(struct tab_room *tab_room, size_t index) {
 	pthread_mutex_lock(tab_room->rooms_mutex);
 	if ((shlenu(tab_room->rooms)) > index) {
 		tab_room->current_room = (struct tab_room_current_room) {
+		  .index = index,
 		  .id = tab_room->rooms[index].key,
 		  .room = tab_room->rooms[index].value,
-		  .index = index,
 		};
 
 		ret = 0;
@@ -333,7 +333,7 @@ handle_tab_room(
 		size_t consumed = reset_message_buffer_if_recalculate(room);
 
 		if (consumed > 0) {
-			tab_room->current_room.already_consumed = consumed;
+			tab_room->current_room.room->already_consumed = consumed;
 		}
 
 		return WIDGET_REDRAW;
@@ -465,9 +465,9 @@ ui_loop(struct state *state) {
 					assert(ret == 0);
 				}
 
-				tab_room.current_room.already_consumed
+				tab_room.current_room.room->already_consumed
 				  = fill_new_events(tab_room.current_room.room,
-					tab_room.current_room.already_consumed);
+					tab_room.current_room.room->already_consumed);
 				redraw = true;
 			}
 		}

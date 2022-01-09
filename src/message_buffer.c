@@ -304,13 +304,10 @@ message_buffer_should_recalculate(
 
 	struct widget_points *cmp = &buf->last_points;
 
-	if ((arrlenu(buf->buf)) == 0) {
-		return false;
-	}
-
 	/* No need to compare y axis since that doesn't impact how messages should
 	 * be rendered, only the start and endpoint of the whole buffer. */
-	return !(cmp->x1 == points->x1 && cmp->x2 == points->x2);
+	return ((arrlenu(buf->buf)) == 0
+			|| !(cmp->x1 == points->x1 && cmp->x2 == points->x2));
 }
 
 enum widget_error

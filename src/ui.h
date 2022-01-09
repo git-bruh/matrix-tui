@@ -4,6 +4,9 @@
 #include "state.h"
 #include "widgets.h"
 
+#undef CTRL
+#define CTRL(x) ((x) &037)
+
 enum hsl_constants {
 	/* HUE = Generated from string. */
 	HUE_MAX = 360,
