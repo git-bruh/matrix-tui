@@ -937,12 +937,14 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 		if ((ret = cache_set_room_dbs(&txn, &sync_room)) != MDB_SUCCESS) {
 			fprintf(stderr, "Failed to open room DBs for room '%s': %s\n",
 			  sync_room.id, mdb_strerror(ret));
+			cache_save_txn_finish(&txn);
 			continue;
 		}
 
 		if ((ret = cache_save_room(&txn, &sync_room)) != MDB_SUCCESS) {
 			fprintf(stderr, "Failed to save room '%s': %s\n", sync_room.id,
 			  mdb_strerror(ret));
+			cache_save_txn_finish(&txn);
 			continue;
 		}
 
