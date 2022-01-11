@@ -239,11 +239,12 @@ tab_room_set(struct tab_room *tab_room, size_t index) {
 	int ret = -1;
 
 	pthread_mutex_lock(tab_room->rooms_mutex);
-	if ((shlenu(tab_room->rooms)) > index) {
+	struct hm_room *rooms_map = *tab_room->rooms;
+	if ((shlenu(rooms_map)) > index) {
 		tab_room->current_room = (struct tab_room_current_room) {
 		  .index = index,
-		  .id = tab_room->rooms[index].key,
-		  .room = tab_room->rooms[index].value,
+		  .id = rooms_map[index].key,
+		  .room = rooms_map[index].value,
 		};
 
 		ret = 0;
@@ -424,7 +425,7 @@ ui_loop(struct state *state) {
 	struct tab_room tab_room = {
 	  .widget = TAB_ROOM_INPUT,
 	  .input = &input,
-	  .rooms = state->rooms,
+	  .rooms = &state->rooms,
 	  .rooms_mutex = &state->rooms_mutex,
 	};
 

@@ -85,10 +85,12 @@ tab_room_redraw(struct tab_room *tab_room) {
 	pthread_mutex_lock(tab_room->rooms_mutex);
 	int x = 0;
 
-	for (size_t i = 0, len = shlenu(tab_room->rooms); i < len; i++) {
-		const char *name_or_id = tab_room->rooms[i].value->info->name
-								 ? tab_room->rooms[i].value->info->name
-								 : tab_room->rooms[i].key;
+	struct hm_room *rooms_map = *tab_room->rooms;
+
+	for (size_t i = 0, len = shlenu(rooms_map); i < len; i++) {
+		const char *name_or_id = rooms_map[i].value->info->name
+								 ? rooms_map[i].value->info->name
+								 : rooms_map[i].key;
 		assert(name_or_id);
 
 		uintattr_t fg = str_attr(name_or_id) | TB_REVERSE;

@@ -41,7 +41,8 @@ struct tab_room {
 	} widget;
 	struct tab_room_current_room current_room;
 	pthread_mutex_t *rooms_mutex;
-	struct hm_room *rooms;
+	struct hm_room **rooms; /* Double pointer as the array is realloc'd
+							 * (Originates in struct state) */
 	struct input *input;
 };
 
