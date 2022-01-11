@@ -4,13 +4,22 @@
 #include "widgets.h"
 
 #include <assert.h>
+#include <math.h>
 
 enum {
 	BAR_HEIGHT = 1,
 	INPUT_HEIGHT = 5,
 	FORM_WIDTH = 68,
 	FORM_ART_GAP = 2,
+	TAB_ROOM_TREE_PERCENT = 20,
 };
+
+static int
+part_percent(int total, int percent) {
+	/* 10% of 80 == (10 * 80) / 100 */
+	const double percent_to_value = 100.0;
+	return (int) round((total * percent) / percent_to_value);
+}
 
 static void
 art_redraw(struct widget_points *points) {
@@ -64,7 +73,10 @@ tab_login_redraw(struct tab_login *login) {
 void
 tab_room_get_buffer_points(struct widget_points *points) {
 	assert(points);
-	widget_points_set(points, 0, tb_width(), 0, 0);
+	int width = tb_width();
+
+	widget_points_set(
+	  points, part_percent(width, TAB_ROOM_TREE_PERCENT) + 1, width, 0, 0);
 }
 
 void
@@ -82,36 +94,47 @@ tab_room_redraw(struct tab_room *tab_room) {
 
 	struct widget_points points = {0};
 
-	pthread_mutex_lock(tab_room->rooms_mutex);
-	int x = 0;
+	int tree_width = part_percent(width, TAB_ROOM_TREE_PERCENT);
 
-	struct hm_room *rooms_map = *tab_room->rooms;
+	{
+		const char *name_or_id = "Default";
 
-	for (size_t i = 0, len = shlenu(rooms_map); i < len; i++) {
-		const char *name_or_id = rooms_map[i].value->info->name
-								 ? rooms_map[i].value->info->name
-								 : rooms_map[i].key;
-		assert(name_or_id);
+		bool other_spaces_have_events = true;
+		uintattr_t fg = str_attr(name_or_id);
 
-		uintattr_t fg = str_attr(name_or_id) | TB_REVERSE;
+		if (other_spaces_have_events) {
+			fg |= TB_REVERSE;
+		}
 
-		x += widget_print_str(x, 0, width, fg, TB_DEFAULT, " ");
-		x += widget_print_str(x, 0, width,
-		  fg | (i == tab_room->current_room.index ? TB_UNDERLINE : 0),
-		  TB_DEFAULT, name_or_id);
-		x += widget_print_str(x, 0, width, fg, TB_DEFAULT, " ");
-		/* TODO > at end, highlight if further items have events. */
+		int x = widget_print_str(0, 0, tree_width, fg, TB_DEFAULT, name_or_id);
+
+		if (other_spaces_have_events) {
+			/* Fill gap between name and bar. */
+			for (; x < tree_width; x++) {
+				tb_set_cell(x, 0, ' ', fg, TB_DEFAULT);
+			}
+		}
 	}
-	pthread_mutex_unlock(tab_room->rooms_mutex);
 
-	widget_points_set(&points, 0, width, height - INPUT_HEIGHT, height);
+	/* + 1 for divider bar. */
+	widget_points_set(
+	  &points, tree_width + 1, width, height - INPUT_HEIGHT, height);
 
 	int input_rows = 0;
 	input_redraw(tab_room->input, &points, &input_rows);
 
-	widget_points_set(&points, 0, width, BAR_HEIGHT, height - input_rows);
+	widget_points_set(
+	  &points, tree_width + 1, width, BAR_HEIGHT, height - input_rows);
 
 	pthread_mutex_lock(&room->realloc_or_modify_mutex);
 	message_buffer_redraw(&room->buffer, room->members, &points);
 	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
+
+	/* - 1 for divider bar. */
+	widget_points_set(&points, 0, tree_width - 1, BAR_HEIGHT, height);
+	treeview_redraw(tab_room->tree, &points);
+
+	for (int y = 0; y < height; y++) {
+		widget_print_str(tree_width, y, width, TB_DEFAULT, TB_DEFAULT, "│");
+	}
 }

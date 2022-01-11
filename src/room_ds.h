@@ -60,6 +60,14 @@ struct room {
 	size_t already_consumed; /* No. of items consumed from timeline. */
 	struct room_info *info;
 	struct members_map *members;
+	union {
+		/* If info->is_space */
+		struct treeview_node *space_node;
+		/* If it's a regular room then we have an array of nodes, since a room
+		 * can be a child of multiple spaces. We duplicate the node to set
+		 * different *parent pointers. */
+		struct treeview_node **room_nodes;
+	};
 	/* Rendered message indices. */
 	struct message_buffer buffer;
 	/* .buf MUST have an initial capacity set with arrsetcap. Binary search is

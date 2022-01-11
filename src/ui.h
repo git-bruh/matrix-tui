@@ -43,6 +43,7 @@ struct tab_room {
 	pthread_mutex_t *rooms_mutex;
 	struct hm_room **rooms; /* Double pointer as the array is realloc'd
 							 * (Originates in struct state) */
+	struct treeview *tree;
 	struct input *input;
 };
 

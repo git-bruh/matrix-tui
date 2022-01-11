@@ -140,9 +140,9 @@ message_buffer_insert(struct message_buffer *buf,
 	uint32_t **usernames = shget_ts(members_map, message->sender, tmp);
 	assert(usernames);
 
-	int padding = uint32_width(usernames[message->index_username])
+	int padding = points->x1 + uint32_width(usernames[message->index_username])
 				+ widget_str_width("<> ");
-	int start_x = points->x1 + padding + 1;
+	int start_x = padding + 1;
 
 	if (start_x >= points->x2) {
 		return -1;

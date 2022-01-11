@@ -12,11 +12,10 @@
 #include <string.h>
 #include <sys/stat.h>
 
-#define STREQ(s1, s2) ((strcmp(s1, s2)) == 0)
-
 static const char *const db_names[DB_MAX] = {
   [DB_AUTH] = "auth",
   [DB_ROOMS] = "rooms",
+  [DB_SPACE_CHILDREN] = "space_children",
 };
 
 static const char *const db_keys[DB_KEY_MAX] = {
@@ -55,13 +54,6 @@ mkdir_parents(char path[], mode_t mode) {
 	return 0;
 }
 
-/* Hack to pass const char arrays to MDB APIs that don't modify them but don't
- * explicitly mark their arguments as const either. */
-static char *
-noconst(const char *str) {
-	return (char *) str;
-}
-
 static int
 get_dbi(enum room_db db, MDB_txn *txn, MDB_dbi *dbi, const char *room_id) {
 	assert(txn);
@@ -87,25 +79,26 @@ get_dbi(enum room_db db, MDB_txn *txn, MDB_dbi *dbi, const char *room_id) {
 }
 
 static int
-del_str(MDB_txn *txn, MDB_dbi dbi, char *key) {
+del_str(MDB_txn *txn, MDB_dbi dbi, const char *key, const char *data) {
 	if (!key) {
 		return EINVAL;
 	}
 
-	return mdb_del(txn, dbi, &(MDB_val) {strlen(key) + 1, key}, NULL);
+	return mdb_del(txn, dbi, &(MDB_val) {strlen(key) + 1, noconst(key)},
+	  (data ? &(MDB_val) {strlen(data) + 1, noconst(data)} : NULL));
 }
 
 static int
-get_str(MDB_txn *txn, MDB_dbi dbi, char *key, MDB_val *data) {
+get_str(MDB_txn *txn, MDB_dbi dbi, const char *key, MDB_val *data) {
 	if (!txn || !key || !data) {
 		return EINVAL;
 	}
 
-	return mdb_get(txn, dbi, &(MDB_val) {strlen(key) + 1, key}, data);
+	return mdb_get(txn, dbi, &(MDB_val) {strlen(key) + 1, noconst(key)}, data);
 }
 
 static char *
-get_str_and_dup(MDB_txn *txn, MDB_dbi dbi, char *key) {
+get_str_and_dup(MDB_txn *txn, MDB_dbi dbi, const char *key) {
 	if (txn && key) {
 		MDB_val data = {0};
 
@@ -118,33 +111,35 @@ get_str_and_dup(MDB_txn *txn, MDB_dbi dbi, char *key) {
 }
 
 static int
-put_str(MDB_txn *txn, MDB_dbi dbi, char *key, char *data, unsigned flags) {
+put_str(MDB_txn *txn, MDB_dbi dbi, const char *key, const char *data,
+  unsigned flags) {
 	if (!txn || !key || !data) {
 		return EINVAL;
 	}
 
-	return mdb_put(txn, dbi, &(MDB_val) {strlen(key) + 1, key},
-	  &(MDB_val) {strlen(data) + 1, data}, flags);
+	return mdb_put(txn, dbi, &(MDB_val) {strlen(key) + 1, noconst(key)},
+	  &(MDB_val) {strlen(data) + 1, noconst(data)}, flags);
 }
 
 static int
-put_int(MDB_txn *txn, MDB_dbi dbi, uint64_t key, char *data, unsigned flags) {
+put_int(
+  MDB_txn *txn, MDB_dbi dbi, uint64_t key, const char *data, unsigned flags) {
 	if (!txn || !data) {
 		return EINVAL;
 	}
 
 	return mdb_put(txn, dbi, &(MDB_val) {sizeof(key), &key},
-	  &(MDB_val) {strlen(data) + 1, data}, flags);
+	  &(MDB_val) {strlen(data) + 1, noconst(data)}, flags);
 }
 
 static int
 put_str_int(
-  MDB_txn *txn, MDB_dbi dbi, char *key, uint64_t data, unsigned flags) {
+  MDB_txn *txn, MDB_dbi dbi, const char *key, uint64_t data, unsigned flags) {
 	if (!txn || !key) {
 		return EINVAL;
 	}
 
-	return mdb_put(txn, dbi, &(MDB_val) {strlen(key) + 1, key},
+	return mdb_put(txn, dbi, &(MDB_val) {strlen(key) + 1, noconst(key)},
 	  &(MDB_val) {sizeof(data), &data}, flags);
 }
 
@@ -170,9 +165,8 @@ cache_rooms_next(struct cache_iterator *iterator, MDB_val *key, MDB_val *data) {
 	assert(is_str(key));
 	assert(is_str(data));
 
-	return ((*iterator->room_id) = strndup(key->mv_data, key->mv_size))
-		   ? MDB_SUCCESS
-		   : ENOMEM;
+	*iterator->room_id = key->mv_data;
+	return MDB_SUCCESS;
 }
 
 static int
@@ -250,7 +244,7 @@ cache_member_next(
 
 int
 cache_iterator_rooms(
-  struct cache *cache, struct cache_iterator *iterator, char **room_id) {
+  struct cache *cache, struct cache_iterator *iterator, const char **room_id) {
 	assert(cache);
 	assert(iterator);
 
@@ -371,10 +365,64 @@ cache_iterator_member(struct cache *cache, struct cache_iterator *iterator,
 	return ret;
 }
 
+int
+cache_iterator_spaces(struct cache *cache, struct cache_iterator *iterator,
+  struct cache_iterator_space *space) {
+	assert(cache);
+	assert(iterator);
+	assert(space);
+
+	MDB_txn *txn = NULL;
+	int ret = get_txn(cache, MDB_RDONLY, &txn);
+
+	if (ret != 0) {
+		return ret;
+	}
+
+	MDB_cursor *cursor = NULL;
+
+	if ((ret = mdb_cursor_open(txn, cache->dbs[DB_SPACE_CHILDREN], &cursor))
+		!= MDB_SUCCESS) {
+		return ret;
+	}
+
+	*iterator = (struct cache_iterator) {.type = CACHE_ITERATOR_SPACES,
+	  .txn = txn,
+	  .cursor = cursor,
+	  .cache = cache,
+	  .space = space};
+
+	if (ret != MDB_SUCCESS) {
+		cache_iterator_finish(iterator);
+	}
+
+	return ret;
+}
+
+static int
+cache_iterator_space_children(struct cache *cache, MDB_cursor *cursor,
+  struct cache_iterator *iterator, char **child_id) {
+	assert(cache);
+	assert(iterator);
+	assert(child_id);
+
+	*iterator = (struct cache_iterator) {.type = CACHE_ITERATOR_SPACE_CHILDREN,
+	  .cursor = cursor,
+	  .cache = cache,
+	  .child_id = child_id};
+
+	return MDB_SUCCESS;
+}
+
 void
 cache_iterator_finish(struct cache_iterator *iterator) {
 	if (iterator) {
-		mdb_cursor_close(iterator->cursor);
+		/* Cursor might be inherited from another iterator so only free it if we
+		 * have a txn. */
+		if (iterator->txn) {
+			mdb_cursor_close(iterator->cursor);
+		}
+
 		mdb_txn_commit(iterator->txn);
 
 		memset(iterator, 0, sizeof(*iterator));
@@ -405,7 +453,7 @@ cache_init(struct cache *cache) {
 
 	MDB_txn *txn = NULL;
 
-	unsigned multiple_readonly_txn_per_thread = MDB_NOTLS;
+	const unsigned multiple_readonly_txn_per_thread = MDB_NOTLS;
 
 	if ((ret = mdb_env_create(&cache->env)) == MDB_SUCCESS
 		&& (ret = mdb_env_set_maxdbs(cache->env, max_dbs)) == MDB_SUCCESS
@@ -415,8 +463,13 @@ cache_init(struct cache *cache) {
 		&& (ret = get_txn(cache, 0, &txn)) == MDB_SUCCESS) {
 
 		for (size_t i = 0; i < DB_MAX; i++) {
-			if ((ret
-				  = mdb_dbi_open(txn, db_names[i], MDB_CREATE, &cache->dbs[i]))
+			unsigned flags = MDB_CREATE;
+
+			if (i == DB_SPACE_CHILDREN) {
+				flags |= MDB_DUPSORT;
+			}
+
+			if ((ret = mdb_dbi_open(txn, db_names[i], flags, &cache->dbs[i]))
 				!= MDB_SUCCESS) {
 				cache_finish(cache);
 				mdb_txn_commit(txn);
@@ -557,6 +610,10 @@ cache_room_topic(struct cache *cache, MDB_txn *txn, const char *room_id) {
 	return NULL;
 }
 
+static int
+cache_iterator_space_children(struct cache *cache, MDB_cursor *cursor,
+  struct cache_iterator *iterator, char **child_id);
+
 int
 cache_iterator_next(struct cache_iterator *iterator) {
 	assert(iterator);
@@ -596,12 +653,69 @@ cache_iterator_next(struct cache_iterator *iterator) {
 			return cache_member_next(iterator, &key, &data);
 		}
 		break;
+	case CACHE_ITERATOR_SPACES:
+		if ((ret = mdb_cursor_get(iterator->cursor, &key, &data, MDB_NEXT))
+			== MDB_SUCCESS) {
+			assert(is_str(&key));
+			iterator->space->id = key.mv_data;
+
+			return cache_iterator_space_children(iterator->cache,
+			  iterator->cursor, &iterator->space->children_iterator,
+			  &iterator->space->child_id);
+		}
+		break;
+	case CACHE_ITERATOR_SPACE_CHILDREN:
+		if ((ret = mdb_cursor_get(iterator->cursor, &key, &data,
+			   iterator->child_iterated_once ? MDB_NEXT_DUP : MDB_FIRST_DUP))
+			== MDB_SUCCESS) {
+			assert(is_str(&data));
+			*iterator->child_id = data.mv_data;
+		}
+
+		iterator->child_iterated_once = true;
+		break;
 	default:
 		assert(0);
 		ret = EINVAL;
 	};
 
 	return ret;
+}
+
+static bool
+room_is_space(struct cache *cache, MDB_txn *txn, const char *room_id) {
+	assert(cache);
+	assert(txn);
+	assert(room_id);
+
+	bool is_space = false;
+	MDB_dbi dbi = 0;
+
+	if ((get_dbi(ROOM_DB_STATE, txn, &dbi, room_id)) == MDB_SUCCESS) {
+		char state_key[] = "m.room.create";
+		MDB_val value = {0};
+		matrix_json_t *json = NULL;
+		struct matrix_state_event sevent;
+
+		if ((get_str(txn, dbi, state_key, &value)) == MDB_SUCCESS
+			&& (json = matrix_json_parse((char *) value.mv_data, value.mv_size))
+			&& (matrix_event_state_parse(&sevent, json)) == 0) {
+			if (sevent.type != MATRIX_ROOM_CREATE) {
+				fprintf(stderr,
+				  "m.room.create state event isn't a state event in room "
+				  "'%s'!\n",
+				  room_id);
+				assert(0);
+			} else {
+				is_space = !!sevent.create.type
+						&& (strcmp(sevent.create.type, "m.space") == 0);
+			}
+		}
+
+		matrix_json_delete(json);
+	}
+
+	return is_space;
 }
 
 struct room_info *
@@ -616,8 +730,8 @@ cache_room_info(struct cache *cache, const char *room_id) {
 
 		if ((get_txn(cache, MDB_RDONLY, &txn)) == MDB_SUCCESS) {
 			*info = (struct room_info) {
-			  .invite = false,
-			  .space = false,
+			  .invite = false, /* TODO */
+			  .is_space = room_is_space(cache, txn, room_id),
 			  .name = cache_room_name(cache, txn, room_id),
 			  .topic = cache_room_topic(cache, txn, room_id),
 			};
@@ -643,16 +757,19 @@ room_info_destroy(struct room_info *info) {
 }
 
 int
-cache_save_txn_init(struct cache *cache, struct cache_save_txn *txn) {
+cache_save_txn_init(
+  struct cache *cache, struct cache_save_txn *txn, const char *room_id) {
 	assert(cache);
 	assert(cache->env);
 	assert(txn);
+	assert(room_id);
 
 	*txn = (struct cache_save_txn) {
 	  /* Start in the middle so we can easily backfill while filling in
 	   * events forward aswell. */
 	  .index = UINT64_MAX / 2,
-	  .cache = cache};
+	  .cache = cache,
+	  .room_id = room_id};
 
 	return get_txn(cache, 0, &txn->txn);
 }
@@ -660,7 +777,12 @@ cache_save_txn_init(struct cache *cache, struct cache_save_txn *txn) {
 void
 cache_save_txn_finish(struct cache_save_txn *txn) {
 	if (txn) {
-		mdb_txn_commit(txn->txn);
+		int ret = mdb_txn_commit(txn->txn);
+
+		if (ret != MDB_SUCCESS) {
+			fprintf(stderr, "Failed to commit txn: %s\n", mdb_strerror(ret));
+			abort(); /* TODO better handling. */
+		}
 	}
 }
 
@@ -709,34 +831,130 @@ cache_save_room(struct cache_save_txn *txn, struct matrix_room *room) {
 	  txn->txn, txn->cache->dbs[DB_ROOMS], room->id, (char[]) {""}, 0);
 }
 
+static bool
+child_event_in_parent_space(
+  struct cache *cache, MDB_txn *txn, const char *parent, const char *child) {
+	assert(cache);
+	assert(txn);
+	assert(parent);
+	assert(child);
+
+	MDB_cursor *cursor = NULL;
+
+	int ret = mdb_cursor_open(txn, cache->dbs[DB_SPACE_CHILDREN], &cursor);
+
+	if (ret != MDB_SUCCESS) {
+		fprintf(stderr,
+		  "Failed to open cursor to check child event for '%s' in space '%s': "
+		  "%s\n",
+		  child, parent, mdb_strerror(ret));
+		return false;
+	}
+
+	ret
+	  = mdb_cursor_get(cursor, &(MDB_val) {strlen(parent) + 1, noconst(parent)},
+		&(MDB_val) {strlen(child) + 1, noconst(child)}, MDB_GET_BOTH);
+
+	mdb_cursor_close(cursor);
+
+	if (ret != MDB_SUCCESS) {
+		fprintf(stderr,
+		  "Child event for '%s' doesn't exist in space '%s': %s\n", child,
+		  parent, mdb_strerror(ret));
+	}
+
+	return (ret == MDB_SUCCESS);
+}
+
 enum cache_save_error
 cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 	assert(txn);
 	assert(event);
+
+	/* TODO power level checking. */
 
 	switch (event->type) {
 	case MATRIX_EVENT_STATE:
 		{
 			struct matrix_state_event *sevent = &event->state;
 
-			if (sevent->type == MATRIX_ROOM_MEMBER) {
-				if (!sevent->state_key
-					|| (strnlen(sevent->state_key, 1)) == 0) {
-					fprintf(stderr, "Member event with no state_key!\n");
-					assert(0);
-					return CACHE_FAIL;
+			switch (sevent->type) {
+#define ensure_state_key(sevent)                                               \
+	do {                                                                       \
+		if (!(sevent)->state_key || (strnlen((sevent)->state_key, 1)) == 0) {  \
+			assert(0);                                                         \
+			return CACHE_FAIL;                                                 \
+		}                                                                      \
+	} while (0)
+			case MATRIX_ROOM_MEMBER:
+				ensure_state_key(sevent);
+
+				{
+					char *data = matrix_json_print(event->json);
+					put_str(txn->txn, txn->dbs[ROOM_DB_MEMBERS],
+					  sevent->state_key, data, 0);
+					free(data);
+				}
+				break;
+			case MATRIX_ROOM_SPACE_CHILD:
+				ensure_state_key(sevent);
+
+				if (!(room_is_space(txn->cache, txn->txn, txn->room_id))) {
+					break;
 				}
 
-				char *data = matrix_json_print(event->json);
-				put_str(txn->txn, txn->dbs[ROOM_DB_MEMBERS], sevent->state_key,
-				  data, 0);
-				free(data);
-			} else if (!sevent->state_key
-					   || (strnlen(sevent->state_key, 1)) == 0) {
-				char *data = matrix_json_print(event->json);
-				put_str(txn->txn, txn->dbs[ROOM_DB_STATE], sevent->base.type,
-				  data, 0);
-				free(data);
+				if (!sevent->space_child.via) {
+					del_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
+					  txn->room_id, sevent->state_key);
+					break;
+				}
+
+				if ((put_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
+					  txn->room_id, sevent->state_key, MDB_NODUPDATA))
+					== MDB_KEYEXIST) {
+					fprintf(stderr,
+					  "Tried to add child '%s' already present in space '%s'\n",
+					  sevent->state_key, txn->room_id);
+				}
+				break;
+			case MATRIX_ROOM_SPACE_PARENT:
+				ensure_state_key(sevent);
+
+				if (!(child_event_in_parent_space(
+					  txn->cache, txn->txn, sevent->state_key, txn->room_id))) {
+					break;
+				}
+
+				/* TODO if (!sender_has_power_level_in_parent) { break; } */
+
+				if (!sevent->space_parent.via) {
+					del_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
+					  sevent->state_key, txn->room_id);
+					break;
+				}
+
+				if ((put_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
+					  sevent->state_key, txn->room_id, MDB_NODUPDATA))
+					== MDB_KEYEXIST) {
+					fprintf(stderr,
+					  "Tried to add child '%s' already present in space '%s'\n",
+					  txn->room_id, sevent->state_key);
+				}
+				break;
+#undef ensure_state_key
+			default:
+				if (!sevent->state_key
+					|| (strnlen(sevent->state_key, 1)) == 0) {
+					char *data = matrix_json_print(event->json);
+					put_str(txn->txn, txn->dbs[ROOM_DB_STATE],
+					  sevent->base.type, data, 0);
+					free(data);
+				} else {
+					fprintf(stderr,
+					  "Ignoring unknown state event with state key '%s'\n",
+					  sevent->state_key);
+				}
+				break;
 			}
 		}
 		break;
@@ -762,9 +980,9 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 				}
 
 				del_str(txn->txn, txn->dbs[ROOM_DB_EVENTS_TO_ORDER],
-				  tevent->base.event_id);
-				del_str(
-				  txn->txn, txn->dbs[ROOM_DB_EVENTS], tevent->base.event_id);
+				  tevent->base.event_id, NULL);
+				del_str(txn->txn, txn->dbs[ROOM_DB_EVENTS],
+				  tevent->base.event_id, NULL);
 
 				if (set_index) {
 					return CACHE_GOT_REDACTION;
@@ -801,4 +1019,9 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 	}
 
 	return CACHE_SUCCESS;
+}
+
+char *
+noconst(const char *str) {
+	return (char *) str;
 }
