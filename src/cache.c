@@ -678,14 +678,6 @@ cache_set_room_dbs(struct cache_save_txn *txn, struct matrix_room *room) {
 		}
 	}
 
-	if (room->type == MATRIX_ROOM_LEAVE) {
-		for (enum room_db i = 0; i < ROOM_DB_MAX; i++) {
-			mdb_drop(txn->txn, txn->dbs[i], true);
-		}
-
-		return EINVAL; /* TODO better return code. */
-	}
-
 	MDB_cursor *cursor = NULL;
 
 	if ((ret = mdb_cursor_open(
@@ -735,15 +727,10 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 					return CACHE_FAIL;
 				}
 
-				if ((STREQ(sevent->member.membership, "leave"))) {
-					del_str(
-					  txn->txn, txn->dbs[ROOM_DB_MEMBERS], sevent->state_key);
-				} else {
-					char *data = matrix_json_print(event->json);
-					put_str(txn->txn, txn->dbs[ROOM_DB_MEMBERS],
-					  sevent->state_key, data, 0);
-					free(data);
-				}
+				char *data = matrix_json_print(event->json);
+				put_str(txn->txn, txn->dbs[ROOM_DB_MEMBERS], sevent->state_key,
+				  data, 0);
+				free(data);
 			} else if (!sevent->state_key
 					   || (strnlen(sevent->state_key, 1)) == 0) {
 				char *data = matrix_json_print(event->json);
