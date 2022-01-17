@@ -58,8 +58,9 @@ struct timeline {
 
 struct room {
 	size_t already_consumed; /* No. of items consumed from timeline. */
-	struct room_info *info;
 	struct members_map *members;
+	struct treeview_node tree_node;
+	struct room_info info;
 	/* Rendered message indices. */
 	struct message_buffer buffer;
 	/* .buf MUST have an initial capacity set with arrsetcap. Binary search is
@@ -87,7 +88,7 @@ timeline_init(struct timeline *timeline);
 void
 timeline_finish(struct timeline *timeline);
 struct room *
-room_alloc(struct room_info *info);
+room_alloc(void);
 void
 room_destroy(struct room *room);
 #endif /* !ROOM_DS_H */

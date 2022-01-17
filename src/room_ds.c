@@ -144,12 +144,11 @@ timeline_finish(struct timeline *timeline) {
 }
 
 struct room *
-room_alloc(struct room_info *info) {
+room_alloc(void) {
 	struct room *room = malloc(sizeof(*room));
 
 	if (room) {
 		*room = (struct room) {
-		  .info = info,
 		  .realloc_or_modify_mutex = PTHREAD_MUTEX_INITIALIZER,
 		};
 
@@ -185,7 +184,7 @@ room_destroy(struct room *room) {
 		shfree(room->members);
 
 		message_buffer_finish(&room->buffer);
-		room_info_destroy(room->info);
+		cache_room_info_finish(&room->info);
 		free(room);
 	}
 }

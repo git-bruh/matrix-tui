@@ -406,25 +406,6 @@ handle_tab_room(
 }
 
 static void
-node_draw_cb(void *data, struct widget_points *points, bool is_selected) {
-	assert(data);
-	assert(points);
-
-	struct room *room = data;
-
-	if (room->info->name) {
-		widget_print_str(points->x1, points->y1, points->x2, TB_DEFAULT,
-		  TB_DEFAULT, room->info->name);
-	}
-}
-
-static void
-string_draw_cb(void *data, struct widget_points *points, bool is_selected) {
-	widget_print_str(
-	  points->x1, points->y1, points->x2, TB_DEFAULT, TB_DEFAULT, data);
-}
-
-static void
 ui_loop(struct state *state) {
 	assert(state);
 
@@ -677,17 +658,59 @@ populate_from_cache(struct state *state) {
 
 	while ((cache_iterator_next(&iterator)) == MDB_SUCCESS) {
 		assert(id);
-		struct room_info *info = cache_room_info(&state->cache, id);
+		struct room *room = room_alloc();
 
-		if (info) {
-			struct room *room = room_alloc(info);
+		assert(room);
 
-			if (room) {
-				shput(state->rooms, noconst(id), room);
-				populate_room_from_cache(state, id);
-			} else {
-				room_info_destroy(info);
+		if ((ret = cache_room_info_init(&state->cache, &room->info, id))
+			!= MDB_SUCCESS) {
+			fprintf(stderr, "Failed to get room info for room '%s': %s\n", id,
+			  mdb_strerror(ret));
+			cache_iterator_finish(&iterator);
+
+			return -1;
+		}
+
+		shput(state->rooms, noconst(id), room);
+		populate_room_from_cache(state, id);
+	}
+
+	cache_iterator_finish(&iterator);
+
+	struct cache_iterator_space space = {0};
+	ret = cache_iterator_spaces(&state->cache, &iterator, &space);
+
+	if (ret != MDB_SUCCESS) {
+		fprintf(
+		  stderr, "Failed to create spaces iterator: %s\n", mdb_strerror(ret));
+		return -1;
+	}
+
+	while ((cache_iterator_next(&iterator)) == MDB_SUCCESS) {
+		assert(space.id);
+
+		struct room *space_room = shget(state->rooms, noconst(space.id));
+
+		if (!space_room) {
+			/* TODO unknown room. */
+			continue;
+		}
+
+		assert(space_room->info.is_space);
+
+		while ((cache_iterator_next(&space.children_iterator)) == MDB_SUCCESS) {
+			assert(space.child_id);
+
+			struct room *space_child
+			  = shget(state->rooms, noconst(space.child_id));
+
+			if (!space_child) {
+				continue;
 			}
+
+			fprintf(stderr, "Got %s '%s' in space '%s'\n",
+			  space_child->info.is_space ? "space" : "room", space.child_id,
+			  space.id);
 		}
 	}
 
@@ -979,11 +1002,8 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 		bool room_needs_info = !room;
 
 		if (room_needs_info) {
-			room = room_alloc(NULL);
-
-			if (!room) {
-				continue;
-			}
+			room = room_alloc();
+			assert(room);
 		}
 
 		struct timeline *timeline = &room->timelines[TIMELINE_FORWARD];
@@ -993,13 +1013,6 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 			enum cache_save_error cache_ret = CACHE_FAIL;
 
 			if ((cache_ret = cache_save_event(&txn, &event)) == CACHE_FAIL) {
-				const char *id = matrix_sync_event_id(&event);
-
-				if (id) {
-					fprintf(stderr, "Failed to save event '%s' for room '%s'\n",
-					  id, sync_room.id);
-				}
-
 				continue;
 			}
 
@@ -1024,6 +1037,11 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 			case MATRIX_EVENT_TIMELINE:
 				switch (event.timeline.type) {
 				case MATRIX_ROOM_MESSAGE:
+					/* We only lock if the message buffer actually needs to
+					 * grow. Otherwise, the reader thread has a length of the
+					 * array which stops at the
+					 * index where we're inserting the new messages, so no
+					 * races. */
 					LOCK_IF_GROW(timeline->buf, &room->realloc_or_modify_mutex);
 					room_put_message_event(
 					  room, timeline, index, &event.timeline);
@@ -1032,6 +1050,7 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 					if (cache_ret == CACHE_GOT_REDACTION) {
 						/* Ensure that bsearch has access to new events. */
 						timeline->len = arrlenu(timeline->buf);
+						/* Takes a lock. */
 						redact(room, txn.latest_redaction);
 					}
 					break;
@@ -1050,7 +1069,9 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 		timeline->len = arrlenu(timeline->buf);
 
 		if (room_needs_info) {
-			if ((room->info = cache_room_info(&state->cache, sync_room.id))) {
+			if ((ret = cache_room_info_init(
+				   &state->cache, &room->info, sync_room.id))
+				== MDB_SUCCESS) {
 				pthread_mutex_lock(&state->rooms_mutex);
 				shput(state->rooms, sync_room.id, room);
 				pthread_mutex_unlock(&state->rooms_mutex);
@@ -1059,6 +1080,8 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 				uintptr_t ptr = (uintptr_t) NULL;
 				write(state->thread_comm_pipe[PIPE_WRITE], &ptr, sizeof(ptr));
 			} else {
+				fprintf(stderr, "Failed to get room info for room '%s': %s\n",
+				  sync_room.id, mdb_strerror(ret));
 				room_destroy(room);
 			}
 		} else {

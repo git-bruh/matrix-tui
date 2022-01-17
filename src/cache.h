@@ -149,10 +149,11 @@ cache_iterator_member(struct cache *cache, struct cache_iterator *iterator,
 int
 cache_iterator_spaces(struct cache *cache, struct cache_iterator *iterator,
   struct cache_iterator_space *space);
-struct room_info *
-cache_room_info(struct cache *cache, const char *room_id);
+int
+cache_room_info_init(
+  struct cache *cache, struct room_info *info, const char *room_id);
 void
-room_info_destroy(struct room_info *info);
+cache_room_info_finish(struct room_info *info);
 /* Hack for MDB APIs that don't mark their args as const. */
 char *
 noconst(const char *str);

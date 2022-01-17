@@ -143,6 +143,7 @@ put_str_int(
 	  &(MDB_val) {sizeof(data), &data}, flags);
 }
 
+/* TODO pool transactions. **/
 static int
 get_txn(struct cache *cache, unsigned flags, MDB_txn **txn) {
 	assert(cache);
@@ -610,10 +611,6 @@ cache_room_topic(struct cache *cache, MDB_txn *txn, const char *room_id) {
 	return NULL;
 }
 
-static int
-cache_iterator_space_children(struct cache *cache, MDB_cursor *cursor,
-  struct cache_iterator *iterator, char **child_id);
-
 int
 cache_iterator_next(struct cache_iterator *iterator) {
 	assert(iterator);
@@ -718,41 +715,37 @@ room_is_space(struct cache *cache, MDB_txn *txn, const char *room_id) {
 	return is_space;
 }
 
-struct room_info *
-cache_room_info(struct cache *cache, const char *room_id) {
+int
+cache_room_info_init(
+  struct cache *cache, struct room_info *info, const char *room_id) {
 	assert(cache);
+	assert(info);
 	assert(room_id);
 
-	struct room_info *info = malloc(sizeof(*info));
+	MDB_txn *txn = NULL;
 
-	if (info) {
-		MDB_txn *txn = NULL;
+	int ret = get_txn(cache, MDB_RDONLY, &txn);
 
-		if ((get_txn(cache, MDB_RDONLY, &txn)) == MDB_SUCCESS) {
-			*info = (struct room_info) {
-			  .invite = false, /* TODO */
-			  .is_space = room_is_space(cache, txn, room_id),
-			  .name = cache_room_name(cache, txn, room_id),
-			  .topic = cache_room_topic(cache, txn, room_id),
-			};
-
-			mdb_txn_commit(txn);
-
-			return info;
-		}
-
-		free(info);
+	if (ret == MDB_SUCCESS) {
+		*info = (struct room_info) {
+		  .invite = false, /* TODO */
+		  .is_space = room_is_space(cache, txn, room_id),
+		  .name = cache_room_name(cache, txn, room_id),
+		  .topic = cache_room_topic(cache, txn, room_id),
+		};
 	}
 
-	return NULL;
+	mdb_txn_commit(txn);
+
+	return ret;
 }
 
 void
-room_info_destroy(struct room_info *info) {
+cache_room_info_finish(struct room_info *info) {
 	if (info) {
 		free(info->name);
 		free(info->topic);
-		free(info);
+		memset(info, 0, sizeof(*info));
 	}
 }
 
@@ -873,6 +866,8 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 
 	/* TODO power level checking. */
 
+	int ret = MDB_SUCCESS;
+
 	switch (event->type) {
 	case MATRIX_EVENT_STATE:
 		{
@@ -891,7 +886,7 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 
 				{
 					char *data = matrix_json_print(event->json);
-					put_str(txn->txn, txn->dbs[ROOM_DB_MEMBERS],
+					ret = put_str(txn->txn, txn->dbs[ROOM_DB_MEMBERS],
 					  sevent->state_key, data, 0);
 					free(data);
 				}
@@ -909,8 +904,8 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 					break;
 				}
 
-				if ((put_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
-					  txn->room_id, sevent->state_key, MDB_NODUPDATA))
+				if ((ret = put_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
+					   txn->room_id, sevent->state_key, MDB_NODUPDATA))
 					== MDB_KEYEXIST) {
 					fprintf(stderr,
 					  "Tried to add child '%s' already present in space '%s'\n",
@@ -933,8 +928,8 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 					break;
 				}
 
-				if ((put_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
-					  sevent->state_key, txn->room_id, MDB_NODUPDATA))
+				if ((ret = put_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
+					   sevent->state_key, txn->room_id, MDB_NODUPDATA))
 					== MDB_KEYEXIST) {
 					fprintf(stderr,
 					  "Tried to add child '%s' already present in space '%s'\n",
@@ -946,7 +941,7 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 				if (!sevent->state_key
 					|| (strnlen(sevent->state_key, 1)) == 0) {
 					char *data = matrix_json_print(event->json);
-					put_str(txn->txn, txn->dbs[ROOM_DB_STATE],
+					ret = put_str(txn->txn, txn->dbs[ROOM_DB_STATE],
 					  sevent->base.type, data, 0);
 					free(data);
 				} else {
@@ -988,27 +983,30 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 					return CACHE_GOT_REDACTION;
 				}
 			} else {
-				MDB_val value = {0};
+				char *data = matrix_json_print(event->json);
 
-				if ((get_str(txn->txn, txn->dbs[ROOM_DB_EVENTS],
-					  tevent->base.event_id, &value))
-					== MDB_SUCCESS) {
-					fprintf(stderr, "Got duplicate event '%s'\n",
-					  tevent->base.event_id);
-					(void) value;
+				ret = put_str(txn->txn, txn->dbs[ROOM_DB_EVENTS],
+				  tevent->base.event_id, data, MDB_NOOVERWRITE);
+
+				if (ret == MDB_KEYEXIST) {
+					fprintf(stderr, "Got duplicate event '%s' in room '%s'\n",
+					  tevent->base.event_id, txn->room_id);
+					free(data);
 
 					return CACHE_FAIL;
 				}
 
-				char *data = matrix_json_print(event->json);
-
-				put_int(txn->txn, txn->dbs[ROOM_DB_ORDER_TO_EVENTS], txn->index,
-				  tevent->base.event_id, 0);
-				put_str_int(txn->txn, txn->dbs[ROOM_DB_EVENTS_TO_ORDER],
-				  tevent->base.event_id, txn->index, 0);
-				put_str(txn->txn, txn->dbs[ROOM_DB_EVENTS],
-				  tevent->base.event_id, data, 0);
-				txn->index++;
+				if (ret == MDB_SUCCESS
+					&& (ret
+						 = put_int(txn->txn, txn->dbs[ROOM_DB_ORDER_TO_EVENTS],
+						   txn->index, tevent->base.event_id, 0))
+						 == MDB_SUCCESS
+					&& (ret = put_str_int(txn->txn,
+						  txn->dbs[ROOM_DB_EVENTS_TO_ORDER],
+						  tevent->base.event_id, txn->index, 0))
+						 == MDB_SUCCESS) {
+					txn->index++;
+				}
 
 				free(data);
 			}
@@ -1016,6 +1014,11 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 		break;
 	default:
 		break;
+	}
+
+	if (ret != MDB_SUCCESS) {
+		fprintf(stderr, "Failed to save event '%s' in room '%s': %s\n",
+		  matrix_sync_event_id(event), txn->room_id, mdb_strerror(ret));
 	}
 
 	return CACHE_SUCCESS;
