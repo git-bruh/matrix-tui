@@ -442,6 +442,9 @@ cache_init(struct cache *cache) {
 	enum {
 		max_dbs = 4096,
 		db_size = 1 * 1024 * 1024 * 1024, /* 1 GB */
+		/* Arbitrarily large map size.
+		 * https://github.com/zevv/duc/issues/163 */
+		map_size = db_size,
 	};
 
 	char dir[] = "/tmp/db";
@@ -458,6 +461,7 @@ cache_init(struct cache *cache) {
 
 	if ((ret = mdb_env_create(&cache->env)) == MDB_SUCCESS
 		&& (ret = mdb_env_set_maxdbs(cache->env, max_dbs)) == MDB_SUCCESS
+		&& (ret = mdb_env_set_mapsize(cache->env, map_size)) == MDB_SUCCESS
 		&& (ret = mdb_env_open(
 			  cache->env, dir, multiple_readonly_txn_per_thread, db_perms))
 			 == MDB_SUCCESS
