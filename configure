@@ -7,7 +7,7 @@ fail() {
 	exit 1
 }
 
-CFLAGS="-DNDEBUG"
+CFLAGS="-g3"
 LDFLAGS=
 LDLIBS=
 PREFIX=/usr/local
@@ -17,8 +17,8 @@ for arg; do
 	--prefix=*)
 		PREFIX=${arg#*=}
 	;;
-	--enable-debug*)
-		CFLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g3"
+	--enable-sanitize*)
+		CFLAGS="$CFLAGS -fsanitize=address,undefined -fno-omit-frame-pointer"
 	;;
 	--enable-static*)
 		LDFLAGS="-static"
