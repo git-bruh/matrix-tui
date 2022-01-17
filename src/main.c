@@ -455,9 +455,6 @@ ui_loop(struct state *state) {
 		fill_old_events(tab_room.current_room.room);
 	}
 
-	treeview_event(tab_room.tree, TREEVIEW_INSERT_PARENT,
-	  treeview_node_alloc((void *) "Rooms", string_draw_cb, NULL));
-
 	for (bool redraw = true;;) {
 		if (redraw) {
 			redraw = false;
@@ -492,9 +489,6 @@ ui_loop(struct state *state) {
 					int ret = tab_room_set(&tab_room, 0);
 					assert(ret == 0);
 				}
-				treeview_event(tab_room.tree, TREEVIEW_INSERT,
-				  (treeview_node_alloc(
-					tab_room.current_room.room, node_draw_cb, NULL)));
 
 				pthread_mutex_lock(
 				  &tab_room.current_room.room->realloc_or_modify_mutex);
@@ -689,110 +683,12 @@ populate_from_cache(struct state *state) {
 			struct room *room = room_alloc(info);
 
 			if (room) {
-				struct treeview_node *node
-				  = treeview_node_alloc(room, node_draw_cb, NULL);
-
-				if (info->is_space) {
-					room->space_node = node;
-				} else {
-					arrput(room->room_nodes, node);
-				}
-
 				shput(state->rooms, noconst(id), room);
 				populate_room_from_cache(state, id);
 			} else {
 				room_info_destroy(info);
 			}
 		}
-	}
-
-	cache_iterator_finish(&iterator);
-
-	struct cache_iterator_space space = {0};
-	ret = cache_iterator_spaces(&state->cache, &iterator, &space);
-
-	if (ret != MDB_SUCCESS) {
-		fprintf(
-		  stderr, "Failed to create spaces iterator: %s\n", mdb_strerror(ret));
-		return -1;
-	}
-
-	while ((cache_iterator_next(&iterator)) == MDB_SUCCESS) {
-		assert(space.id);
-
-		struct room *room = shget(state->rooms, noconst(space.id));
-
-		if (!room) {
-			fprintf(stderr, "Got unknown space '%s'.\n", space.id);
-			continue;
-		}
-
-		assert(room->info->is_space);
-
-		while ((cache_iterator_next(&space.children_iterator)) == MDB_SUCCESS) {
-			assert(space.child_id);
-
-			struct room *child_room
-			  = shget(state->rooms, noconst(space.child_id));
-
-			if (!child_room) {
-				fprintf(stderr, "Got unknown room '%s' in space '%s'\n",
-				  space.child_id, space.id);
-				continue;
-			}
-
-			if (child_room->info->is_space) {
-				fprintf(stderr,
-				  "Space '%s' within space '%s' not supported, ignoring...\n",
-				  space.child_id, space.id);
-				continue;
-			}
-
-			assert(room->space_node);
-
-			size_t len_nodes = arrlenu(child_room->room_nodes);
-			assert(len_nodes > 0);
-
-			struct treeview_node *child_node
-			  = child_room->room_nodes[len_nodes - 1];
-			assert(child_node != room->space_node);
-
-			/* Room is a child of multiple spaces, was already added to a space.
-			 */
-			if (child_node->parent) {
-				struct treeview_node *child_node_copy
-				  = treeview_node_alloc(child_room, node_draw_cb, NULL);
-
-				assert(child_node_copy);
-				arrput(child_room->room_nodes, child_node_copy);
-			}
-
-			treeview_node_add_child(room->space_node, child_node);
-		}
-
-		cache_iterator_finish(&space.children_iterator);
-	}
-
-	/* Add orphans. */
-	for (size_t i = 0, len = shlenu(state->rooms); i < len; i++) {
-		if (state->rooms[i].value->info->is_space) {
-			continue;
-		}
-
-		if (!state->rooms[i].value->room_nodes[0]->parent) {
-			// add_to_root();
-		}
-#ifndef NDEBUG
-		else {
-			/* Make sure that none of the nodes are orphaned if one of them
-			 * wasn't an orphan. */
-			for (size_t j = 1,
-						nodes_len = arrlenu(state->rooms[i].value->room_nodes);
-				 j < nodes_len; j++) {
-				assert(state->rooms[i].value->room_nodes[j]->parent);
-			}
-		}
-#endif
 	}
 
 	cache_iterator_finish(&iterator);
