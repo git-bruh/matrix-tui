@@ -63,7 +63,7 @@ cleanup(struct state *state) {
 
 	memset(state, 0, sizeof(*state));
 
-	printf("%s\n", "Any errors will been logged to '" LOG_PATH "'");
+	printf("%s\n", "Any errors have been logged to '" LOG_PATH "'");
 }
 
 static void

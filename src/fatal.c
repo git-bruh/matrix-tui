@@ -1,3 +1,4 @@
+#undef abort
 #undef calloc
 #undef malloc
 #undef realloc
@@ -23,19 +24,20 @@ reset_term(void) {
 }
 
 _Noreturn void
-fatal_die(void) {
+fatal_die(const char *msg) {
 	reset_term();
-	char oom[] = "Out Of Memory\n";
-	write(STDOUT_FILENO, oom, SIZE(oom) - 1);
+	write(STDOUT_FILENO, msg, strlen(msg));
 	abort();
 }
+
+#define fatal_oom() fatal_die("Out Of Memory\n")
 
 _Noreturn void
 fatal_assert_fail(
   const char *expr, const char *file, int line, const char *func) {
-	reset_term();
-	printf("Assertion failed: %s (%s: %s: %d)\n", expr, file, func, line);
-	abort();
+	fprintf(
+	  stderr, "Assertion failed: %s (%s: %s: %d)\n", expr, file, func, line);
+	fatal_abort();
 }
 
 static void *
@@ -44,7 +46,7 @@ return_or_fatal(void *ptr) {
 		return ptr;
 	}
 
-	fatal_die();
+	fatal_oom();
 }
 
 void *

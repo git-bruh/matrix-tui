@@ -16,6 +16,7 @@ XCFLAGS = \
 	-Werror=int-conversion \
 	-Werror=implicit-function-declaration \
 	-Werror=incompatible-pointer-types \
+	-DBUG_URL=\"https://github.com/git-bruh/matrix-tui/issues\" \
 	-DLOG_PATH=\"/tmp/matrix-tui.log\" \
 	-DCLIENT_NAME=\"matrix-tui\"
 
