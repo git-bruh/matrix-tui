@@ -134,7 +134,10 @@ tab_room_redraw(struct tab_room *tab_room) {
 
 	/* - 1 for divider bar. */
 	widget_points_set(&points, 0, tree_width - 1, BAR_HEIGHT, height);
+
+	pthread_mutex_lock(tab_room->rooms_mutex);
 	treeview_redraw(tab_room->tree, &points);
+	pthread_mutex_unlock(tab_room->rooms_mutex);
 
 	for (int y = 0; y < height; y++) {
 		widget_print_str(tree_width, y, width, TB_DEFAULT, TB_DEFAULT, "│");

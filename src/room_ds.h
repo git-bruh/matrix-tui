@@ -5,6 +5,7 @@
 #include "cache.h"
 #include "message_buffer.h"
 #include "stb_ds.h"
+#include "ui.h"
 
 #include <pthread.h>
 #include <stdatomic.h>
@@ -59,6 +60,11 @@ struct timeline {
 struct room {
 	size_t already_consumed; /* No. of items consumed from timeline. */
 	struct members_map *members;
+	/* Pointers copied over to children of root nodes when the
+	 * room is selected. */
+	struct treeview_node **spaces;
+	struct treeview_node **dms;
+	struct treeview_node **rooms;
 	struct treeview_node tree_node;
 	struct room_info info;
 	/* Rendered message indices. */

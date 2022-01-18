@@ -1,6 +1,6 @@
 .POSIX:
 
-BIN = client
+BIN = matrix-tui
 
 .PHONY: format tidy clean
 

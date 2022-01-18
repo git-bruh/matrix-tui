@@ -9,6 +9,9 @@
 #include <assert.h>
 #include <stdlib.h>
 
+void
+node_draw_cb(void *data, struct widget_points *points, bool is_selected);
+
 static int
 cmp_forward(const void *key, const void *array_item) {
 	uint64_t i1 = *((const uint64_t *) key);
@@ -152,6 +155,10 @@ room_alloc(void) {
 		  .realloc_or_modify_mutex = PTHREAD_MUTEX_INITIALIZER,
 		};
 
+		int ret
+		  = treeview_node_init(&room->tree_node, room, node_draw_cb, NULL);
+		assert(ret == 0);
+
 		SHMAP_INIT(room->members);
 
 		for (size_t i = 0; i < TIMELINE_MAX; i++) {
@@ -182,7 +189,9 @@ room_destroy(struct room *room) {
 			arrfree(room->members[i].value);
 		}
 		shfree(room->members);
-
+		arrfree(room->spaces);
+		arrfree(room->dms);
+		arrfree(room->rooms);
 		message_buffer_finish(&room->buffer);
 		cache_room_info_finish(&room->info);
 		free(room);

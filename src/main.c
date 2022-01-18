@@ -18,6 +18,13 @@ enum widget {
 
 enum tab { TAB_LOGIN = 0, TAB_HOME, TAB_ROOM };
 
+const char *const root_node_str[NODE_MAX] = {
+  [NODE_INVITES] = "Invites",
+  [NODE_SPACES] = "Spaces",
+  [NODE_DMS] = "DMs",
+  [NODE_ROOMS] = "Rooms",
+};
+
 static void
 cleanup(struct state *state) {
 	tb_shutdown();
@@ -61,6 +68,12 @@ cleanup(struct state *state) {
 		room_destroy(state->rooms[i].value);
 	}
 	shfree(state->rooms);
+
+	for (size_t i = 0; i < NODE_MAX; i++) {
+		arrfree(state->root_nodes[i].nodes);
+	}
+
+	arrfree(state->view_root.root.nodes);
 
 	memset(state, 0, sizeof(*state));
 
@@ -406,6 +419,29 @@ handle_tab_room(
 	return ret;
 }
 
+void
+node_draw_cb(void *data, struct widget_points *points, bool is_selected) {
+	assert(data);
+	assert(points);
+
+	(void) is_selected;
+
+	struct room *room = data;
+	const char *str = room->info.name ? room->info.name : "Empty Room";
+
+	widget_print_str(points->x1, points->y1, points->x2,
+	  is_selected ? TB_REVERSE : TB_DEFAULT, TB_DEFAULT, str);
+}
+
+static void
+string_draw_cb(void *data, struct widget_points *points, bool is_selected) {
+	assert(data);
+	assert(points);
+
+	widget_print_str(points->x1, points->y1, points->x2,
+	  is_selected ? TB_REVERSE : TB_DEFAULT, TB_DEFAULT, data);
+}
+
 static void
 ui_loop(struct state *state) {
 	assert(state);
@@ -418,20 +454,20 @@ ui_loop(struct state *state) {
 	get_fds(state, fds);
 
 	struct input input = {0};
-	struct treeview tree = {0};
 
-	if ((input_init(&input, TB_DEFAULT, false)) != 0
-		|| (treeview_init(&tree)) != 0) {
+	if ((input_init(&input, TB_DEFAULT, false)) != 0) {
 		return;
 	}
 
 	struct tab_room tab_room = {
 	  .widget = TAB_ROOM_INPUT,
 	  .input = &input,
-	  .tree = &tree,
+	  .tree = &state->view_root,
 	  .rooms = &state->rooms,
 	  .rooms_mutex = &state->rooms_mutex,
 	};
+
+	tab_room.tree->selected = tab_room.tree->root.nodes[0];
 
 	if ((tab_room_set(&tab_room, 0)) == 0) {
 		fill_old_events(tab_room.current_room.room);
@@ -509,7 +545,6 @@ ui_loop(struct state *state) {
 	}
 
 	input_finish(&input);
-	treeview_finish(&tree);
 }
 
 static int
@@ -694,6 +729,7 @@ populate_from_cache(struct state *state) {
 
 		assert(space_room->info.is_space);
 
+		/* Fetch all children. */
 		while ((cache_iterator_next(&space.children_iterator)) == MDB_SUCCESS) {
 			assert(space.child_id);
 
@@ -707,10 +743,44 @@ populate_from_cache(struct state *state) {
 			LOG(LOG_WARN, "Got %s '%s' in space '%s'",
 			  space_child->info.is_space ? "space" : "room", space.child_id,
 			  space.id);
+
+			/* Assign the .parent member of the node so we can use it
+			 * below to find orphans. */
+			space_child->tree_node.parent = &space_room->tree_node;
+
+			if (space_child->info.is_space) {
+				arrput(space_room->spaces, &space_child->tree_node);
+			} else {
+				arrput(space_room->rooms, &space_child->tree_node);
+			}
 		}
+
+		/* No need to finish the children iterator since it only borrows a
+		 * cursor from the parent iterator, which is freed when the parent is
+		 * finished. */
 	}
 
 	cache_iterator_finish(&iterator);
+
+	treeview_init(&state->view_root);
+
+	for (size_t i = 0; i < NODE_MAX; i++) {
+		treeview_node_init(&state->root_nodes[i], noconst(root_node_str[i]),
+		  string_draw_cb, NULL);
+		treeview_node_add_child(&state->view_root.root, &state->root_nodes[i]);
+	}
+
+	/* Construct initial tree from orphans. */
+	for (size_t i = 0, len = shlenu(state->rooms); i < len; i++) {
+		struct room *room = state->rooms[i].value;
+
+		if (!room->tree_node.parent) {
+			treeview_node_add_child(
+			  &state
+				 ->root_nodes[room->info.is_space ? NODE_SPACES : NODE_ROOMS],
+			  &room->tree_node);
+		}
+	}
 
 	return 0;
 }

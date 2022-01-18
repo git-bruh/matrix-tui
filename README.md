@@ -52,7 +52,7 @@ make install
 
 Contributions are always welcome, the following points should be kept in mind:
 
-* Pass `--enable-debug` to `./configure` to enable sanitizers which help in finding memory leaks or undefined behaviour.
+* Pass `--enable-sanitize` to `./configure` to enable sanitizers which help in finding memory leaks or undefined behaviour.
 
 * Avoid triggering extra compiler warnings unless necessary.
 

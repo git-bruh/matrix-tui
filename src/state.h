@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "cache.h"
 #include "queue.h"
+#include "widgets.h"
 
 #include <errno.h>
 #include <unistd.h>
@@ -12,6 +13,14 @@ enum { THREAD_SYNC = 0, THREAD_QUEUE, THREAD_MAX };
 enum { PIPE_READ = 0, PIPE_WRITE, PIPE_MAX };
 enum { FD_TTY = 0, FD_RESIZE, FD_PIPE, FD_MAX };
 
+enum space_tree_root_nodes {
+	NODE_INVITES = 0,
+	NODE_SPACES,
+	NODE_DMS,
+	NODE_ROOMS,
+	NODE_MAX
+};
+
 struct hm_room {
 	char *key;
 	struct room *value;
@@ -19,19 +28,22 @@ struct hm_room {
 
 struct state {
 	_Atomic bool done;
-	pthread_t threads[THREAD_MAX];
-	pthread_mutex_t mutex;
-	pthread_cond_t cond;
-	struct matrix *matrix;
-	struct cache cache;
-	struct queue queue;
 	/* Pass data between the syncer thread and the UI thread. This exists as the
 	 * UI thread can't block forever, listening to a queue as it has to handle
 	 * input and resizes. Instead, we poll on this pipe along with polling for
 	 * events from the terminal. */
 	int thread_comm_pipe[PIPE_MAX];
-	struct hm_room *rooms;
+	pthread_t threads[THREAD_MAX];
 	pthread_mutex_t rooms_mutex;
+	pthread_mutex_t mutex;
+	pthread_cond_t cond;
+	struct cache cache;
+	struct queue queue;
+	/* Protected by rooms_mutex, along with the hashmap. */
+	struct treeview_node root_nodes[NODE_MAX];
+	struct treeview view_root;
+	struct matrix *matrix;
+	struct hm_room *rooms;
 };
 
 #define read safe_read
