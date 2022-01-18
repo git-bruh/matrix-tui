@@ -1,5 +1,6 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
+#include "log.h"
 #include "login_form.h"
 #include "queue_callbacks.h"
 #include "room_ds.h"
@@ -580,7 +581,7 @@ populate_room_users(struct state *state, const char *room_id) {
 	int ret = cache_iterator_member(&state->cache, &iterator, room_id, &member);
 
 	if (ret != MDB_SUCCESS) {
-		fprintf(stderr, "Failed to create member iterator for room '%s': %s\n",
+		LOG(LOG_ERROR, "Failed to create member iterator for room '%s': %s",
 		  room_id, mdb_strerror(ret));
 		return ret;
 	}
@@ -616,7 +617,7 @@ populate_room_from_cache(struct state *state, const char *room_id) {
 	  &state->cache, &iterator, room_id, &event, (uint64_t) -1, num_paginate);
 
 	if (ret != MDB_SUCCESS) {
-		fprintf(stderr, "Failed to create events iterator for room '%s': %s\n",
+		LOG(LOG_ERROR, "Failed to create events iterator for room '%s': %s",
 		  room_id, mdb_strerror(ret));
 		return ret;
 	}
@@ -647,8 +648,7 @@ populate_from_cache(struct state *state) {
 	int ret = cache_iterator_rooms(&state->cache, &iterator, &id);
 
 	if (ret != MDB_SUCCESS) {
-		fprintf(
-		  stderr, "Failed to create room iterator: %s\n", mdb_strerror(ret));
+		LOG(LOG_ERROR, "Failed to create room iterator: %s", mdb_strerror(ret));
 		return -1;
 	}
 
@@ -660,7 +660,7 @@ populate_from_cache(struct state *state) {
 
 		if ((ret = cache_room_info_init(&state->cache, &room->info, id))
 			!= MDB_SUCCESS) {
-			fprintf(stderr, "Failed to get room info for room '%s': %s\n", id,
+			LOG(LOG_ERROR, "Failed to get room info for room '%s': %s", id,
 			  mdb_strerror(ret));
 			cache_iterator_finish(&iterator);
 
@@ -677,8 +677,8 @@ populate_from_cache(struct state *state) {
 	ret = cache_iterator_spaces(&state->cache, &iterator, &space);
 
 	if (ret != MDB_SUCCESS) {
-		fprintf(
-		  stderr, "Failed to create spaces iterator: %s\n", mdb_strerror(ret));
+		LOG(
+		  LOG_ERROR, "Failed to create spaces iterator: %s", mdb_strerror(ret));
 		return -1;
 	}
 
@@ -704,7 +704,7 @@ populate_from_cache(struct state *state) {
 				continue;
 			}
 
-			fprintf(stderr, "Got %s '%s' in space '%s'\n",
+			LOG(LOG_WARN, "Got %s '%s' in space '%s'",
 			  space_child->info.is_space ? "space" : "room", space.child_id,
 			  space.id);
 		}
@@ -969,20 +969,20 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 		if ((ret = cache_save_txn_init(&state->cache, &txn, sync_room.id))
 			!= MDB_SUCCESS) {
-			fprintf(stderr, "Failed to start save txn for room '%s': %s\n",
+			LOG(LOG_ERROR, "Failed to start save txn for room '%s': %s",
 			  sync_room.id, mdb_strerror(ret));
 			continue;
 		}
 
 		if ((ret = cache_set_room_dbs(&txn, &sync_room)) != MDB_SUCCESS) {
-			fprintf(stderr, "Failed to open room DBs for room '%s': %s\n",
+			LOG(LOG_ERROR, "Failed to open room DBs for room '%s': %s",
 			  sync_room.id, mdb_strerror(ret));
 			cache_save_txn_finish(&txn);
 			continue;
 		}
 
 		if ((ret = cache_save_room(&txn, &sync_room)) != MDB_SUCCESS) {
-			fprintf(stderr, "Failed to save room '%s': %s\n", sync_room.id,
+			LOG(LOG_ERROR, "Failed to save room '%s': %s", sync_room.id,
 			  mdb_strerror(ret));
 			cache_save_txn_finish(&txn);
 			continue;
@@ -1076,7 +1076,7 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 				uintptr_t ptr = (uintptr_t) NULL;
 				write(state->thread_comm_pipe[PIPE_WRITE], &ptr, sizeof(ptr));
 			} else {
-				fprintf(stderr, "Failed to get room info for room '%s': %s\n",
+				LOG(LOG_ERROR, "Failed to get room info for room '%s': %s",
 				  sync_room.id, mdb_strerror(ret));
 				room_destroy(room);
 			}
@@ -1092,14 +1092,14 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 	if ((ret = cache_auth_set(
 		   &state->cache, DB_KEY_NEXT_BATCH, response->next_batch))
 		!= MDB_SUCCESS) {
-		fprintf(stderr, "Failed to save next batch: %s\n", mdb_strerror(ret));
+		LOG(LOG_ERROR, "Failed to save next batch: %s", mdb_strerror(ret));
 	}
 }
 
 static int
 redirect_stderr_log(void) {
 	const mode_t perms = 0600;
-	int fd = open(LOG_PATH, O_CREAT | O_RDWR | O_TRUNC, perms);
+	int fd = open(LOG_PATH, O_CREAT | O_RDWR | O_APPEND, perms);
 
 	if (fd == -1 || (dup2(fd, STDERR_FILENO)) == -1) {
 		return -1;
@@ -1125,7 +1125,7 @@ ui_init(void) {
 static int
 init_everything(struct state *state) {
 	if ((matrix_global_init()) != 0) {
-		fprintf(stderr, "Failed to initialize matrix globals\n");
+		LOG(LOG_WARN, "Failed to initialize matrix globals");
 		return -1;
 	}
 
@@ -1139,8 +1139,7 @@ init_everything(struct state *state) {
 	ret = cache_init(&state->cache);
 
 	if (ret != 0) {
-		fprintf(
-		  stderr, "Failed to initialize database: %s\n", mdb_strerror(ret));
+		LOG(LOG_ERROR, "Failed to initialize database: %s", mdb_strerror(ret));
 	}
 
 	ret = pthread_create(
@@ -1156,12 +1155,12 @@ init_everything(struct state *state) {
 	ret = ui_init();
 
 	if (ret != TB_OK) {
-		fprintf(stderr, "Failed to initialize UI: %s\n", tb_strerror(ret));
+		LOG(LOG_ERROR, "Failed to initialize UI: %s", tb_strerror(ret));
 		return -1;
 	}
 
 	if ((login(state)) != 0) {
-		fprintf(stderr, "Login cancelled\n");
+		LOG(LOG_ERROR, "Login cancelled");
 		return -1;
 	}
 
@@ -1170,7 +1169,7 @@ init_everything(struct state *state) {
 	ret = populate_from_cache(state);
 
 	if (ret != 0) {
-		fprintf(stderr, "Failed to populate rooms from cache\n");
+		LOG(LOG_ERROR, "Failed to populate rooms from cache");
 		return -1;
 	}
 
@@ -1189,12 +1188,12 @@ init_everything(struct state *state) {
 int
 main() {
 	if (!(setlocale(LC_ALL, ""))) {
-		fprintf(stderr, "Failed to set locale\n");
+		LOG(LOG_ERROR, "Failed to set locale");
 		return EXIT_FAILURE;
 	}
 
 	if ((strcmp("UTF-8", nl_langinfo(CODESET)) != 0)) {
-		fprintf(stderr, "Locale is not UTF-8\n");
+		LOG(LOG_ERROR, "Locale is not UTF-8");
 		return EXIT_FAILURE;
 	}
 
@@ -1202,6 +1201,8 @@ main() {
 		perror("Failed to open log file '" LOG_PATH "'");
 		return EXIT_FAILURE;
 	}
+
+	LOG(LOG_MESSAGE, "Initialized");
 
 	struct state state = {
 	  .cond = PTHREAD_COND_INITIALIZER,

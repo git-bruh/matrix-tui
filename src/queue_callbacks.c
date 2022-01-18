@@ -2,6 +2,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "queue_callbacks.h"
 
+#include "log.h"
+
 #include <assert.h>
 #include <stdio.h>
 
@@ -57,7 +59,7 @@ handle_sent_message(struct state *state, void *data) {
 	  sent_message->room_id, "m.text", sent_message->buf, NULL);
 
 	if (code != MATRIX_SUCCESS) {
-		fprintf(stderr, "Failed to send message to room '%s': %s\n",
+		LOG(LOG_WARN, "Failed to send message to room '%s': %s",
 		  sent_message->room_id, matrix_strerror(code));
 	}
 

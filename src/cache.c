@@ -4,6 +4,8 @@
  * https://github.com/Nheko-Reborn/nheko/blob/master/src/Cache.cpp */
 #include "cache.h"
 
+#include "log.h"
+
 #include <assert.h>
 #include <errno.h>
 #include <stdint.h>
@@ -199,7 +201,7 @@ cache_event_next(
 	ret = matrix_event_timeline_parse(&iterator->event->event, json);
 
 	if (ret != 0) {
-		fprintf(stderr, "Failed to parse event JSON '%s'\n",
+		LOG(LOG_ERROR, "Failed to parse event JSON '%s'",
 		  (char *) db_json.mv_data);
 		assert(0);
 
@@ -226,8 +228,8 @@ cache_member_next(
 	int ret = matrix_event_state_parse(&event, json);
 
 	if (ret != 0 || event.type != MATRIX_ROOM_MEMBER) {
-		fprintf(
-		  stderr, "Failed to parse member JSON '%s'\n", (char *) data->mv_data);
+		LOG(LOG_ERROR, "Failed to parse member JSON '%s'",
+		  (char *) data->mv_data);
 		assert(0);
 
 		matrix_json_delete(json);
@@ -702,9 +704,9 @@ room_is_space(struct cache *cache, MDB_txn *txn, const char *room_id) {
 			&& (json = matrix_json_parse((char *) value.mv_data, value.mv_size))
 			&& (matrix_event_state_parse(&sevent, json)) == 0) {
 			if (sevent.type != MATRIX_ROOM_CREATE) {
-				fprintf(stderr,
+				LOG(LOG_ERROR,
 				  "m.room.create state event isn't a state event in room "
-				  "'%s'!\n",
+				  "'%s'!",
 				  room_id);
 				assert(0);
 			} else {
@@ -777,7 +779,7 @@ cache_save_txn_finish(struct cache_save_txn *txn) {
 		int ret = mdb_txn_commit(txn->txn);
 
 		if (ret != MDB_SUCCESS) {
-			fprintf(stderr, "Failed to commit txn: %s\n", mdb_strerror(ret));
+			LOG(LOG_ERROR, "Failed to commit txn: %s", mdb_strerror(ret));
 			abort(); /* TODO better handling. */
 		}
 	}
@@ -841,9 +843,9 @@ child_event_in_parent_space(
 	int ret = mdb_cursor_open(txn, cache->dbs[DB_SPACE_CHILDREN], &cursor);
 
 	if (ret != MDB_SUCCESS) {
-		fprintf(stderr,
+		LOG(LOG_WARN,
 		  "Failed to open cursor to check child event for '%s' in space '%s': "
-		  "%s\n",
+		  "%s",
 		  child, parent, mdb_strerror(ret));
 		return false;
 	}
@@ -855,9 +857,8 @@ child_event_in_parent_space(
 	mdb_cursor_close(cursor);
 
 	if (ret != MDB_SUCCESS) {
-		fprintf(stderr,
-		  "Child event for '%s' doesn't exist in space '%s': %s\n", child,
-		  parent, mdb_strerror(ret));
+		LOG(LOG_WARN, "Child event for '%s' doesn't exist in space '%s': %s",
+		  child, parent, mdb_strerror(ret));
 	}
 
 	return (ret == MDB_SUCCESS);
@@ -911,8 +912,8 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 				if ((ret = put_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
 					   txn->room_id, sevent->state_key, MDB_NODUPDATA))
 					== MDB_KEYEXIST) {
-					fprintf(stderr,
-					  "Tried to add child '%s' already present in space '%s'\n",
+					LOG(LOG_WARN,
+					  "Tried to add child '%s' already present in space '%s'",
 					  sevent->state_key, txn->room_id);
 				}
 				break;
@@ -935,8 +936,8 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 				if ((ret = put_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
 					   sevent->state_key, txn->room_id, MDB_NODUPDATA))
 					== MDB_KEYEXIST) {
-					fprintf(stderr,
-					  "Tried to add child '%s' already present in space '%s'\n",
+					LOG(LOG_WARN,
+					  "Tried to add child '%s' already present in space '%s'",
 					  txn->room_id, sevent->state_key);
 				}
 				break;
@@ -949,8 +950,8 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 					  sevent->base.type, data, 0);
 					free(data);
 				} else {
-					fprintf(stderr,
-					  "Ignoring unknown state event with state key '%s'\n",
+					LOG(LOG_WARN,
+					  "Ignoring unknown state event with state key '%s'",
 					  sevent->state_key);
 				}
 				break;
@@ -993,7 +994,7 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 				  tevent->base.event_id, data, MDB_NOOVERWRITE);
 
 				if (ret == MDB_KEYEXIST) {
-					fprintf(stderr, "Got duplicate event '%s' in room '%s'\n",
+					LOG(LOG_WARN, "Got duplicate event '%s' in room '%s'",
 					  tevent->base.event_id, txn->room_id);
 					free(data);
 
@@ -1021,7 +1022,7 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 	}
 
 	if (ret != MDB_SUCCESS) {
-		fprintf(stderr, "Failed to save event '%s' in room '%s': %s\n",
+		LOG(LOG_WARN, "Failed to save event '%s' in room '%s': %s",
 		  matrix_sync_event_id(event), txn->room_id, mdb_strerror(ret));
 	}
 

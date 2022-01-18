@@ -33,14 +33,8 @@ log_level_and_time(enum log_level level) {
 #define LOG(level, ...)                                                        \
 	do {                                                                       \
 		_Static_assert(level < LOG_MAX, "Invalid log level!");                 \
-		/* https://stackoverflow.com/a/2124433 */                              \
-		_Static_assert(                                                        \
-		  (sizeof((const char *[]) {"", ##__VA_ARGS__}) / sizeof(char *) - 1)  \
-			> 0,                                                               \
-		  "Missing log message!");                                             \
 		log_level_and_time(level);                                             \
-		/* Hide expected expression error caught by static assertion. */       \
-		fprintf(stderr, "" __VA_ARGS__);                                       \
+		fprintf(stderr, __VA_ARGS__);                                          \
 		fputc('\n', stderr);                                                   \
 	} while (0)
 #endif /* !LOG_H */
