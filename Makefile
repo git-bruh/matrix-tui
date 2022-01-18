@@ -40,7 +40,6 @@ OBJ = \
 	src/login_form.o \
 	src/render_message.o \
 	src/message_buffer.o \
-	src/fatal.o \
 	src/main.o \
 	third_party/libmatrix/api.o \
 	third_party/libmatrix/linked_list.o \
