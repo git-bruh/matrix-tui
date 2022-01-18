@@ -1,5 +1,7 @@
 #ifndef UI_H
 #define UI_H
+/* SPDX-FileCopyrightText: 2021 git-bruh
+ * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "login_form.h"
 #include "state.h"
 #include "widgets.h"

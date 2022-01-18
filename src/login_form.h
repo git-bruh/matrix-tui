@@ -1,5 +1,7 @@
 #ifndef LOGIN_FORM_H
 #define LOGIN_FORM_H
+/* SPDX-FileCopyrightText: 2021 git-bruh
+ * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "widgets.h"
 
 enum field { FIELD_MXID = 0, FIELD_PASSWORD, FIELD_HOMESERVER, FIELD_MAX };

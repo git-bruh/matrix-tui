@@ -4,7 +4,7 @@
 #ifdef NDEBUG
 #define assert(x) (void) 0
 #else
-_Noreturn static inline void
+_Noreturn __attribute__((unused)) static inline void
 fatal_assert_fail(
   const char *expr, const char *file, int line, const char *func) {
 	fprintf(

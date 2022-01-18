@@ -550,10 +550,6 @@ room_put_message_event(struct room *room, struct timeline *timeline,
 
 	assert(usernames_len);
 
-	if (usernames_len == 0) {
-		return -1;
-	}
-
 	struct message *message = message_alloc(event->message.body,
 	  event->base.sender, usernames_len - 1, index, NULL, false);
 
