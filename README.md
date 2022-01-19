@@ -1,7 +1,5 @@
 # matrix-tui
 
-[![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/git-bruh/matrix-tui.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/git-bruh/matrix-tui/context:cpp)
-
 A terminal based Matrix client. WIP, not usable yet. Discard the following information for now.
 
 # Pre-requisites
