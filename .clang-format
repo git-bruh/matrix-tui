@@ -23,7 +23,7 @@ IncludeBlocks: Regroup
 IndentCaseBlocks: true
 IndentWidth: 4
 PointerAlignment: Right
-QualifierAlignmentStyle: Left
+# QualifierAlignmentStyle: Left
 SpaceAfterCStyleCast: true
 SpaceBeforeCpp11BracedList: true
 SpaceBeforeParens: ControlStatements

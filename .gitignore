@@ -1,3 +1,7 @@
-client
+matrix-tui
 *.o
 *.d
+build/
+output/
+subprojects/*
+!subprojects/*.wrap

@@ -8,7 +8,7 @@ A terminal based Matrix client. WIP, not usable yet. Discard the following infor
 
 * C11 Compiler
 
-* POSIX Make - `bmake` or `gmake`
+* Meson
 
 * [cJSON](https://github.com/DaveGamble/cJSON)
 
@@ -29,33 +29,29 @@ A few dependencies are bundled:
 * [termbox2](https://github.com/termbox/termbox2) - The terminal rendering library
 
 
-Make sure to run `git submodule update --remote --init -f` to clone them.
+Make sure to run `git submodule update --remote --init --depth=1 -f` to clone them.
 
 # Building
 
-* Run `./configure` to generate `config.mk`. The script takes the same arguments as an autohell `configure` script.
+* Run `meson . build` and `ninja -C build` to build the project. The binary will be stored at `build/matrix-tui`
 
-* Run `make` and then `make install` to install the binary. The `Makefile` also respectes the `$DESTDIR` variable to change the install location.
-
-The following should suffice for regular builds:
+The following should suffice for packaging in distros:
 
 ```
-./configure \
-	--prefix=/usr \
-	# --enable-static (Uncomment to build a fully static binary)
+export DESTDIR=$TMP_PKG_ROOT
 
-make
-make install
+meson \
+	--prefix=/usr \
+	. build
+
+ninja -C build
+ninja -C build install
 ```
 
 # Contributing
 
 Contributions are always welcome, the following points should be kept in mind:
 
-* Pass `--enable-sanitize` to `./configure` to enable sanitizers which help in finding memory leaks or undefined behaviour.
+* Pass `-Db_sanitize=address,undefined` to `meson` to enable sanitizers which help in finding memory leaks or undefined behaviour.
 
-* Avoid triggering extra compiler warnings unless necessary.
-
-* Run `make tidy` to run `clang-tidy` to lint the code.
-
-* Before submitting a PR, format the code with `make format` which runs `clang-format`.
+* Before submitting a PR, format the code with `ninja -C build clang-format` which runs `clang-format`.
