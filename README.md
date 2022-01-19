@@ -31,7 +31,7 @@ Make sure to run `git submodule update --remote --init --depth=1 -f` to clone th
 
 # Building
 
-* Run `meson . build` and `ninja -C build` to build the project. The binary will be stored at `build/matrix-tui`
+* Run `meson -Db_lto=true . build` and `ninja -C build` to build the project. The binary will be stored at `build/matrix-tui`
 
 The following should suffice for packaging in distros:
 
@@ -39,6 +39,7 @@ The following should suffice for packaging in distros:
 export DESTDIR=$TMP_PKG_ROOT
 
 meson \
+	-Db_lto=true \
 	--prefix=/usr \
 	. build
 
