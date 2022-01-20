@@ -45,9 +45,9 @@ cc = meson.get_compiler('c')
 libmatrix_proj = subproject('libmatrix')
 libmatrix_dep = libmatrix_proj.get_variable('libmatrix_dep')
 
+threads_dep = dependency('threads', required: true)
 lmdb_dep = cc.find_library('lmdb', required: true)
-pthread_dep = cc.find_library('pthread', required: true)
-math_dep = cc.find_library('m', required: true)
+m_dep = cc.find_library('m', required: false)
 
 incdirs = [
 	include_directories('src'),
@@ -56,15 +56,18 @@ incdirs = [
 	include_directories('third_party/termbox-widgets'),
 ]
 
+log_path = '-DLOG_PATH="/tmp/matrix-tui.log"'
+bug_url = '-DBUG_URL="https://github.com/git-bruh/matrix-tui/issues"'
+
 add_project_arguments('--include', 'src/fatal.h', language: 'c')
 add_project_arguments('-D_GNU_SOURCE', language: 'c')
-add_project_arguments('-DLOG_PATH="/tmp/matrix-tui.log"', language: 'c')
-add_project_arguments('-DBUG_URL="https://github.com/git-bruh/matrix-tui/issues"', language: 'c')
+add_project_arguments(log_path, language: 'c')
+add_project_arguments(bug_url, language: 'c')
 
 executable(
 	'matrix-tui',
 	files(src),
-	dependencies: [libmatrix_dep, lmdb_dep, pthread_dep, math_dep],
+	dependencies: [libmatrix_dep, lmdb_dep, threads_dep, m_dep],
 	include_directories: incdirs,
 	install: true
 )
