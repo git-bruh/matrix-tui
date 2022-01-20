@@ -50,9 +50,8 @@ lmdb_dep = cc.find_library('lmdb', required: true)
 m_dep = cc.find_library('m', required: false)
 
 incdirs = [
-	include_directories('src'),
-	include_directories('third_party/stb'),
-	include_directories('third_party/termbox2'),
+	include_directories('third_party/stb', is_system: true),
+	include_directories('third_party/termbox2', is_system: true),
 	include_directories('third_party/termbox-widgets'),
 ]
 
@@ -67,6 +66,7 @@ add_project_arguments(bug_url, language: 'c')
 executable(
 	'matrix-tui',
 	files(src),
+	c_args: c_args,
 	dependencies: [libmatrix_dep, lmdb_dep, threads_dep, m_dep],
 	include_directories: incdirs,
 	install: true
