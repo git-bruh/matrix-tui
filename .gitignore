@@ -5,3 +5,4 @@ build/
 output/
 subprojects/*
 !subprojects/*.wrap
+!subprojects/libmatrix

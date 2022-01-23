@@ -1,4 +1,15 @@
-project('matrix-tui', 'c')
+project(
+    'matrix-tui',
+    'c',
+    default_options: [
+        'buildtype=debugoptimized',
+        'warning_level=3',
+        'b_lto=true',
+        'c_std=c11',
+    ],
+)
+
+cc = meson.get_compiler('c')
 
 src = [
     'src/cache.c',
@@ -17,15 +28,16 @@ src = [
 ]
 
 c_args = [
-    '-O3',
-    '-std=c11',
     '-D_GNU_SOURCE',
     '-D_FORTIFY_SOURCE=2',
+    '-DLOG_PATH="/tmp/matrix-tui.log"',
+    '-DBUG_URL="https://github.com/git-bruh/matrix-tui/issues"',
     '-fstack-protector-strong',
     '--param=ssp-buffer-size=4',
-    '-Wall',
-    '-Wextra',
-    '-Wpedantic',
+    ['--include', 'src/fatal.h'],
+]
+
+warning_c_args = [
     '-Wshadow',
     '-Wnull-dereference',
     '-Wformat=2',
@@ -40,7 +52,8 @@ c_args = [
     '-Werror=incompatible-pointer-types',
 ]
 
-cc = meson.get_compiler('c')
+add_project_arguments(c_args, language: 'c')
+add_project_arguments(cc.get_supported_arguments(warning_c_args), language: 'c')
 
 libmatrix_proj = subproject('libmatrix')
 libmatrix_dep = libmatrix_proj.get_variable('libmatrix_dep')
@@ -55,18 +68,9 @@ incdirs = [
     include_directories('third_party/termbox-widgets'),
 ]
 
-log_path = '-DLOG_PATH="/tmp/matrix-tui.log"'
-bug_url = '-DBUG_URL="https://github.com/git-bruh/matrix-tui/issues"'
-
-add_project_arguments('--include', 'src/fatal.h', language: 'c')
-add_project_arguments('-D_GNU_SOURCE', language: 'c')
-add_project_arguments(log_path, language: 'c')
-add_project_arguments(bug_url, language: 'c')
-
 executable(
     'matrix-tui',
     files(src),
-    c_args: c_args,
     dependencies: [libmatrix_dep, lmdb_dep, threads_dep, m_dep],
     include_directories: incdirs,
     install: true,

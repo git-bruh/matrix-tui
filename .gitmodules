@@ -1,6 +1,3 @@
-[submodule "third_party/libmatrix"]
-	path = subprojects/libmatrix
-	url = https://github.com/git-bruh/libmatrix
 [submodule "third_party/termbox-widgets"]
 	path = third_party/termbox-widgets
 	url = https://github.com/git-bruh/termbox-widgets
@@ -10,3 +7,6 @@
 [submodule "third_party/stb"]
 	path = third_party/stb
 	url = https://github.com/git-bruh/stb
+[submodule "subprojects/libmatrix"]
+	path = subprojects/libmatrix
+	url = https://git.sr.ht/~git-bruh/libmatrix
