@@ -22,9 +22,6 @@ src = [
     'src/queue_callbacks.c',
     'src/render_message.c',
     'src/room_ds.c',
-    'third_party/termbox-widgets/input.c',
-    'third_party/termbox-widgets/tree.c',
-    'third_party/termbox-widgets/ui_common.c',
 ]
 
 c_args = [

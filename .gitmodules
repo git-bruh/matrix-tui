@@ -1,6 +1,6 @@
 [submodule "third_party/termbox-widgets"]
 	path = third_party/termbox-widgets
-	url = https://github.com/git-bruh/termbox-widgets
+	url = https://git.sr.ht/~git-bruh/termbox-widgets
 [submodule "third_party/termbox2"]
 	path = third_party/termbox2
 	url = https://github.com/termbox/termbox2
