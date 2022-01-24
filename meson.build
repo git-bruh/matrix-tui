@@ -65,6 +65,7 @@ if not lmdb_dep.found()
 endif
 
 incdirs = [
+    include_directories('src/assert_override_hack'),
     include_directories('third_party/stb', is_system: true),
     include_directories('third_party/termbox2', is_system: true),
     include_directories('third_party/termbox-widgets'),
