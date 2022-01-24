@@ -72,7 +72,7 @@ incdirs = [
 
 executable(
     'matrix-tui',
-    files(src),
+    src,
     dependencies: [libmatrix_dep, lmdb_dep, threads_dep, m_dep],
     include_directories: incdirs,
     install: true,

@@ -70,6 +70,11 @@ tab_login_redraw(struct tab_login *login) {
 		  widget_pad_center(widget_str_width(login->error), width),
 		  (height - padding_y) + 1, width, COLOR_RED, TB_DEFAULT, login->error);
 	}
+
+	/* Don't show input field cursor if button is active. */
+	if (login->form.button_is_selected) {
+		tb_hide_cursor();
+	}
 }
 
 void

@@ -4,25 +4,6 @@
 
 #include <assert.h>
 
-enum {
-	BORDER_NORMAL = 0,
-	BORDER_CORNER_LEFT,
-	BORDER_CORNER_RIGHT,
-	BORDER_CORNER_LEFT_BOTTOM,
-	BORDER_CORNER_RIGHT_BOTTOM,
-	BORDER_VERTICAL,
-	BORDER_MAX
-};
-
-static const char *const borders[BORDER_MAX] = {
-  [BORDER_NORMAL] = "─",
-  [BORDER_CORNER_LEFT] = "┌",
-  [BORDER_CORNER_RIGHT] = "┐",
-  [BORDER_CORNER_LEFT_BOTTOM] = "└",
-  [BORDER_CORNER_RIGHT_BOTTOM] = "┘",
-  [BORDER_VERTICAL] = "│",
-};
-
 static const char *const field_names[FIELD_MAX] = {
   [FIELD_MXID] = "Username",
   [FIELD_PASSWORD] = "Password",
@@ -111,70 +92,34 @@ form_current_input(struct form *form) {
 }
 
 static void
-padding_redraw(int x1, int x2, int y, const char *title, uintattr_t fg) {
-	bool top = !!title;
-
-	const char *start
-	  = top ? borders[BORDER_CORNER_LEFT] : borders[BORDER_CORNER_LEFT_BOTTOM];
-	const char *end = top ? borders[BORDER_CORNER_RIGHT]
-						  : borders[BORDER_CORNER_RIGHT_BOTTOM];
-
-	int x = x1;
-
-	widget_print_str(x++, y, x2, fg, TB_DEFAULT, start);
-
-	if (top) {
-		int padding = widget_pad_center(widget_str_width(title), x2 - x1);
-
-		/* Center relative to the whole screen. */
-		for (; (x - x1) < padding; x++) {
-			widget_print_str(x, y, x2, fg, TB_DEFAULT, borders[BORDER_NORMAL]);
-		}
-
-		x += widget_print_str(x, y, x2, TB_DEFAULT, TB_DEFAULT, title);
-	}
-
-	for (; x < (x2 - 1); x++) {
-		widget_print_str(x, y, x2, fg, TB_DEFAULT, borders[BORDER_NORMAL]);
-	}
-
-	widget_print_str(x++, y, x2, fg, TB_DEFAULT, end);
-}
-
-static void
 field_border_redraw(
   struct form *form, struct widget_points *points, enum field field) {
 	assert(form);
 	assert(points);
 
 	int y = points->y1 + ((int) field * FORM_COLS_PER_FIELD);
-	int x = points->x1;
+
+	if (y >= points->y2) {
+		return;
+	}
+
+	struct widget_points border_points = {0};
+	widget_points_set(
+	  &border_points, points->x1, points->x2, y, y + FORM_COLS_PER_FIELD);
 
 	uintattr_t fg
 	  = (!form->button_is_selected && field == (enum field) form->current_field)
 		? form->highlighted_fg
 		: TB_DEFAULT;
 
-	if (y >= points->y2) {
-		return;
-	}
+	border_redraw(&border_points, fg, TB_DEFAULT);
 
-	padding_redraw(x, points->x2, y, field_names[field], fg);
-
-	if (++y >= points->y2) {
-		return;
-	}
-
-	widget_print_str(
-	  x, y, points->x2, fg, TB_DEFAULT, borders[BORDER_VERTICAL]);
-	widget_print_str(
-	  points->x2 - 1, y, points->x2, fg, TB_DEFAULT, borders[BORDER_VERTICAL]);
-
-	if (++y >= points->y2) {
-		return;
-	}
-
-	padding_redraw(x, points->x2, y, NULL, fg);
+	/* Overwrite part of the the border for the title. */
+	int center_x_begin = points->x1
+					   + widget_pad_center(widget_str_width(field_names[field]),
+						 points->x2 - points->x1);
+	widget_print_str(center_x_begin, y, points->x2, TB_DEFAULT, TB_DEFAULT,
+	  field_names[field]);
 }
 
 void
@@ -184,19 +129,12 @@ form_redraw(struct form *form, struct widget_points *points) {
 
 	struct widget_points points_new = {0};
 
-	enum field start = 0;
-	int height = points->y2 - points->y1;
-
-	if ((int) form->current_field > height) {
-		start = (enum field) form->current_field;
-	}
-
 	int y_selected = -1;
 	int lines = 0;
 
 	int y = FORM_COLS_PER_FIELD - 1;
 
-	for (enum field i = start; i < FIELD_MAX; i++, y += FORM_COLS_PER_FIELD) {
+	for (enum field i = 0; i < FIELD_MAX; i++, y += FORM_COLS_PER_FIELD) {
 		field_border_redraw(form, points, i);
 
 		if (i == form->current_field) {
@@ -212,19 +150,26 @@ form_redraw(struct form *form, struct widget_points *points) {
 		  (points->y1 + y) - 1, points->y1 + y);
 		input_redraw(&form->fields[i], &points_new, &lines);
 
-		assert(lines == 1);
+		/* <= as it might not redraw if x2 - x1 is too small. */
+		assert(lines <= 1);
 	}
 
-	assert(y_selected != -1);
-
+	/* Clear previous cursor (Just in-case selected field is out of bounds)
+	 * which would cause the cursor to not be set. */
+	tb_hide_cursor();
 	widget_points_set(
 	  &points_new, points->x1 + 1, points->x2 - 1, y_selected - 1, y_selected);
+	/* We must draw the selected input field here as it sets the cursor
+	 * position. */
 	input_redraw(&form->fields[form->current_field], &points_new, &lines);
+
+	assert(lines <= 1);
 
 	int x_split_per_button = (points->x2 - points->x1) / FIELD_BUTTON_MAX;
 
 	int y_button = points->y1 + (FORM_HEIGHT - 2);
 
+	/* Don't show input field cursor if button is active. */
 	if (form->button_is_selected) {
 		tb_hide_cursor();
 	}
@@ -244,6 +189,4 @@ form_redraw(struct form *form, struct widget_points *points) {
 			: TB_DEFAULT,
 		  TB_DEFAULT, button_names[button]);
 	}
-
-	assert(lines == 1);
 }

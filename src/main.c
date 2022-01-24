@@ -478,6 +478,7 @@ ui_loop(struct state *state) {
 			redraw = false;
 
 			tb_clear();
+			tb_hide_cursor();
 
 			switch (tab) {
 			case TAB_HOME:
@@ -918,6 +919,7 @@ login(struct state *state) {
 			redraw = false;
 
 			tb_clear();
+			tb_hide_cursor();
 			tab_login_redraw(&login);
 			tb_present();
 		}
