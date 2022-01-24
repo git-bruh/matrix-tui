@@ -56,8 +56,13 @@ libmatrix_proj = subproject('libmatrix')
 libmatrix_dep = libmatrix_proj.get_variable('libmatrix_dep')
 
 threads_dep = dependency('threads', required: true)
-lmdb_dep = cc.find_library('lmdb', required: true)
+lmdb_dep = cc.find_library('lmdb', required: false)
 m_dep = cc.find_library('m', required: false)
+
+if not lmdb_dep.found()
+    lmdb_proj = subproject('lmdb', default_options: ['default_library=static'])
+    lmdb_dep = lmdb_proj.get_variable('lmdb_dep')
+endif
 
 incdirs = [
     include_directories('third_party/stb', is_system: true),
