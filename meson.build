@@ -11,12 +11,11 @@ project(
 
 cc = meson.get_compiler('c')
 
-src = [
+common_src = [
     'src/cache.c',
     'src/draw.c',
     'src/header_libs.c',
     'src/login_form.c',
-    'src/main.c',
     'src/message_buffer.c',
     'src/queue.c',
     'src/queue_callbacks.c',
@@ -24,9 +23,21 @@ src = [
     'src/room_ds.c',
 ]
 
+src = common_src + 'src/main.c'
+
+tests = [
+    # 'test_cache',
+    'test_login_form',
+    # 'test_message_buffer',
+    # 'test_queue',
+    # 'test_render_message',
+    # 'test_room_ds',
+]
+
 c_args = [
     '-D_GNU_SOURCE',
     '-D_FORTIFY_SOURCE=2',
+    '-DTB_OUTPUT_TRUECOLOR=-1', # TODO remove this
     '-DLOG_PATH="/tmp/matrix-tui.log"',
     '-DBUG_URL="https://github.com/git-bruh/matrix-tui/issues"',
     '-fstack-protector-strong',
@@ -64,6 +75,8 @@ if not lmdb_dep.found()
     lmdb_dep = lmdb_proj.get_variable('lmdb_dep')
 endif
 
+deps = [libmatrix_dep, lmdb_dep, threads_dep, m_dep]
+
 incdirs = [
     include_directories('src/assert_override_hack'),
     include_directories('third_party/stb', is_system: true),
@@ -71,10 +84,25 @@ incdirs = [
     include_directories('third_party/termbox-widgets'),
 ]
 
+if get_option('tests')
+    unity_proj = subproject('unity', default_options: ['werror=false'])
+    unity_dep = unity_proj.get_variable('unity_dep')
+
+    foreach test_name : tests
+        exe = executable(
+            test_name,
+            common_src + 'tests/@0@.c'.format(test_name),
+            dependencies: deps + unity_dep,
+            include_directories: incdirs + include_directories('src'),
+        )
+        test(test_name, exe)
+    endforeach
+endif
+
 executable(
     'matrix-tui',
     src,
-    dependencies: [libmatrix_dep, lmdb_dep, threads_dep, m_dep],
+    dependencies: deps,
     include_directories: incdirs,
     install: true,
 )
