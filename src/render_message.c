@@ -114,7 +114,7 @@ buf_to_uint32_t(const char *buf, size_t len) {
 }
 
 uint32_t *
-mxid_to_uint32_t(char *mxid) {
+mxid_to_uint32_t(const char *mxid) {
 	assert(mxid);
 
 	enum {
@@ -123,12 +123,10 @@ mxid_to_uint32_t(char *mxid) {
 	};
 
 	if ((strnlen(mxid, min_len)) != min_len) {
-		assert(0);
 		return NULL;
 	}
 
 	char *end_colon = strchr(mxid, ':');
-	assert(end_colon);
 
 	if (!end_colon) {
 		return NULL;

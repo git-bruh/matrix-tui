@@ -61,7 +61,7 @@ hsl_to_rgb(double h, double s, double l);
 uint32_t *
 buf_to_uint32_t(const char *buf, size_t len);
 uint32_t *
-mxid_to_uint32_t(char *mxid);
+mxid_to_uint32_t(const char *mxid);
 uintattr_t
 str_attr(const char *str);
 
