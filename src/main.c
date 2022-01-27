@@ -549,59 +549,6 @@ ui_loop(struct state *state) {
 }
 
 static int
-room_put_member(struct room *room, char *mxid, char *username) {
-	assert(room);
-	assert(mxid);
-
-	/* If len < 1 then displayname has been removed. */
-	uint32_t *username_or_stripped_mxid
-	  = (username && (strnlen(username, 1)) > 0) ? buf_to_uint32_t(username, 0)
-												 : mxid_to_uint32_t(mxid);
-
-	assert(username_or_stripped_mxid);
-
-	ptrdiff_t tmp = 0;
-	ptrdiff_t sh_index = shgeti_ts(room->members, mxid, tmp);
-
-	if (sh_index < 0) {
-		uint32_t **usernames = NULL;
-		arrput(usernames, username_or_stripped_mxid);
-		shput(room->members, mxid, usernames);
-	} else {
-		arrput(room->members[sh_index].value, username_or_stripped_mxid);
-	}
-
-	return 0;
-}
-
-static int
-room_put_message_event(struct room *room, struct timeline *timeline,
-  uint64_t index, struct matrix_timeline_event *event) {
-	assert(event->base.sender);
-	assert(event->message.body);
-	assert(event->type == MATRIX_ROOM_MESSAGE);
-
-	ptrdiff_t tmp = 0;
-	uint32_t **usernames = shget_ts(room->members, event->base.sender, tmp);
-	size_t usernames_len = arrlenu(usernames);
-
-	assert(usernames_len);
-
-	struct message *message = message_alloc(event->message.body,
-	  event->base.sender, usernames_len - 1, index, NULL, false);
-
-	if (!message) {
-		return -1;
-	}
-
-	/* This is safe as the reader thread will have the old value
-	 * of len stored and not access anything beyond that. */
-	arrput(timeline->buf, message);
-
-	return 0;
-}
-
-static int
 populate_room_users(struct state *state, const char *room_id) {
 	assert(state);
 	assert(room_id);
@@ -994,30 +941,11 @@ login(struct state *state) {
 	return ret;
 }
 
-static int
-redact(struct room *room, uint64_t index) {
-	assert(room);
-
-	struct room_index out_index = {0};
-
-	if ((room_bsearch(room, index, &out_index)) == -1) {
-		return -1;
-	}
-
-	pthread_mutex_lock(&room->realloc_or_modify_mutex);
-	struct message *to_redact
-	  = room->timelines[out_index.index_timeline].buf[out_index.index_buf];
-	to_redact->redacted = true;
-	arrfree(to_redact->body);
-	to_redact->body = NULL;
-	message_buffer_redact(&room->buffer, index);
-	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
-
-	return 0;
-}
-
 static void
 sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
+	assert(matrix);
+	assert(response);
+
 	struct state *state = matrix_userp(matrix);
 
 	assert(state);
@@ -1119,7 +1047,7 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 						/* Ensure that bsearch has access to new events. */
 						timeline->len = arrlenu(timeline->buf);
 						/* Takes a lock. */
-						redact(room, txn.latest_redaction);
+						room_redact_event(room, txn.latest_redaction);
 					}
 					break;
 				case MATRIX_ROOM_ATTACHMENT:

@@ -25,19 +25,16 @@ common_src = [
 
 src = common_src + 'src/main.c'
 
-tests = [
-    # 'test_cache',
-    'test_login_form',
-    # 'test_message_buffer',
+tests = [ # 'test_cache',
+    'test_login_form', # 'test_message_buffer',
     'test_queue',
     'test_render_message',
-    # 'test_room_ds',
+    'test_room_ds',
 ]
 
 c_args = [
     '-D_GNU_SOURCE',
     '-D_FORTIFY_SOURCE=2',
-    '-DTB_OUTPUT_TRUECOLOR=-1', # TODO remove this
     '-DLOG_PATH="/tmp/matrix-tui.log"',
     '-DBUG_URL="https://github.com/git-bruh/matrix-tui/issues"',
     '-fstack-protector-strong',
@@ -91,7 +88,7 @@ if get_option('tests')
     foreach test_name : tests
         exe = executable(
             test_name,
-            common_src + 'tests/@0@.c'.format(test_name),
+            common_src + 'tests/stub.c' + 'tests/@0@.c'.format(test_name),
             dependencies: deps + unity_dep,
             include_directories: incdirs + include_directories('src'),
         )

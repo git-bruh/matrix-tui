@@ -12,8 +12,10 @@
 
 #define LOCK_IF_GROW(arr, mutex)                                               \
 	do {                                                                       \
-		if (!((stbds_header(arr)->length + 1)                                  \
-			  > stbds_header(arr)->capacity)) {                                \
+		/* stbds_header expectes nonnull */                                    \
+		if (arr                                                                \
+			&& !((stbds_header(arr)->length + 1)                               \
+				 > stbds_header(arr)->capacity)) {                             \
 			break;                                                             \
 		}                                                                      \
 		pthread_mutex_lock(mutex);                                             \
@@ -83,12 +85,22 @@ struct room_index {
 };
 
 struct message *
-message_alloc(char *body, char *sender, size_t index_username, uint64_t index,
-  const uint64_t *index_reply, bool formatted);
+message_alloc(const char *body, const char *sender, size_t index_username,
+  uint64_t index, const uint64_t *index_reply, bool formatted);
 void
 message_destroy(struct message *message);
 int
 room_bsearch(struct room *room, uint64_t index, struct room_index *out_index);
+int
+room_put_member(struct room *room, char *mxid, char *username);
+int
+room_put_message(
+  struct room *room, struct timeline *timeline, struct message *message);
+int
+room_put_message_event(struct room *room, struct timeline *timeline,
+  uint64_t index, struct matrix_timeline_event *event);
+int
+room_redact_event(struct room *room, uint64_t index);
 int
 timeline_init(struct timeline *timeline);
 void

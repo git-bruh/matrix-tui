@@ -7,6 +7,7 @@ static int test_data[QUEUE_SIZE] = {0};
 void
 setUp(void) {
 }
+
 void
 tearDown(void) {
 	memset(&queue, 0, sizeof(queue));

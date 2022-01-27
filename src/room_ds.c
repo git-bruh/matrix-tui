@@ -46,8 +46,8 @@ cmp_backward(const void *key, const void *array_item) {
 }
 
 struct message *
-message_alloc(char *body, char *sender, size_t index_username, uint64_t index,
-  const uint64_t *index_reply, bool formatted) {
+message_alloc(const char *body, const char *sender, size_t index_username,
+  uint64_t index, const uint64_t *index_reply, bool formatted) {
 	struct message *message = malloc(sizeof(*message));
 
 	if (message) {
@@ -113,6 +113,113 @@ room_bsearch(struct room *room, uint64_t index, struct room_index *out_index) {
 
 	assert(out_index->index_timeline < TIMELINE_MAX);
 	assert(out_index->index_buf < timeline->len);
+
+	return 0;
+}
+
+int
+room_put_member(struct room *room, char *mxid, char *username) {
+	assert(room);
+	assert(mxid);
+
+	/* If len < 1 then displayname has been removed. */
+	uint32_t *username_or_stripped_mxid
+	  = (username && (strnlen(username, 1)) > 0) ? buf_to_uint32_t(username, 0)
+												 : mxid_to_uint32_t(mxid);
+
+	assert(username_or_stripped_mxid);
+
+	ptrdiff_t tmp = 0;
+	ptrdiff_t sh_index = shgeti_ts(room->members, mxid, tmp);
+
+	if (sh_index < 0) {
+		uint32_t **usernames = NULL;
+		arrput(usernames, username_or_stripped_mxid);
+		shput(room->members, mxid, usernames);
+	} else {
+		arrput(room->members[sh_index].value, username_or_stripped_mxid);
+	}
+
+	return 0;
+}
+
+int
+room_put_message(
+  struct room *room, struct timeline *timeline, struct message *message) {
+	assert(room);
+	assert(timeline == &room->timelines[TIMELINE_FORWARD]
+		   || timeline == &room->timelines[TIMELINE_BACKWARD]);
+
+	/* This is safe as the reader thread will have the old value
+	 * of len stored and not access anything beyond that. */
+	arrput(timeline->buf, message);
+
+	size_t len = arrlenu(timeline->buf);
+
+	if (len > 1) {
+		/* Ensure correct order for bsearch. */
+		if (timeline == &room->timelines[TIMELINE_FORWARD]) {
+			assert(
+			  timeline->buf[len - 1]->index > timeline->buf[len - 2]->index);
+		} else {
+			assert(
+			  timeline->buf[len - 1]->index < timeline->buf[len - 2]->index);
+		}
+	}
+
+	timeline->len = len;
+
+	return 0;
+}
+
+int
+room_put_message_event(struct room *room, struct timeline *timeline,
+  uint64_t index, struct matrix_timeline_event *event) {
+	assert(room);
+	assert(event->base.sender);
+	assert(event->message.body);
+	assert(event->type == MATRIX_ROOM_MESSAGE);
+	assert(timeline == &room->timelines[TIMELINE_FORWARD]
+		   || timeline == &room->timelines[TIMELINE_BACKWARD]);
+
+	ptrdiff_t tmp = 0;
+	uint32_t **usernames = shget_ts(room->members, event->base.sender, tmp);
+	size_t usernames_len = arrlenu(usernames);
+
+	assert(usernames_len);
+
+	struct message *message = message_alloc(event->message.body,
+	  event->base.sender, usernames_len - 1, index, NULL, false);
+
+	if (!message) {
+		return -1;
+	}
+
+	room_put_message(room, timeline, message);
+
+	return 0;
+}
+
+int
+room_redact_event(struct room *room, uint64_t index) {
+	assert(room);
+
+	struct room_index out_index = {0};
+
+	if ((room_bsearch(room, index, &out_index)) == -1) {
+		return -1;
+	}
+
+	pthread_mutex_lock(&room->realloc_or_modify_mutex);
+	struct message *to_redact
+	  = room->timelines[out_index.index_timeline].buf[out_index.index_buf];
+	assert(!to_redact->redacted); /* Can't redact something we already did. */
+	assert(to_redact->body);
+	to_redact->redacted = true;
+	arrfree(to_redact->body);
+	to_redact->body = NULL;
+	message_buffer_redact(&room->buffer, index);
+	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 
 	return 0;
 }
