@@ -8,18 +8,13 @@
 #include <assert.h>
 #include <wctype.h>
 
-/* This struct must be small since 1 terminal row == 1 struct buf_item. Instead
- * of breaking up message content into lines, we just store indices into
- * the message buffer. This struct will be allocated very frequently. */
-struct buf_item {
-	int padding; /* Padding for sender. */
-	/* TODO get rid of `end` and assert start == prev_index */
-	size_t start;
-	size_t end;
-	struct message *message;
-};
+int
+message_buffer_init(struct message_buffer *buf) {
+	assert(buf);
+	*buf = (struct message_buffer) {.zeroed = true};
 
-enum { WIDTH_NEWLINE = 0 };
+	return 0;
+}
 
 void
 message_buffer_finish(struct message_buffer *buf) {
@@ -90,9 +85,11 @@ find_next_word_start(
 			last_large_word_start = current + 1;
 		}
 
-		if ((x += width) >= max_x || width == WIDTH_NEWLINE) {
+		if ((widget_should_scroll(x, width, max_x))) {
 			break;
 		}
+
+		x += width;
 	}
 
 	return last_large_word_start;
@@ -160,10 +157,21 @@ message_buffer_insert(struct message_buffer *buf,
 		int width = 0;
 		widget_uc_sanitize(message->body[i], &width);
 
-		bool overflow = (x += width) >= points->x2;
+		bool overflow = widget_should_scroll(x, width, points->x2);
 
-		if (overflow || width == WIDTH_NEWLINE || (i + 1) == len) {
-			if (overflow) {
+		/* Check if the next character would overflow the screen, allowing
+		 * it to be placed on the next line. */
+		if (!overflow && (i + 1) < len) {
+			int next_width = 0;
+			widget_uc_sanitize(message->body[i + 1], &next_width);
+			overflow = (!(widget_should_forcebreak(next_width))
+						&& widget_should_scroll(x, next_width, points->x2));
+		}
+
+		x += width;
+
+		if (overflow || (i + 1) == len) {
+			if (overflow && !(widget_should_forcebreak(width))) {
 				size_t word_start = 0;
 				size_t word_end = 0;
 
@@ -172,7 +180,7 @@ message_buffer_insert(struct message_buffer *buf,
 				int word_width = find_word_start_end(
 				  message->body, i, len, &word_start, &word_end);
 
-				if (word_width < (points->x2 - start_x)) {
+				if (!widget_should_scroll(start_x, word_width, points->x2)) {
 					arrput(buf->buf, ((struct buf_item) {.padding = padding,
 									   .start = prev_end,
 									   .end = word_start,
@@ -323,10 +331,6 @@ message_buffer_handle_event(
 			if (len > 0) {
 				assert(!buf->zeroed);
 
-				if (buf->zeroed) {
-					break;
-				}
-
 				int height = (buf->last_points.y2 - buf->last_points.y1);
 
 				assert(height >= 0);
@@ -342,6 +346,8 @@ message_buffer_handle_event(
 		break;
 	case MESSAGE_BUFFER_DOWN:
 		if (buf->scroll > 0) {
+			assert(!buf->zeroed);
+
 			buf->scroll--;
 			return WIDGET_REDRAW;
 		}
@@ -368,10 +374,6 @@ message_buffer_handle_event(
 
 			if (len > 0) {
 				assert(!buf->zeroed);
-
-				if (buf->zeroed) {
-					break;
-				}
 
 				size_t index
 				  = (len - buf->scroll)
@@ -476,7 +478,7 @@ message_buffer_redraw(struct message_buffer *buf,
 			uint32_t uc
 			  = widget_uc_sanitize(item->message->body[msg_index], &width);
 
-			if (width == WIDTH_NEWLINE) {
+			if ((widget_should_forcebreak(width))) {
 				/* Newlines should only exist before a break,
 				 * i.e. be the last character. */
 				assert((msg_index + 1) == item->end);

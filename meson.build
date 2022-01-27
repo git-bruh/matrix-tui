@@ -26,7 +26,8 @@ common_src = [
 src = common_src + 'src/main.c'
 
 tests = [ # 'test_cache',
-    'test_login_form', # 'test_message_buffer',
+    'test_login_form',
+    'test_message_buffer',
     'test_queue',
     'test_render_message',
     'test_room_ds',

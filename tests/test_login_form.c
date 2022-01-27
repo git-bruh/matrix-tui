@@ -6,14 +6,12 @@ static struct input *last_field = NULL;
 
 void
 setUp(void) {
-	tb_init();
 	form_init(&form, TB_DEFAULT);
 }
 
 void
 tearDown(void) {
 	form_finish(&form);
-	tb_shutdown();
 }
 
 static void
@@ -63,9 +61,8 @@ test_login_form(void) {
 
 	TEST_ASSERT_EQUAL(WIDGET_NOOP, form_handle_event(&form, FORM_UP));
 
-	struct widget_points points = {0};
+	struct widget_points points = {.x1 = 0, .x2 = 80, .y1 = 0, .y2 = 24};
 
-	widget_points_set(&points, 0, 80, 0, 24);
 	form_redraw(&form, &points);
 }
 

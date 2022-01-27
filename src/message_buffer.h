@@ -5,8 +5,18 @@
 #include "ui.h"
 #include "widgets.h"
 
-struct buf_item;
 struct message;
+
+/* This struct must be small since 1 terminal row == 1 struct buf_item. Instead
+ * of breaking up message content into lines, we just store indices into
+ * the message buffer. This struct will be allocated very frequently. */
+struct buf_item {
+	int padding; /* Padding for sender. */
+	/* TODO get rid of `end` and assert start == prev_index */
+	size_t start;
+	size_t end;
+	struct message *message;
+};
 
 struct message_buffer {
 	bool zeroed;
@@ -22,6 +32,8 @@ enum message_buffer_event {
 	MESSAGE_BUFFER_SELECT /* int argument of xy coordinates. */
 };
 
+int
+message_buffer_init(struct message_buffer *buf);
 void
 message_buffer_finish(struct message_buffer *buf);
 int

@@ -38,22 +38,16 @@ test_lock(void) {
 }
 
 void
-test_message(void) {
-	struct message *message
-	  = message_alloc("Test", "@sender:localhost", 0, 0, NULL, true);
-
-	TEST_ASSERT_NOT_NULL(message);
-	TEST_ASSERT_FALSE(message->reply);
-	TEST_ASSERT_EQUAL(0, message->index_reply);
-}
-
-void
 test_insertion_deletion(void) {
+	/* Empty timeline */
+	TEST_ASSERT_EQUAL(-1, room_redact_event(room, 2500));
+
 	/* 2499 - 1 backfill. */
 	for (size_t i = 2499; i > 0; i--) {
 		struct message *message
 		  = message_alloc("Test", "@sender:localhost", 0, i, NULL, false);
 
+		TEST_ASSERT_FALSE(message->reply);
 		TEST_ASSERT_EQUAL(i, message->index);
 		TEST_ASSERT_EQUAL(0,
 		  room_put_message(room, &room->timelines[TIMELINE_BACKWARD], message));
@@ -64,6 +58,7 @@ test_insertion_deletion(void) {
 		struct message *message
 		  = message_alloc("Test", "@sender:localhost", 0, i, NULL, false);
 
+		TEST_ASSERT_FALSE(message->reply);
 		TEST_ASSERT_EQUAL(i, message->index);
 		TEST_ASSERT_EQUAL(0,
 		  room_put_message(room, &room->timelines[TIMELINE_FORWARD], message));
