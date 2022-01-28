@@ -13,7 +13,7 @@
 #define LOCK_IF_GROW(arr, mutex)                                               \
 	do {                                                                       \
 		/* stbds_header expectes nonnull */                                    \
-		if (arr                                                                \
+		if ((arr)                                                              \
 			&& !((stbds_header(arr)->length + 1)                               \
 				 > stbds_header(arr)->capacity)) {                             \
 			break;                                                             \
@@ -26,7 +26,7 @@
 /* stb_ds doesn't duplicate strings by default. */
 #define SHMAP_INIT(map) sh_new_strdup(map)
 
-enum {
+enum timeline_type {
 	TIMELINE_FORWARD = 0, /* New messages. */
 	TIMELINE_BACKWARD,	  /* Backfilled messages iterated in reverse order. */
 	TIMELINE_MAX
@@ -95,10 +95,10 @@ int
 room_put_member(struct room *room, char *mxid, char *username);
 int
 room_put_message(
-  struct room *room, struct timeline *timeline, struct message *message);
+  struct room *room, enum timeline_type timeline, struct message *message);
 int
-room_put_message_event(struct room *room, struct timeline *timeline,
-  uint64_t index, struct matrix_timeline_event *event);
+room_put_message_event(struct room *room, enum timeline_type timeline,
+  uint64_t index, const struct matrix_timeline_event *event);
 int
 room_redact_event(struct room *room, uint64_t index);
 int

@@ -49,8 +49,8 @@ test_insertion_deletion(void) {
 
 		TEST_ASSERT_FALSE(message->reply);
 		TEST_ASSERT_EQUAL(i, message->index);
-		TEST_ASSERT_EQUAL(0,
-		  room_put_message(room, &room->timelines[TIMELINE_BACKWARD], message));
+		TEST_ASSERT_EQUAL(
+		  0, room_put_message(room, TIMELINE_BACKWARD, message));
 	}
 
 	/* 2500 - 4999 */
@@ -60,8 +60,7 @@ test_insertion_deletion(void) {
 
 		TEST_ASSERT_FALSE(message->reply);
 		TEST_ASSERT_EQUAL(i, message->index);
-		TEST_ASSERT_EQUAL(0,
-		  room_put_message(room, &room->timelines[TIMELINE_FORWARD], message));
+		TEST_ASSERT_EQUAL(0, room_put_message(room, TIMELINE_FORWARD, message));
 	}
 
 	/* Array of random indices including min/max indices. */

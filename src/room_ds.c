@@ -145,42 +145,52 @@ room_put_member(struct room *room, char *mxid, char *username) {
 
 int
 room_put_message(
-  struct room *room, struct timeline *timeline, struct message *message) {
+  struct room *room, enum timeline_type timeline, struct message *message) {
 	assert(room);
-	assert(timeline == &room->timelines[TIMELINE_FORWARD]
-		   || timeline == &room->timelines[TIMELINE_BACKWARD]);
+	assert(timeline < TIMELINE_MAX);
+
+	/* We only lock if the message buffer actually needs to
+	 * grow. Otherwise, the reader thread has a length of the
+	 * array which stops at the
+	 * index where we're inserting the new messages, so no
+	 * races. */
+	LOCK_IF_GROW(room->timelines[timeline].buf, &room->realloc_or_modify_mutex);
 
 	/* This is safe as the reader thread will have the old value
 	 * of len stored and not access anything beyond that. */
-	arrput(timeline->buf, message);
+	arrput(room->timelines[timeline].buf, message);
 
-	size_t len = arrlenu(timeline->buf);
+	size_t len = arrlenu(room->timelines[timeline].buf);
 
 	if (len > 1) {
 		/* Ensure correct order for bsearch. */
-		if (timeline == &room->timelines[TIMELINE_FORWARD]) {
-			assert(
-			  timeline->buf[len - 1]->index > timeline->buf[len - 2]->index);
-		} else {
-			assert(
-			  timeline->buf[len - 1]->index < timeline->buf[len - 2]->index);
+		switch (timeline) {
+		case TIMELINE_FORWARD:
+			assert(room->timelines[timeline].buf[len - 1]->index
+				   > room->timelines[timeline].buf[len - 2]->index);
+			break;
+		case TIMELINE_BACKWARD:
+			assert(room->timelines[timeline].buf[len - 1]->index
+				   < room->timelines[timeline].buf[len - 2]->index);
+			break;
+		default:
+			assert(0);
 		}
 	}
 
-	timeline->len = len;
+	room->timelines[timeline].len = len;
 
 	return 0;
 }
 
 int
-room_put_message_event(struct room *room, struct timeline *timeline,
-  uint64_t index, struct matrix_timeline_event *event) {
+room_put_message_event(struct room *room, enum timeline_type timeline,
+  uint64_t index, const struct matrix_timeline_event *event) {
 	assert(room);
 	assert(event->base.sender);
 	assert(event->message.body);
 	assert(event->type == MATRIX_ROOM_MESSAGE);
-	assert(timeline == &room->timelines[TIMELINE_FORWARD]
-		   || timeline == &room->timelines[TIMELINE_BACKWARD]);
+	assert(timeline < TIMELINE_MAX);
 
 	ptrdiff_t tmp = 0;
 	uint32_t **usernames = shget_ts(room->members, event->base.sender, tmp);

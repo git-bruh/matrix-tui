@@ -605,17 +605,15 @@ populate_room_from_cache(struct state *state, const char *room_id) {
 		return ret;
 	}
 
-	struct timeline *timeline = &room->timelines[TIMELINE_BACKWARD];
-
 	while ((cache_iterator_next(&iterator)) == MDB_SUCCESS) {
 		if (event.event.type == MATRIX_ROOM_MESSAGE) {
-			room_put_message_event(room, timeline, event.index, &event.event);
+			room_put_message_event(
+			  room, TIMELINE_BACKWARD, event.index, &event.event);
 		}
 
 		matrix_json_delete(event.json);
 	}
 
-	timeline->len = arrlenu(timeline->buf);
 	cache_iterator_finish(&iterator);
 
 	return ret;
@@ -1002,8 +1000,6 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 			assert(room);
 		}
 
-		struct timeline *timeline = &room->timelines[TIMELINE_FORWARD];
-
 		while ((matrix_sync_event_next(&sync_room, &event)) == 0) {
 			uint64_t index = txn.index;
 			enum cache_save_error cache_ret = CACHE_FAIL;
@@ -1033,19 +1029,11 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 			case MATRIX_EVENT_TIMELINE:
 				switch (event.timeline.type) {
 				case MATRIX_ROOM_MESSAGE:
-					/* We only lock if the message buffer actually needs to
-					 * grow. Otherwise, the reader thread has a length of the
-					 * array which stops at the
-					 * index where we're inserting the new messages, so no
-					 * races. */
-					LOCK_IF_GROW(timeline->buf, &room->realloc_or_modify_mutex);
 					room_put_message_event(
-					  room, timeline, index, &event.timeline);
+					  room, TIMELINE_FORWARD, index, &event.timeline);
 					break;
 				case MATRIX_ROOM_REDACTION:
 					if (cache_ret == CACHE_GOT_REDACTION) {
-						/* Ensure that bsearch has access to new events. */
-						timeline->len = arrlenu(timeline->buf);
 						/* Takes a lock. */
 						room_redact_event(room, txn.latest_redaction);
 					}
@@ -1062,7 +1050,6 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 		}
 
 		cache_save_txn_finish(&txn);
-		timeline->len = arrlenu(timeline->buf);
 
 		if (room_needs_info) {
 			if ((ret = cache_room_info_init(
