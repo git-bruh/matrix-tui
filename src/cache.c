@@ -56,6 +56,23 @@ mkdir_parents(char path[], mode_t mode) {
 	return 0;
 }
 
+/* Convert MDB_val to uint64_t with size verification and without tripping
+ * ubsan about unaligned access on x86_64. */
+static void
+cpy_index(MDB_val *index, uint64_t *out_index) {
+	assert(index);
+	assert(out_index);
+
+	if (index->mv_size != sizeof(*out_index)) {
+		LOG(LOG_ERROR,
+		  "Expected size %zu for index but got %zu! Corrupt database?",
+		  sizeof(*out_index), index->mv_size);
+		abort();
+	}
+
+	memcpy(out_index, index->mv_data, sizeof(*out_index));
+}
+
 static int
 get_dbi(enum room_db db, MDB_txn *txn, MDB_dbi *dbi, const char *room_id) {
 	assert(txn);
@@ -189,8 +206,7 @@ cache_event_next(
 	assert(is_str(&db_json));
 
 	uint64_t index = 0;
-	assert(db_index->mv_size == sizeof(index));
-	memcpy(&index, db_index->mv_data, sizeof(index));
+	cpy_index(db_index, &index);
 
 	matrix_json_t *json = matrix_json_parse(db_json.mv_data, db_json.mv_size);
 	assert(json);
@@ -808,9 +824,7 @@ cache_set_room_dbs(struct cache_save_txn *txn, struct matrix_room *room) {
 		MDB_val val = {0};
 
 		if ((mdb_cursor_get(cursor, &key, &val, MDB_LAST)) == MDB_SUCCESS) {
-			assert(key.mv_size == sizeof(txn->index));
-			memcpy(&txn->index, key.mv_data, sizeof(txn->index));
-
+			cpy_index(&key, &txn->index);
 			txn->index++; /* Don't overwrite the last event. */
 		}
 
@@ -865,9 +879,11 @@ child_event_in_parent_space(
 }
 
 enum cache_save_error
-cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
+cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
+  uint64_t *redaction_index) {
 	assert(txn);
 	assert(event);
+	assert(redaction_index);
 
 	/* TODO power level checking. */
 
@@ -972,10 +988,7 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event) {
 					mdb_del(txn->txn, txn->dbs[ROOM_DB_ORDER_TO_EVENTS],
 					  &del_index, NULL);
 
-					assert(del_index.mv_size == sizeof(txn->latest_redaction));
-					memcpy(&txn->latest_redaction, del_index.mv_data,
-					  del_index.mv_size);
-
+					cpy_index(&del_index, redaction_index);
 					set_index = true;
 				}
 

@@ -132,6 +132,12 @@ room_put_member(struct room *room, char *mxid, char *username) {
 	ptrdiff_t tmp = 0;
 	ptrdiff_t sh_index = shgeti_ts(room->members, mxid, tmp);
 
+	/* We lock for every member here, but it's not a big
+	 * issue since member events are very rare and we won't
+	 * have more than 1-2 of them per-sync
+	 * except for large syncs like the initial sync. */
+	pthread_mutex_lock(&room->realloc_or_modify_mutex);
+
 	if (sh_index < 0) {
 		uint32_t **usernames = NULL;
 		arrput(usernames, username_or_stripped_mxid);
@@ -139,6 +145,8 @@ room_put_member(struct room *room, char *mxid, char *username) {
 	} else {
 		arrput(room->members[sh_index].value, username_or_stripped_mxid);
 	}
+
+	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 
 	return 0;
 }
@@ -206,6 +214,55 @@ room_put_message_event(struct room *room, enum timeline_type timeline,
 	}
 
 	room_put_message(room, timeline, message);
+
+	return 0;
+}
+
+int
+room_put_event(struct room *room, const struct matrix_sync_event *event,
+  uint64_t index, const uint64_t *redaction_index) {
+	assert(room);
+	assert(event);
+
+	bool redaction_valid_if_present = false;
+
+	switch (event->type) {
+	case MATRIX_EVENT_EPHEMERAL:
+		break;
+	case MATRIX_EVENT_STATE:
+		switch (event->state.type) {
+		case MATRIX_ROOM_MEMBER:
+			room_put_member(
+			  room, event->state.base.sender, event->state.member.displayname);
+		default:
+			break;
+		}
+		break;
+	case MATRIX_EVENT_TIMELINE:
+		switch (event->timeline.type) {
+		case MATRIX_ROOM_MESSAGE:
+			room_put_message_event(
+			  room, TIMELINE_FORWARD, index, &event->timeline);
+			break;
+		case MATRIX_ROOM_REDACTION:
+			if (redaction_index) {
+				room_redact_event(room, *redaction_index);
+				redaction_valid_if_present = true;
+			}
+			break;
+		case MATRIX_ROOM_ATTACHMENT:
+			break;
+		default:
+			assert(0);
+		}
+		break;
+	default:
+		assert(0);
+	}
+
+	if (redaction_index) {
+		assert(redaction_valid_if_present);
+	}
 
 	return 0;
 }

@@ -1002,51 +1002,30 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 		while ((matrix_sync_event_next(&sync_room, &event)) == 0) {
 			uint64_t index = txn.index;
+			uint64_t redaction_index = 0;
 			enum cache_save_error cache_ret = CACHE_FAIL;
 
-			if ((cache_ret = cache_save_event(&txn, &event)) == CACHE_FAIL) {
+			if ((cache_ret = cache_save_event(&txn, &event, &redaction_index))
+				== CACHE_FAIL) {
 				continue;
 			}
 
-			switch (event.type) {
-			case MATRIX_EVENT_EPHEMERAL:
-				break;
-			case MATRIX_EVENT_STATE:
+			if (event.type == MATRIX_EVENT_STATE) {
 				switch (event.state.type) {
-				case MATRIX_ROOM_MEMBER:
-					/* We lock for every member here, but it's not a big
-					 * issue since member events are very rare and we won't
-					 * have more than 1-2 of them per-sync
-					 * except for large syncs like the initial sync. */
-					pthread_mutex_lock(&room->realloc_or_modify_mutex);
-					room_put_member(room, event.state.base.sender,
-					  event.state.member.displayname);
-					pthread_mutex_unlock(&room->realloc_or_modify_mutex);
+				case MATRIX_ROOM_SPACE_CHILD:
+				case MATRIX_ROOM_SPACE_PARENT:
+					/* TODO add to temporary array and process relations after
+					 * processing all rooms as relations can reference rooms
+					 * that might not have been encountered yet. arrput();
+					 * continue; */
+					break;
 				default:
 					break;
 				}
-				break;
-			case MATRIX_EVENT_TIMELINE:
-				switch (event.timeline.type) {
-				case MATRIX_ROOM_MESSAGE:
-					room_put_message_event(
-					  room, TIMELINE_FORWARD, index, &event.timeline);
-					break;
-				case MATRIX_ROOM_REDACTION:
-					if (cache_ret == CACHE_GOT_REDACTION) {
-						/* Takes a lock. */
-						room_redact_event(room, txn.latest_redaction);
-					}
-					break;
-				case MATRIX_ROOM_ATTACHMENT:
-					break;
-				default:
-					assert(0);
-				}
-				break;
-			default:
-				assert(0);
 			}
+
+			room_put_event(room, &event, index,
+			  (cache_ret == CACHE_GOT_REDACTION ? &redaction_index : NULL));
 		}
 
 		cache_save_txn_finish(&txn);

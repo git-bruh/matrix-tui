@@ -102,6 +102,9 @@ room_put_message_event(struct room *room, enum timeline_type timeline,
 int
 room_redact_event(struct room *room, uint64_t index);
 int
+room_put_event(struct room *room, const struct matrix_sync_event *event,
+  uint64_t index, const uint64_t *redaction_index);
+int
 timeline_init(struct timeline *timeline);
 void
 timeline_finish(struct timeline *timeline);

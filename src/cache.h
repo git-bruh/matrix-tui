@@ -98,7 +98,6 @@ struct cache_iterator_space {
 struct cache_save_txn {
 	MDB_dbi dbs[ROOM_DB_MAX];
 	uint64_t index;
-	uint64_t latest_redaction; /* Valid if cache_save_event returns 1. */
 	const char *room_id;
 	MDB_txn *txn;
 	struct cache *cache;
@@ -128,8 +127,10 @@ int
 cache_set_room_dbs(struct cache_save_txn *txn, struct matrix_room *room);
 int
 cache_save_room(struct cache_save_txn *txn, struct matrix_room *room);
+/* redaction_index is set if CACHE_GOT_REDACTION is returned. */
 enum cache_save_error
-cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event);
+cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
+  uint64_t *redaction_index);
 int
 cache_iterator_next(struct cache_iterator *iterator);
 void
