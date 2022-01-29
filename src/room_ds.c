@@ -232,8 +232,8 @@ room_put_event(struct room *room, const struct matrix_sync_event *event,
 	case MATRIX_EVENT_STATE:
 		switch (event->state.type) {
 		case MATRIX_ROOM_MEMBER:
-			room_put_member(
-			  room, event->state.base.sender, event->state.member.displayname);
+			room_put_member(room, event->state.base.sender,
+			  event->state.content.member.displayname);
 		default:
 			break;
 		}

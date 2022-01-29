@@ -179,73 +179,120 @@ is_str(MDB_val *val) {
 }
 
 static int
-cache_rooms_next(struct cache_iterator *iterator, MDB_val *key, MDB_val *data) {
+cache_rooms_next(struct cache_iterator *iterator) {
 	assert(iterator);
 	assert(iterator->type == CACHE_ITERATOR_ROOMS);
-	assert(is_str(key));
-	assert(is_str(data));
 
-	*iterator->room_id = key->mv_data;
-	return MDB_SUCCESS;
-}
+	MDB_val key = {0};
+	MDB_val data = {0};
 
-static int
-cache_event_next(
-  struct cache_iterator *iterator, MDB_val *db_index, MDB_val *id) {
-	assert(iterator);
-	assert(iterator->type == CACHE_ITERATOR_EVENTS);
-	assert(is_str(id));
+	int ret = mdb_cursor_get(iterator->cursor, &key, &data, MDB_NEXT);
 
-	MDB_val db_json = {0};
-	int ret = mdb_get(iterator->txn, iterator->events_dbi, id, &db_json);
-
-	if (ret != 0) {
+	if (ret != MDB_SUCCESS) {
 		return ret;
 	}
 
-	assert(is_str(&db_json));
+	assert(is_str(&key));
+	assert(is_str(&data));
 
-	uint64_t index = 0;
-	cpy_index(db_index, &index);
-
-	matrix_json_t *json = matrix_json_parse(db_json.mv_data, db_json.mv_size);
-	assert(json);
-
-	*iterator->event
-	  = (struct cache_iterator_event) {.json = json, .index = index};
-
-	ret = matrix_event_timeline_parse(&iterator->event->event, json);
-
-	if (ret != 0) {
-		LOG(LOG_ERROR, "Failed to parse event JSON '%s'",
-		  (char *) db_json.mv_data);
-		assert(0);
-
-		matrix_json_delete(json);
-		return EINVAL;
-	}
-
-	return 0;
+	*iterator->room_id = key.mv_data;
+	return ret;
 }
 
 static int
-cache_member_next(
-  struct cache_iterator *iterator, MDB_val *key, MDB_val *data) {
+cache_event_next(struct cache_iterator *iterator) {
+	assert(iterator);
+	assert(iterator->type == CACHE_ITERATOR_EVENTS);
+
+	for (;;) {
+		if (iterator->num_fetch == 0) {
+			return EINVAL;
+		}
+
+		MDB_val db_index = {0};
+		MDB_val id = {0};
+
+		int ret = (iterator->fetched_once ? (
+					 mdb_cursor_get(iterator->cursor, &db_index, &id, MDB_PREV))
+										  : mdb_cursor_get(iterator->cursor,
+											&db_index, &id, MDB_GET_CURRENT));
+
+		if (ret != MDB_SUCCESS) {
+			return ret;
+		}
+
+		iterator->fetched_once = true;
+		iterator->num_fetch--;
+
+		assert(is_str(&id));
+
+		MDB_val db_json = {0};
+		ret = mdb_get(iterator->txn, iterator->events_dbi, &id, &db_json);
+
+		if (ret != MDB_SUCCESS) {
+			return ret;
+		}
+
+		assert(is_str(&db_json));
+
+		uint64_t index = 0;
+		cpy_index(&db_index, &index);
+
+		matrix_json_t *json
+		  = matrix_json_parse(db_json.mv_data, db_json.mv_size);
+		assert(json);
+
+		/* TODO check if timeline only. */
+		if (!(matrix_json_has_content(json))) {
+			matrix_json_delete(json);
+			continue;
+		}
+
+		*iterator->event
+		  = (struct cache_iterator_event) {.json = json, .index = index};
+
+		ret = matrix_event_timeline_parse(&iterator->event->event, json);
+
+		if (ret != 0) {
+			LOG(LOG_ERROR, "Failed to parse event JSON '%s'",
+			  (char *) db_json.mv_data);
+			assert(0);
+
+			matrix_json_delete(json);
+			return EINVAL;
+		}
+
+		return ret;
+	}
+}
+
+static int
+cache_member_next(struct cache_iterator *iterator) {
 	assert(iterator);
 	assert(iterator->type == CACHE_ITERATOR_MEMBER);
-	assert(is_str(key));
-	assert(is_str(data));
 
-	matrix_json_t *json = matrix_json_parse(data->mv_data, data->mv_size);
+	MDB_val key = {0};
+	MDB_val data = {0};
+
+	int ret = mdb_cursor_get(iterator->cursor, &key, &data, MDB_NEXT);
+
+	if (ret != MDB_SUCCESS) {
+		return ret;
+	}
+
+	assert(is_str(&key));
+	assert(is_str(&data));
+
+	matrix_json_t *json = matrix_json_parse(data.mv_data, data.mv_size);
 	assert(json);
 
 	struct matrix_state_event event = {0};
 
-	int ret = matrix_event_state_parse(&event, json);
+	ret = matrix_event_state_parse(&event, json);
 
 	if (ret != 0 || event.type != MATRIX_ROOM_MEMBER) {
-		LOG(LOG_ERROR, "Failed to parse member JSON '%s'",
-		  (char *) data->mv_data);
+		LOG(
+		  LOG_ERROR, "Failed to parse member JSON '%s'", (char *) data.mv_data);
 		assert(0);
 
 		matrix_json_delete(json);
@@ -253,12 +300,71 @@ cache_member_next(
 	}
 
 	*iterator->member = (struct cache_iterator_member) {
-	  .mxid = key->mv_data,
-	  .username = event.member.displayname,
+	  .mxid = key.mv_data,
+	  .username = event.content.member.displayname,
 	  .json = json,
 	};
 
-	return 0;
+	return ret;
+}
+
+static int
+cache_iterator_space_children(struct cache *cache, MDB_cursor *cursor,
+  struct cache_iterator *iterator, char **child_id) {
+	assert(cache);
+	assert(iterator);
+	assert(child_id);
+
+	*iterator = (struct cache_iterator) {.type = CACHE_ITERATOR_SPACE_CHILDREN,
+	  .cursor = cursor,
+	  .cache = cache,
+	  .child_id = child_id};
+
+	return MDB_SUCCESS;
+}
+
+static int
+cache_spaces_next(struct cache_iterator *iterator) {
+	assert(iterator);
+	assert(iterator->type == CACHE_ITERATOR_SPACES);
+
+	MDB_val key = {0};
+	MDB_val data = {0};
+
+	int ret = mdb_cursor_get(iterator->cursor, &key, &data, MDB_NEXT);
+
+	if (ret != MDB_SUCCESS) {
+		return ret;
+	}
+
+	assert(is_str(&key));
+
+	iterator->space->id = key.mv_data;
+	return cache_iterator_space_children(iterator->cache, iterator->cursor,
+	  &iterator->space->children_iterator, &iterator->space->child_id);
+}
+
+static int
+cache_space_children_next(struct cache_iterator *iterator) {
+	assert(iterator);
+	assert(iterator->type == CACHE_ITERATOR_SPACE_CHILDREN);
+
+	MDB_val key = {0};
+	MDB_val data = {0};
+
+	int ret = mdb_cursor_get(iterator->cursor, &key, &data,
+	  (iterator->child_iterated_once ? MDB_NEXT_DUP : MDB_FIRST_DUP));
+
+	if (ret != MDB_SUCCESS) {
+		return ret;
+	}
+
+	iterator->child_iterated_once = true;
+
+	assert(is_str(&data));
+	*iterator->child_id = data.mv_data;
+
+	return ret;
 }
 
 int
@@ -418,21 +524,6 @@ cache_iterator_spaces(struct cache *cache, struct cache_iterator *iterator,
 	return ret;
 }
 
-static int
-cache_iterator_space_children(struct cache *cache, MDB_cursor *cursor,
-  struct cache_iterator *iterator, char **child_id) {
-	assert(cache);
-	assert(iterator);
-	assert(child_id);
-
-	*iterator = (struct cache_iterator) {.type = CACHE_ITERATOR_SPACE_CHILDREN,
-	  .cursor = cursor,
-	  .cache = cache,
-	  .child_id = child_id};
-
-	return MDB_SUCCESS;
-}
-
 void
 cache_iterator_finish(struct cache_iterator *iterator) {
 	if (iterator) {
@@ -574,10 +665,10 @@ cache_room_name(struct cache *cache, MDB_txn *txn, const char *room_id) {
 				&& (matrix_event_state_parse(&sevent, json)) == 0) {
 				switch (sevent.type) {
 				case MATRIX_ROOM_NAME:
-					res = sevent.name.name;
+					res = sevent.content.name.name;
 					break;
 				case MATRIX_ROOM_CANONICAL_ALIAS:
-					res = sevent.canonical_alias.alias;
+					res = sevent.content.canonical_alias.alias;
 					break;
 				default:
 					break;
@@ -617,7 +708,7 @@ cache_room_topic(struct cache *cache, MDB_txn *txn, const char *room_id) {
 					= matrix_json_parse((char *) value.mv_data, value.mv_size))
 				&& (matrix_event_state_parse(&sevent, json)) == 0
 				&& (sevent.type == MATRIX_ROOM_TOPIC)) {
-				res = sevent.topic.topic;
+				res = sevent.content.topic.topic;
 			}
 		}
 
@@ -633,72 +724,22 @@ cache_room_topic(struct cache *cache, MDB_txn *txn, const char *room_id) {
 	return NULL;
 }
 
+static int (*const iterators[CACHE_ITERATOR_MAX])(struct cache_iterator *)
+  = {[CACHE_ITERATOR_ROOMS] = cache_rooms_next,
+	[CACHE_ITERATOR_EVENTS] = cache_event_next,
+	[CACHE_ITERATOR_MEMBER] = cache_member_next,
+	[CACHE_ITERATOR_SPACES] = cache_spaces_next,
+	[CACHE_ITERATOR_SPACE_CHILDREN] = cache_space_children_next};
+
 int
 cache_iterator_next(struct cache_iterator *iterator) {
 	assert(iterator);
 
-	MDB_val key = {0};
-	MDB_val data = {0};
+	if (iterator->type >= 0 && iterator->type < CACHE_ITERATOR_MAX) {
+		return iterators[iterator->type](iterator);
+	}
 
-	int ret = 0;
-
-	switch (iterator->type) {
-	case CACHE_ITERATOR_ROOMS:
-		if ((ret = mdb_cursor_get(iterator->cursor, &key, &data, MDB_NEXT))
-			== MDB_SUCCESS) {
-			return cache_rooms_next(iterator, &key, &data);
-		}
-		break;
-	case CACHE_ITERATOR_EVENTS:
-		if (iterator->num_fetch == 0) {
-			ret = EINVAL;
-			break;
-		}
-
-		ret = (iterator->fetched_once
-				 ? (mdb_cursor_get(iterator->cursor, &key, &data, MDB_PREV))
-				 : (iterator->fetched_once = true,
-				   mdb_cursor_get(
-					 iterator->cursor, &key, &data, MDB_GET_CURRENT)));
-
-		if (ret == MDB_SUCCESS) {
-			iterator->num_fetch--;
-			ret = cache_event_next(iterator, &key, &data);
-		}
-		break;
-	case CACHE_ITERATOR_MEMBER:
-		if ((ret = mdb_cursor_get(iterator->cursor, &key, &data, MDB_NEXT))
-			== MDB_SUCCESS) {
-			return cache_member_next(iterator, &key, &data);
-		}
-		break;
-	case CACHE_ITERATOR_SPACES:
-		if ((ret = mdb_cursor_get(iterator->cursor, &key, &data, MDB_NEXT))
-			== MDB_SUCCESS) {
-			assert(is_str(&key));
-			iterator->space->id = key.mv_data;
-
-			return cache_iterator_space_children(iterator->cache,
-			  iterator->cursor, &iterator->space->children_iterator,
-			  &iterator->space->child_id);
-		}
-		break;
-	case CACHE_ITERATOR_SPACE_CHILDREN:
-		if ((ret = mdb_cursor_get(iterator->cursor, &key, &data,
-			   iterator->child_iterated_once ? MDB_NEXT_DUP : MDB_FIRST_DUP))
-			== MDB_SUCCESS) {
-			assert(is_str(&data));
-			*iterator->child_id = data.mv_data;
-		}
-
-		iterator->child_iterated_once = true;
-		break;
-	default:
-		assert(0);
-		ret = EINVAL;
-	};
-
-	return ret;
+	assert(0);
 }
 
 static bool
@@ -726,8 +767,8 @@ room_is_space(struct cache *cache, MDB_txn *txn, const char *room_id) {
 				  room_id);
 				assert(0);
 			} else {
-				is_space = !!sevent.create.type
-						&& (strcmp(sevent.create.type, "m.space") == 0);
+				is_space = !!sevent.content.create.type
+						&& (strcmp(sevent.content.create.type, "m.space") == 0);
 			}
 		}
 
@@ -919,7 +960,7 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
 					break;
 				}
 
-				if (!sevent->space_child.via) {
+				if (!sevent->content.space_child.via) {
 					del_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
 					  txn->room_id, sevent->state_key);
 					break;
@@ -943,7 +984,7 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
 
 				/* TODO if (!sender_has_power_level_in_parent) { break; } */
 
-				if (!sevent->space_parent.via) {
+				if (!sevent->content.space_parent.via) {
 					del_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
 					  sevent->state_key, txn->room_id);
 					break;
@@ -985,17 +1026,37 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
 				if ((get_str(txn->txn, txn->dbs[ROOM_DB_EVENTS_TO_ORDER],
 					  tevent->redaction.redacts, &del_index))
 					== MDB_SUCCESS) {
-					mdb_del(txn->txn, txn->dbs[ROOM_DB_ORDER_TO_EVENTS],
-					  &del_index, NULL);
+					MDB_val raw_json = {0};
+					ret = get_str(txn->txn, txn->dbs[ROOM_DB_EVENTS],
+					  tevent->redaction.redacts, &raw_json);
+
+					if (ret == MDB_SUCCESS) {
+						assert(is_str(&raw_json));
+
+						matrix_json_t *json = matrix_json_parse(
+						  raw_json.mv_data, raw_json.mv_size);
+						assert(json);
+
+						matrix_json_clear_content(json);
+
+						char *cleaned_json = matrix_json_print(json);
+						assert(cleaned_json);
+
+						ret = put_str(txn->txn, txn->dbs[ROOM_DB_EVENTS],
+						  tevent->redaction.redacts, cleaned_json, 0);
+
+						free(cleaned_json);
+						matrix_json_delete(json);
+					}
 
 					cpy_index(&del_index, redaction_index);
 					set_index = true;
+				} else {
+					LOG(LOG_WARN,
+					  "Got redaction '%s' for unknown event '%s' in room '%s'",
+					  tevent->base.event_id, tevent->redaction.redacts,
+					  txn->room_id);
 				}
-
-				del_str(txn->txn, txn->dbs[ROOM_DB_EVENTS_TO_ORDER],
-				  tevent->base.event_id, NULL);
-				del_str(txn->txn, txn->dbs[ROOM_DB_EVENTS],
-				  tevent->base.event_id, NULL);
 
 				if (set_index) {
 					return CACHE_GOT_REDACTION;
