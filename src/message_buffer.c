@@ -141,6 +141,13 @@ message_buffer_insert(struct message_buffer *buf,
 				+ widget_str_width("<> ");
 	int start_x = padding + 1;
 
+	size_t len_buf = arrlenu(buf->buf);
+
+	/* Must be in increasing order. */
+	if (len_buf > 0) {
+		assert(message->index > buf->buf[len_buf - 1].message->index);
+	}
+
 	if (start_x >= points->x2) {
 		return -1;
 	}
