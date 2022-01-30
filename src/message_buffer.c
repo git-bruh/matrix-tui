@@ -123,22 +123,17 @@ message_is_not_duplicate(struct message_buffer *buf, struct message *message) {
 }
 
 int
-message_buffer_insert(struct message_buffer *buf,
-  struct members_map *members_map, struct widget_points *points,
+message_buffer_insert(struct message_buffer *buf, struct widget_points *points,
   struct message *message) {
 	assert(buf);
 	assert(points);
-	assert(members_map);
 	assert(message);
 	/* XXX: Expensive assertion, maybe disable it. */
 	assert(message_is_not_duplicate(buf, message));
 
-	ptrdiff_t tmp = 0;
-	uint32_t **usernames = shget_ts(members_map, message->sender, tmp);
-	assert(usernames);
-
-	int padding = points->x1 + uint32_width(usernames[message->index_username])
-				+ widget_str_width("<> ");
+	/* TODO account for large username and truncate it. */
+	int padding
+	  = points->x1 + uint32_width(message->username) + widget_str_width("<> ");
 	int start_x = padding + 1;
 
 	size_t len_buf = arrlenu(buf->buf);
@@ -413,10 +408,9 @@ message_buffer_handle_event(
 }
 
 void
-message_buffer_redraw(struct message_buffer *buf,
-  struct members_map *members_map, struct widget_points *points) {
+message_buffer_redraw(
+  struct message_buffer *buf, struct widget_points *points) {
 	assert(buf);
-	assert(members_map);
 	assert(points);
 
 	size_t len = arrlenu(buf->buf);
@@ -448,20 +442,16 @@ message_buffer_redraw(struct message_buffer *buf,
 		if (item->start == 0) {
 			int x = points->x1;
 
-			ptrdiff_t tmp = 0;
-			uint32_t **usernames
-			  = shget_ts(members_map, item->message->sender, tmp);
-			assert(usernames);
-
-			uint32_t *username = usernames[item->message->index_username];
 			uintattr_t sender_fg = str_attr(item->message->sender);
 
 			x += widget_print_str(x, y, points->x2, sender_fg, bg, "<");
 
-			for (size_t user_index = 0, user_len = arrlenu(username);
+			for (size_t user_index = 0,
+						user_len = arrlenu(item->message->username);
 				 user_index < user_len; user_index++) {
 				int width = 0;
-				uint32_t uc = widget_uc_sanitize(username[user_index], &width);
+				uint32_t uc = widget_uc_sanitize(
+				  item->message->username[user_index], &width);
 
 				if (width != 0) {
 					tb_set_cell(x, y, uc, sender_fg, bg);

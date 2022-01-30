@@ -93,7 +93,8 @@ handle_login(struct state *state, void *data) {
 			|| (cache_auth_set(&state->cache, DB_KEY_MXID, mxid)) != 0
 			|| (cache_auth_set(&state->cache, DB_KEY_HOMESERVER, homeserver))
 				 != 0) {
-			code = (enum matrix_code) LOGIN_DB_FAIL;
+			/* Should've been caught in cache.c wrappers. */
+			assert(0);
 		}
 	}
 

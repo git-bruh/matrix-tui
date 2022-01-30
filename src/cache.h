@@ -48,14 +48,12 @@ struct cache {
 
 struct cache_iterator_event {
 	uint64_t index;
-	struct matrix_timeline_event event;
-	matrix_json_t *json;
+	struct matrix_sync_event event;
 };
 
 struct cache_iterator_member {
 	char *mxid;
 	char *username;
-	matrix_json_t *json;
 };
 
 struct cache_iterator_space;
@@ -77,10 +75,16 @@ struct cache_iterator {
 		struct {
 			bool fetched_once;
 			MDB_dbi events_dbi;
+			unsigned timeline_events;
+			unsigned state_events;
 			uint64_t num_fetch;
 			struct cache_iterator_event *event;
+			matrix_json_t *event_json;
 		};
-		struct cache_iterator_member *member;
+		struct {
+			struct cache_iterator_member *member;
+			matrix_json_t *member_json;
+		};
 		struct cache_iterator_space *space;
 		struct {
 			bool child_iterated_once;
@@ -135,18 +139,25 @@ int
 cache_iterator_next(struct cache_iterator *iterator);
 void
 cache_iterator_finish(struct cache_iterator *iterator);
+/* *room_id stores the ID of each room after an iteration. */
 int
 cache_iterator_rooms(
   struct cache *cache, struct cache_iterator *iterator, const char **room_id);
 /* Fetch num_fetch events, starting from end_index and going backwards.
- * end_index == (uint64_t) -1 means start from end. */
+ * end_index == (uint64_t) -1 means start from end.
+ * timeline_events and state_events are the result of bitwise OR-ing
+ * the type of events that should be iterated over.
+ * The events are stored in *event. */
 int
 cache_iterator_events(struct cache *cache, struct cache_iterator *iterator,
   const char *room_id, struct cache_iterator_event *event, uint64_t end_index,
-  uint64_t num_fetch);
+  uint64_t num_fetch, unsigned timeline_events, unsigned state_events);
+/* Member stored in *member. */
 int
 cache_iterator_member(struct cache *cache, struct cache_iterator *iterator,
   const char *room_id, struct cache_iterator_member *member);
+/* Space stored in *space, has a nested iterator spaces->children_iterator for
+ * child spaces. */
 int
 cache_iterator_spaces(struct cache *cache, struct cache_iterator *iterator,
   struct cache_iterator_space *space);

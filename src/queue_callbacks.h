@@ -27,14 +27,6 @@ struct queue_callback {
 
 extern const struct queue_callback queue_callbacks[QUEUE_ITEM_MAX];
 
-/* Extend the matrix_code enumeration. */
-enum login_error {
-	LOGIN_DB_FAIL = MATRIX_CODE_MAX + 1,
-};
-
-_Static_assert(
-  sizeof(enum matrix_code) == sizeof(enum login_error), "enum size mismatch.");
-
 void
 queue_item_free(struct queue_item *item);
 struct queue_item *

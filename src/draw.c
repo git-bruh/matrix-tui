@@ -134,7 +134,7 @@ tab_room_redraw(struct tab_room *tab_room) {
 	  &points, tree_width + 1, width, BAR_HEIGHT, height - input_rows);
 
 	pthread_mutex_lock(&room->realloc_or_modify_mutex);
-	message_buffer_redraw(&room->buffer, room->members, &points);
+	message_buffer_redraw(&room->buffer, &points);
 	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 
 	/* - 1 for divider bar. */

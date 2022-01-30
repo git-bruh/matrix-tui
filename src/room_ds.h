@@ -42,9 +42,9 @@ struct message {
 	uint64_t index; /* Index from database. */
 	uint64_t
 	  index_reply; /* Index (from database) of the message being replied to. */
-	size_t
-	  index_username; /* Index of current username in the members hashmap. */
-	uint32_t *body;	  /* HTML, if formatted is true. */
+	/* Pointer to username at the current index from hashmap. */
+	uint32_t *username;
+	uint32_t *body; /* HTML, if formatted is true. */
 	char *sender;
 };
 
@@ -79,35 +79,19 @@ struct room {
 	pthread_mutex_t realloc_or_modify_mutex;
 };
 
-struct room_index {
-	size_t index_timeline;
-	size_t index_buf;
-};
-
 struct message *
-message_alloc(const char *body, const char *sender, size_t index_username,
-  uint64_t index, const uint64_t *index_reply, bool formatted);
-void
-message_destroy(struct message *message);
-int
-room_bsearch(struct room *room, uint64_t index, struct room_index *out_index);
+room_bsearch(struct room *room, uint64_t index);
 int
 room_put_member(struct room *room, char *mxid, char *username);
 int
-room_put_message(
-  struct room *room, enum timeline_type timeline, struct message *message);
-int
-room_put_message_event(struct room *room, enum timeline_type timeline,
-  uint64_t index, const struct matrix_timeline_event *event);
-int
-room_redact_event(struct room *room, uint64_t index);
-int
 room_put_event(struct room *room, const struct matrix_sync_event *event,
-  uint64_t index, const uint64_t *redaction_index);
-int
-timeline_init(struct timeline *timeline);
-void
-timeline_finish(struct timeline *timeline);
+  bool backward, uint64_t index, const uint64_t *redaction_index);
+bool
+room_fill_old_events(struct room *room, struct widget_points *points);
+bool
+room_fill_new_events(struct room *room, struct widget_points *points);
+bool
+room_reset_if_recalculate(struct room *room, struct widget_points *points);
 struct room *
 room_alloc(void);
 void

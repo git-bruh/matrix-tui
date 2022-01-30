@@ -73,6 +73,22 @@ cpy_index(MDB_val *index, uint64_t *out_index) {
 	memcpy(out_index, index->mv_data, sizeof(*out_index));
 }
 
+/* Macro for getting line numbers. */
+#define ABORT_OR_RETURN(result)                                                \
+	do {                                                                       \
+		int _res = (result);                                                   \
+		switch (_res) {                                                        \
+		case MDB_SUCCESS:                                                      \
+		case MDB_KEYEXIST:                                                     \
+		case MDB_NOTFOUND:                                                     \
+			break;                                                             \
+		default:                                                               \
+			LOG(LOG_ERROR, "LMDB returned failure: %s", mdb_strerror(_res));   \
+			abort();                                                           \
+		}                                                                      \
+		return _res;                                                           \
+	} while (0)
+
 static int
 get_dbi(enum room_db db, MDB_txn *txn, MDB_dbi *dbi, const char *room_id) {
 	assert(txn);
@@ -103,8 +119,9 @@ del_str(MDB_txn *txn, MDB_dbi dbi, const char *key, const char *data) {
 		return EINVAL;
 	}
 
-	return mdb_del(txn, dbi, &(MDB_val) {strlen(key) + 1, noconst(key)},
-	  (data ? &(MDB_val) {strlen(data) + 1, noconst(data)} : NULL));
+	ABORT_OR_RETURN(
+	  mdb_del(txn, dbi, &(MDB_val) {strlen(key) + 1, noconst(key)},
+		(data ? &(MDB_val) {strlen(data) + 1, noconst(data)} : NULL)));
 }
 
 static int
@@ -113,7 +130,8 @@ get_str(MDB_txn *txn, MDB_dbi dbi, const char *key, MDB_val *data) {
 		return EINVAL;
 	}
 
-	return mdb_get(txn, dbi, &(MDB_val) {strlen(key) + 1, noconst(key)}, data);
+	ABORT_OR_RETURN(
+	  mdb_get(txn, dbi, &(MDB_val) {strlen(key) + 1, noconst(key)}, data));
 }
 
 static char *
@@ -136,8 +154,9 @@ put_str(MDB_txn *txn, MDB_dbi dbi, const char *key, const char *data,
 		return EINVAL;
 	}
 
-	return mdb_put(txn, dbi, &(MDB_val) {strlen(key) + 1, noconst(key)},
-	  &(MDB_val) {strlen(data) + 1, noconst(data)}, flags);
+	ABORT_OR_RETURN(
+	  mdb_put(txn, dbi, &(MDB_val) {strlen(key) + 1, noconst(key)},
+		&(MDB_val) {strlen(data) + 1, noconst(data)}, flags));
 }
 
 static int
@@ -147,8 +166,8 @@ put_int(
 		return EINVAL;
 	}
 
-	return mdb_put(txn, dbi, &(MDB_val) {sizeof(key), &key},
-	  &(MDB_val) {strlen(data) + 1, noconst(data)}, flags);
+	ABORT_OR_RETURN(mdb_put(txn, dbi, &(MDB_val) {sizeof(key), &key},
+	  &(MDB_val) {strlen(data) + 1, noconst(data)}, flags));
 }
 
 static int
@@ -158,16 +177,16 @@ put_str_int(
 		return EINVAL;
 	}
 
-	return mdb_put(txn, dbi, &(MDB_val) {strlen(key) + 1, noconst(key)},
-	  &(MDB_val) {sizeof(data), &data}, flags);
+	ABORT_OR_RETURN(
+	  mdb_put(txn, dbi, &(MDB_val) {strlen(key) + 1, noconst(key)},
+		&(MDB_val) {sizeof(data), &data}, flags));
 }
 
-/* TODO pool transactions. **/
 static int
 get_txn(struct cache *cache, unsigned flags, MDB_txn **txn) {
 	assert(cache);
 
-	return mdb_txn_begin(cache->env, NULL, flags, txn);
+	ABORT_OR_RETURN(mdb_txn_begin(cache->env, NULL, flags, txn));
 }
 
 static bool
@@ -204,6 +223,9 @@ cache_event_next(struct cache_iterator *iterator) {
 	assert(iterator);
 	assert(iterator->type == CACHE_ITERATOR_EVENTS);
 
+	matrix_json_delete(iterator->event_json);
+	iterator->event_json = NULL;
+
 	for (;;) {
 		if (iterator->num_fetch == 0) {
 			return EINVAL;
@@ -222,7 +244,6 @@ cache_event_next(struct cache_iterator *iterator) {
 		}
 
 		iterator->fetched_once = true;
-		iterator->num_fetch--;
 
 		assert(is_str(&id));
 
@@ -242,18 +263,15 @@ cache_event_next(struct cache_iterator *iterator) {
 		  = matrix_json_parse(db_json.mv_data, db_json.mv_size);
 		assert(json);
 
-		/* TODO check if timeline only. */
-		if (!(matrix_json_has_content(json))) {
-			matrix_json_delete(json);
-			continue;
-		}
-
-		*iterator->event
-		  = (struct cache_iterator_event) {.json = json, .index = index};
-
-		ret = matrix_event_timeline_parse(&iterator->event->event, json);
+		ret = matrix_event_sync_parse(&iterator->event->event, json);
 
 		if (ret != 0) {
+			if (iterator->event->event.type == MATRIX_EVENT_TIMELINE
+				&& !(matrix_json_has_content(json))) {
+				/* A redacted event. */
+				continue;
+			}
+
 			LOG(LOG_ERROR, "Failed to parse event JSON '%s'",
 			  (char *) db_json.mv_data);
 			assert(0);
@@ -261,6 +279,31 @@ cache_event_next(struct cache_iterator *iterator) {
 			matrix_json_delete(json);
 			return EINVAL;
 		}
+
+		switch (iterator->event->event.type) {
+		case MATRIX_EVENT_STATE:
+			if ((iterator->state_events & iterator->event->event.state.type)
+				!= iterator->event->event.state.type) {
+				matrix_json_delete(json);
+				continue;
+			}
+			break;
+		case MATRIX_EVENT_TIMELINE:
+			if ((iterator->timeline_events
+				  & iterator->event->event.timeline.type)
+				!= iterator->event->event.timeline.type) {
+				matrix_json_delete(json);
+				continue;
+			}
+			break;
+		default:
+			assert(0);
+		}
+
+		iterator->num_fetch--;
+
+		iterator->event->index = index;
+		iterator->event_json = json;
 
 		return ret;
 	}
@@ -273,6 +316,9 @@ cache_member_next(struct cache_iterator *iterator) {
 
 	MDB_val key = {0};
 	MDB_val data = {0};
+
+	matrix_json_delete(iterator->member_json);
+	iterator->member_json = NULL;
 
 	int ret = mdb_cursor_get(iterator->cursor, &key, &data, MDB_NEXT);
 
@@ -302,8 +348,9 @@ cache_member_next(struct cache_iterator *iterator) {
 	*iterator->member = (struct cache_iterator_member) {
 	  .mxid = key.mv_data,
 	  .username = event.content.member.displayname,
-	  .json = json,
 	};
+
+	iterator->member_json = json;
 
 	return ret;
 }
@@ -401,7 +448,7 @@ cache_iterator_rooms(
 int
 cache_iterator_events(struct cache *cache, struct cache_iterator *iterator,
   const char *room_id, struct cache_iterator_event *event, uint64_t end_index,
-  uint64_t num_fetch) {
+  uint64_t num_fetch, unsigned timeline_events, unsigned state_events) {
 	assert(cache);
 	assert(iterator);
 	assert(room_id);
@@ -443,6 +490,8 @@ cache_iterator_events(struct cache *cache, struct cache_iterator *iterator,
 	  .event = event,
 	  .events_dbi = events_dbi,
 	  .num_fetch = num_fetch,
+	  .timeline_events = timeline_events,
+	  .state_events = state_events,
 	};
 
 	if (ret != 0) {
@@ -919,6 +968,38 @@ child_event_in_parent_space(
 	return (ret == MDB_SUCCESS);
 }
 
+static int
+save_json_with_index(
+  struct cache_save_txn *txn, struct matrix_sync_event *event) {
+	assert(txn);
+	assert(event);
+
+	const char *event_id = matrix_sync_event_id(event);
+	assert(event_id);
+
+	char *data = matrix_json_print(event->json);
+	assert(data);
+
+	/* MDB_NOOVERWRITE to ensure that we don't mess with txn->index if we get
+	 * duplicated events (Say we crashed in the sync_cb and get the same sync
+	 * response on next boot). */
+	int ret = put_str(
+	  txn->txn, txn->dbs[ROOM_DB_EVENTS], event_id, data, MDB_NOOVERWRITE);
+	free(data);
+
+	if (ret == MDB_SUCCESS
+		&& (ret = put_int(txn->txn, txn->dbs[ROOM_DB_ORDER_TO_EVENTS],
+			  txn->index, event_id, 0))
+			 == MDB_SUCCESS
+		&& (ret = put_str_int(txn->txn, txn->dbs[ROOM_DB_EVENTS_TO_ORDER],
+			  event_id, txn->index, 0))
+			 == MDB_SUCCESS) {
+		txn->index++;
+	}
+
+	return ret;
+}
+
 enum cache_save_error
 cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
   uint64_t *redaction_index) {
@@ -934,6 +1015,11 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
 	case MATRIX_EVENT_STATE:
 		{
 			struct matrix_state_event *sevent = &event->state;
+
+			if (sevent->is_in_timeline
+				&& (ret = save_json_with_index(txn, event)) != MDB_SUCCESS) {
+				break;
+			}
 
 			switch (sevent->type) {
 #define ensure_state_key(sevent)                                               \
@@ -1062,32 +1148,7 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
 					return CACHE_GOT_REDACTION;
 				}
 			} else {
-				char *data = matrix_json_print(event->json);
-
-				ret = put_str(txn->txn, txn->dbs[ROOM_DB_EVENTS],
-				  tevent->base.event_id, data, MDB_NOOVERWRITE);
-
-				if (ret == MDB_KEYEXIST) {
-					LOG(LOG_WARN, "Got duplicate event '%s' in room '%s'",
-					  tevent->base.event_id, txn->room_id);
-					free(data);
-
-					return CACHE_FAIL;
-				}
-
-				if (ret == MDB_SUCCESS
-					&& (ret
-						 = put_int(txn->txn, txn->dbs[ROOM_DB_ORDER_TO_EVENTS],
-						   txn->index, tevent->base.event_id, 0))
-						 == MDB_SUCCESS
-					&& (ret = put_str_int(txn->txn,
-						  txn->dbs[ROOM_DB_EVENTS_TO_ORDER],
-						  tevent->base.event_id, txn->index, 0))
-						 == MDB_SUCCESS) {
-					txn->index++;
-				}
-
-				free(data);
+				ret = save_json_with_index(txn, event);
 			}
 		}
 		break;

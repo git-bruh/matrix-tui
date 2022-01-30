@@ -45,9 +45,22 @@ cmp_backward(const void *key, const void *array_item) {
 	return 0; /* Equal. */
 }
 
-struct message *
-message_alloc(const char *body, const char *sender, size_t index_username,
+static void
+message_destroy(struct message *message) {
+	if (message) {
+		arrfree(message->body);
+		free(message->sender);
+		free(message);
+	}
+}
+
+static struct message *
+message_alloc(const char *body, const char *sender, uint32_t *username,
   uint64_t index, const uint64_t *index_reply, bool formatted) {
+	assert(body);
+	assert(sender);
+	assert(username);
+
 	struct message *message = malloc(sizeof(*message));
 
 	if (message) {
@@ -55,7 +68,7 @@ message_alloc(const char *body, const char *sender, size_t index_username,
 		  .reply = !!index_reply,
 		  .index = index,
 		  .index_reply = (index_reply ? *index_reply : 0),
-		  .index_username = index_username,
+		  .username = username,
 		  .body = buf_to_uint32_t(body, 0),
 		  .sender = strdup(sender)};
 
@@ -68,19 +81,10 @@ message_alloc(const char *body, const char *sender, size_t index_username,
 	return message;
 }
 
-void
-message_destroy(struct message *message) {
-	if (message) {
-		arrfree(message->body);
-		free(message->sender);
-		free(message);
-	}
-}
-
-int
-room_bsearch(struct room *room, uint64_t index, struct room_index *out_index) {
-	if (!room || !out_index) {
-		return -1;
+struct message *
+room_bsearch(struct room *room, uint64_t index) {
+	if (!room) {
+		return NULL;
 	}
 
 	struct timeline *timeline = NULL;
@@ -96,25 +100,18 @@ room_bsearch(struct room *room, uint64_t index, struct room_index *out_index) {
 		timeline = &room->timelines[TIMELINE_BACKWARD];
 		cmp = cmp_backward;
 	} else {
-		return -1;
+		return NULL;
 	}
 
-	struct message **message = NULL;
+	struct message **message = bsearch(
+	  &index, timeline->buf, timeline->len, sizeof(*timeline->buf), cmp);
 
-	if (!(message = bsearch(&index, timeline->buf, timeline->len,
-			sizeof(*timeline->buf), cmp))) {
-		return -1;
+	if (!message) {
+		return NULL;
 	}
 
-	*out_index = (struct room_index) {
-	  .index_timeline = (size_t) (timeline - room->timelines),
-	  .index_buf = (size_t) (message - timeline->buf),
-	};
-
-	assert(out_index->index_timeline < TIMELINE_MAX);
-	assert(out_index->index_buf < timeline->len);
-
-	return 0;
+	assert(*message);
+	return *message;
 }
 
 int
@@ -151,11 +148,27 @@ room_put_member(struct room *room, char *mxid, char *username) {
 	return 0;
 }
 
-int
-room_put_message(
-  struct room *room, enum timeline_type timeline, struct message *message) {
+static int
+room_put_message_event(struct room *room, enum timeline_type timeline,
+  uint64_t index, const struct matrix_timeline_event *event) {
 	assert(room);
+	assert(event->base.sender);
+	assert(event->message.body);
+	assert(event->type == MATRIX_ROOM_MESSAGE);
 	assert(timeline < TIMELINE_MAX);
+
+	ptrdiff_t tmp = 0;
+	uint32_t **usernames = shget_ts(room->members, event->base.sender, tmp);
+	size_t usernames_len = arrlenu(usernames);
+
+	assert(usernames_len);
+
+	struct message *message = message_alloc(event->message.body,
+	  event->base.sender, usernames[usernames_len - 1], index, NULL, false);
+
+	if (!message) {
+		return -1;
+	}
 
 	/* We only lock if the message buffer actually needs to
 	 * grow. Otherwise, the reader thread has a length of the
@@ -191,36 +204,31 @@ room_put_message(
 	return 0;
 }
 
-int
-room_put_message_event(struct room *room, enum timeline_type timeline,
-  uint64_t index, const struct matrix_timeline_event *event) {
+static int
+room_redact_event(struct room *room, uint64_t index) {
 	assert(room);
-	assert(event->base.sender);
-	assert(event->message.body);
-	assert(event->type == MATRIX_ROOM_MESSAGE);
-	assert(timeline < TIMELINE_MAX);
 
-	ptrdiff_t tmp = 0;
-	uint32_t **usernames = shget_ts(room->members, event->base.sender, tmp);
-	size_t usernames_len = arrlenu(usernames);
+	struct message *to_redact = room_bsearch(room, index);
 
-	assert(usernames_len);
-
-	struct message *message = message_alloc(event->message.body,
-	  event->base.sender, usernames_len - 1, index, NULL, false);
-
-	if (!message) {
+	if (!to_redact) {
 		return -1;
 	}
 
-	room_put_message(room, timeline, message);
+	pthread_mutex_lock(&room->realloc_or_modify_mutex);
+	assert(!to_redact->redacted); /* Can't redact something we already did. */
+	assert(to_redact->body);
+	to_redact->redacted = true;
+	arrfree(to_redact->body);
+	to_redact->body = NULL;
+	message_buffer_redact(&room->buffer, index);
+	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 
 	return 0;
 }
 
 int
 room_put_event(struct room *room, const struct matrix_sync_event *event,
-  uint64_t index, const uint64_t *redaction_index) {
+  bool backward, uint64_t index, const uint64_t *redaction_index) {
 	assert(room);
 	assert(event);
 
@@ -241,8 +249,9 @@ room_put_event(struct room *room, const struct matrix_sync_event *event,
 	case MATRIX_EVENT_TIMELINE:
 		switch (event->timeline.type) {
 		case MATRIX_ROOM_MESSAGE:
-			room_put_message_event(
-			  room, TIMELINE_FORWARD, index, &event->timeline);
+			room_put_message_event(room,
+			  (backward ? TIMELINE_BACKWARD : TIMELINE_FORWARD), index,
+			  &event->timeline);
 			break;
 		case MATRIX_ROOM_REDACTION:
 			if (redaction_index) {
@@ -267,31 +276,19 @@ room_put_event(struct room *room, const struct matrix_sync_event *event,
 	return 0;
 }
 
-int
-room_redact_event(struct room *room, uint64_t index) {
-	assert(room);
+static void
+timeline_finish(struct timeline *timeline) {
+	if (timeline && timeline->buf) {
+		for (size_t i = 0, len = timeline->len; i < len; i++) {
+			message_destroy(timeline->buf[i]);
+		}
 
-	struct room_index out_index = {0};
-
-	if ((room_bsearch(room, index, &out_index)) == -1) {
-		return -1;
+		arrfree(timeline->buf);
+		memset(timeline, 0, sizeof(*timeline));
 	}
-
-	pthread_mutex_lock(&room->realloc_or_modify_mutex);
-	struct message *to_redact
-	  = room->timelines[out_index.index_timeline].buf[out_index.index_buf];
-	assert(!to_redact->redacted); /* Can't redact something we already did. */
-	assert(to_redact->body);
-	to_redact->redacted = true;
-	arrfree(to_redact->body);
-	to_redact->body = NULL;
-	message_buffer_redact(&room->buffer, index);
-	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
-
-	return 0;
 }
 
-int
+static int
 timeline_init(struct timeline *timeline) {
 	if (timeline) {
 		*timeline = (struct timeline) {0};
@@ -308,16 +305,61 @@ timeline_init(struct timeline *timeline) {
 	return -1;
 }
 
-void
-timeline_finish(struct timeline *timeline) {
-	if (timeline && timeline->buf) {
-		for (size_t i = 0, len = timeline->len; i < len; i++) {
-			message_destroy(timeline->buf[i]);
-		}
+bool
+room_fill_old_events(struct room *room, struct widget_points *points) {
+	assert(room);
+	assert(points);
 
-		arrfree(timeline->buf);
-		memset(timeline, 0, sizeof(*timeline));
+	struct message **buf = room->timelines[TIMELINE_BACKWARD].buf;
+	size_t len = room->timelines[TIMELINE_BACKWARD].len;
+
+	for (size_t i = len; i > 0; i--) {
+		if (!buf[i - 1]->redacted) {
+			message_buffer_insert(&room->buffer, points, buf[i - 1]);
+		}
 	}
+
+	return (len > 0);
+}
+
+bool
+room_fill_new_events(struct room *room, struct widget_points *points) {
+	assert(room);
+	assert(points);
+
+	size_t original_consumed = room->already_consumed;
+
+	struct message **buf = room->timelines[TIMELINE_FORWARD].buf;
+	size_t len = room->timelines[TIMELINE_FORWARD].len;
+
+	for (; room->already_consumed < len; room->already_consumed++) {
+		if (!buf[room->already_consumed]->redacted) {
+			message_buffer_insert(
+			  &room->buffer, points, buf[room->already_consumed]);
+		}
+	}
+
+	return (room->already_consumed > original_consumed);
+}
+
+bool
+room_reset_if_recalculate(struct room *room, struct widget_points *points) {
+	assert(room);
+	assert(points);
+
+	pthread_mutex_lock(&room->realloc_or_modify_mutex);
+	bool recalculate = message_buffer_should_recalculate(&room->buffer, points);
+
+	if (recalculate) {
+		room->already_consumed = 0;
+		message_buffer_zero(&room->buffer);
+		room_fill_old_events(room, points);
+		room_fill_new_events(room, points);
+		message_buffer_ensure_sane_scroll(&room->buffer);
+	}
+	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
+
+	return recalculate;
 }
 
 struct room *

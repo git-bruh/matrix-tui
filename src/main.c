@@ -268,69 +268,6 @@ tab_room_set(struct tab_room *tab_room, size_t index) {
 	return ret;
 }
 
-static void
-fill_old_events(struct room *room) {
-	assert(room);
-
-	struct widget_points points = {0};
-	tab_room_get_buffer_points(&points);
-
-	struct message **buf = room->timelines[TIMELINE_BACKWARD].buf;
-	size_t len = room->timelines[TIMELINE_BACKWARD].len;
-
-	for (size_t i = len; i > 0; i--) {
-		if (!buf[i - 1]->redacted) {
-			message_buffer_insert(
-			  &room->buffer, room->members, &points, buf[i - 1]);
-		}
-	}
-}
-
-static bool
-fill_new_events(struct room *room) {
-	assert(room);
-
-	struct widget_points points = {0};
-	tab_room_get_buffer_points(&points);
-
-	size_t original_consumed = room->already_consumed;
-
-	struct message **buf = room->timelines[TIMELINE_FORWARD].buf;
-	size_t len = room->timelines[TIMELINE_FORWARD].len;
-
-	for (; room->already_consumed < len; room->already_consumed++) {
-		if (!buf[room->already_consumed]->redacted) {
-			message_buffer_insert(&room->buffer, room->members, &points,
-			  buf[room->already_consumed]);
-		}
-	}
-
-	return (room->already_consumed > original_consumed);
-}
-
-static bool
-reset_message_buffer_if_recalculate(struct room *room) {
-	assert(room);
-
-	struct widget_points points = {0};
-	tab_room_get_buffer_points(&points);
-
-	pthread_mutex_lock(&room->realloc_or_modify_mutex);
-	bool recalculate
-	  = message_buffer_should_recalculate(&room->buffer, &points);
-
-	if (recalculate) {
-		room->already_consumed = 0;
-		message_buffer_zero(&room->buffer);
-		fill_old_events(room);
-		fill_new_events(room);
-		message_buffer_ensure_sane_scroll(&room->buffer);
-	}
-	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
-
-	return recalculate;
-}
-
 static enum widget_error
 handle_tab_room(
   struct state *state, struct tab_room *tab_room, struct tb_event *event) {
@@ -342,13 +279,15 @@ handle_tab_room(
 	}
 
 	if (event->type == TB_EVENT_RESIZE) {
-		bool reset = reset_message_buffer_if_recalculate(room);
+		struct widget_points points = {0};
+		tab_room_get_buffer_points(&points);
+		bool reset = room_reset_if_recalculate(room, &points);
 
 		/* Ensure that new events are filled if we didn't reset. */
 		if (!reset) {
 			pthread_mutex_lock(
 			  &tab_room->current_room.room->realloc_or_modify_mutex);
-			fill_new_events(tab_room->current_room.room);
+			room_fill_new_events(tab_room->current_room.room, &points);
 			pthread_mutex_unlock(
 			  &tab_room->current_room.room->realloc_or_modify_mutex);
 		}
@@ -470,7 +409,9 @@ ui_loop(struct state *state) {
 	tab_room.tree->selected = tab_room.tree->root.nodes[0];
 
 	if ((tab_room_set(&tab_room, 0)) == 0) {
-		fill_old_events(tab_room.current_room.room);
+		struct widget_points points = {0};
+		tab_room_get_buffer_points(&points);
+		room_fill_old_events(tab_room.current_room.room, &points);
 	}
 
 	for (bool redraw = true;;) {
@@ -509,9 +450,12 @@ ui_loop(struct state *state) {
 					assert(ret == 0);
 				}
 
+				struct widget_points points = {0};
+				tab_room_get_buffer_points(&points);
+
 				pthread_mutex_lock(
 				  &tab_room.current_room.room->realloc_or_modify_mutex);
-				fill_new_events(tab_room.current_room.room);
+				room_fill_new_events(tab_room.current_room.room, &points);
 				pthread_mutex_unlock(
 				  &tab_room.current_room.room->realloc_or_modify_mutex);
 
@@ -571,7 +515,6 @@ populate_room_users(struct state *state, const char *room_id) {
 
 	while ((cache_iterator_next(&iterator)) == MDB_SUCCESS) {
 		room_put_member(room, member.mxid, member.username);
-		matrix_json_delete(member.json);
 	}
 
 	cache_iterator_finish(&iterator);
@@ -596,8 +539,8 @@ populate_room_from_cache(struct state *state, const char *room_id) {
 
 	const uint64_t num_paginate = 50;
 
-	int ret = cache_iterator_events(
-	  &state->cache, &iterator, room_id, &event, (uint64_t) -1, num_paginate);
+	int ret = cache_iterator_events(&state->cache, &iterator, room_id, &event,
+	  (uint64_t) -1, num_paginate, EVENTS_IN_TIMELINE, STATE_IN_TIMELINE);
 
 	if (ret != MDB_SUCCESS) {
 		LOG(LOG_ERROR, "Failed to create events iterator for room '%s': %s",
@@ -606,12 +549,10 @@ populate_room_from_cache(struct state *state, const char *room_id) {
 	}
 
 	while ((cache_iterator_next(&iterator)) == MDB_SUCCESS) {
-		if (event.event.type == MATRIX_ROOM_MESSAGE) {
-			room_put_message_event(
-			  room, TIMELINE_BACKWARD, event.index, &event.event);
-		}
+		struct matrix_sync_event *sync_event = &event.event;
+		assert(sync_event->type != MATRIX_EVENT_EPHEMERAL);
 
-		matrix_json_delete(event.json);
+		room_put_event(room, sync_event, true, event.index, NULL);
 	}
 
 	cache_iterator_finish(&iterator);
@@ -884,21 +825,8 @@ login(struct state *state) {
 					login.error = NULL;
 					ret = 0;
 				} else {
-					assert(code != MATRIX_CODE_MAX);
-
-					if (code < MATRIX_CODE_MAX) {
-						login.error = matrix_strerror(code);
-					} else {
-						assert(code == (enum matrix_code) LOGIN_DB_FAIL);
-
-						/* Clear the unsaved access token. */
-						int ret_logout = matrix_logout(state->matrix);
-
-						assert(ret_logout == 0);
-						(void) ret_logout;
-
-						login.error = "Failed to save to database";
-					}
+					assert(code < MATRIX_CODE_MAX);
+					login.error = matrix_strerror(code);
 				}
 
 				tb_clear();
@@ -988,10 +916,8 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 		struct matrix_sync_event event;
 
-		pthread_mutex_lock(&state->rooms_mutex);
 		ptrdiff_t tmp = 0;
 		struct room *room = shget_ts(state->rooms, sync_room.id, tmp);
-		pthread_mutex_unlock(&state->rooms_mutex);
 
 		bool room_needs_info = !room;
 
@@ -1024,7 +950,7 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 				}
 			}
 
-			room_put_event(room, &event, index,
+			room_put_event(room, &event, false, index,
 			  (cache_ret == CACHE_GOT_REDACTION ? &redaction_index : NULL));
 		}
 
@@ -1152,7 +1078,7 @@ init_everything(struct state *state) {
 }
 
 int
-main() {
+main(void) {
 	if (!(setlocale(LC_ALL, ""))) {
 		LOG(LOG_ERROR, "Failed to set locale");
 		return EXIT_FAILURE;
