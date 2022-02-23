@@ -881,6 +881,8 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 	int ret = 0;
 
+	struct cache_deferred_space_event *deferred_events = NULL;
+
 	while ((matrix_sync_room_next(response, &sync_room)) == 0) {
 		switch (sync_room.type) {
 		case MATRIX_ROOM_LEAVE:
@@ -931,23 +933,10 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 			uint64_t redaction_index = 0;
 			enum cache_save_error cache_ret = CACHE_FAIL;
 
-			if ((cache_ret = cache_save_event(&txn, &event, &redaction_index))
+			if ((cache_ret = cache_save_event(
+				   &txn, &event, &redaction_index, &deferred_events))
 				== CACHE_FAIL) {
 				continue;
-			}
-
-			if (event.type == MATRIX_EVENT_STATE) {
-				switch (event.state.type) {
-				case MATRIX_ROOM_SPACE_CHILD:
-				case MATRIX_ROOM_SPACE_PARENT:
-					/* TODO add to temporary array and process relations after
-					 * processing all rooms as relations can reference rooms
-					 * that might not have been encountered yet. arrput();
-					 * continue; */
-					break;
-				default:
-					break;
-				}
 			}
 
 			room_put_event(room, &event, false, index,
@@ -978,7 +967,24 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 		}
 	}
 
-	/* Set the next_batch key at the end in case we somehow exited during the
+	for (size_t i = 0, len = arrlenu(deferred_events); i < len; i++) {
+		enum cache_deferred_ret deferred_ret
+		  = cache_process_deferred_event(&state->cache, &deferred_events[i]);
+
+		switch (deferred_ret) {
+		case CACHE_DEFERRED_FAIL:
+			break;
+		case CACHE_DEFERRED_ADDED:
+		case CACHE_DEFERRED_REMOVED:
+			break;
+		default:
+			assert(0);
+		}
+	}
+
+	arrfree(deferred_events);
+
+	/* Set the next_batch key at the end in case we somehow crashed during the
 	 * above loop. This will ensure that we receive the left out events on the
 	 * next boot. */
 	if ((ret = cache_auth_set(

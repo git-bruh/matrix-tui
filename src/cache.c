@@ -5,6 +5,7 @@
 #include "cache.h"
 
 #include "log.h"
+#include "stb_ds.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -38,6 +39,8 @@ static const char *const room_db_names[ROOM_DB_MAX] = {
   [ROOM_DB_RELATIONS] = "relations",
   [ROOM_DB_MEMBERS] = "members",
   [ROOM_DB_STATE] = "state",
+  [ROOM_DB_SPACE_PARENT] = "space_parent",
+  [ROOM_DB_SPACE_CHILD] = "space_child",
 };
 
 static const unsigned room_db_flags[ROOM_DB_MAX] = {
@@ -933,40 +936,6 @@ cache_save_room(struct cache_save_txn *txn, struct matrix_room *room) {
 	  txn->txn, txn->cache->dbs[DB_ROOMS], room->id, (char[]) {""}, 0);
 }
 
-static bool
-child_event_in_parent_space(
-  struct cache *cache, MDB_txn *txn, const char *parent, const char *child) {
-	assert(cache);
-	assert(txn);
-	assert(parent);
-	assert(child);
-
-	MDB_cursor *cursor = NULL;
-
-	int ret = mdb_cursor_open(txn, cache->dbs[DB_SPACE_CHILDREN], &cursor);
-
-	if (ret != MDB_SUCCESS) {
-		LOG(LOG_WARN,
-		  "Failed to open cursor to check child event for '%s' in space '%s': "
-		  "%s",
-		  child, parent, mdb_strerror(ret));
-		return false;
-	}
-
-	ret
-	  = mdb_cursor_get(cursor, &(MDB_val) {strlen(parent) + 1, noconst(parent)},
-		&(MDB_val) {strlen(child) + 1, noconst(child)}, MDB_GET_BOTH);
-
-	mdb_cursor_close(cursor);
-
-	if (ret != MDB_SUCCESS) {
-		LOG(LOG_WARN, "Child event for '%s' doesn't exist in space '%s': %s",
-		  child, parent, mdb_strerror(ret));
-	}
-
-	return (ret == MDB_SUCCESS);
-}
-
 static int
 save_json_with_index(
   struct cache_save_txn *txn, struct matrix_sync_event *event) {
@@ -1004,9 +973,165 @@ save_json_with_index(
 	return ret;
 }
 
+enum cache_deferred_ret
+cache_process_deferred_event(
+  struct cache *cache, struct cache_deferred_space_event *deferred_event) {
+	assert(cache);
+	assert(deferred_event);
+
+	MDB_txn *txn = NULL;
+	int mdb_ret = get_txn(cache, 0, &txn);
+
+	assert(mdb_ret == MDB_SUCCESS);
+
+	int ret = CACHE_DEFERRED_FAIL;
+
+	struct matrix_state_event sevent = {0};
+
+	switch (deferred_event->type) {
+	case MATRIX_ROOM_SPACE_CHILD:
+		{
+			if (!(room_is_space(cache, txn, deferred_event->parent))) {
+				LOG(LOG_WARN, "Tried to add child '%s' to non-space room '%s'",
+				  deferred_event->child, deferred_event->parent);
+				break;
+			}
+
+			/* Neither a m.space.child event, nor a m.space.parent event
+			 * should be present for the relation to be broken. */
+			if (deferred_event->via_was_null) {
+				MDB_dbi child_parent_db = {0};
+				mdb_ret = get_dbi(ROOM_DB_SPACE_PARENT, txn, &child_parent_db,
+				  deferred_event->child);
+				assert(mdb_ret == MDB_SUCCESS);
+				bool parent_event_in_child = false;
+
+				MDB_val data = {0};
+				mdb_ret = get_str(
+				  txn, child_parent_db, deferred_event->parent, &data);
+
+				if (mdb_ret == MDB_SUCCESS) {
+					assert(is_str(&data));
+					matrix_json_t *json
+					  = matrix_json_parse(data.mv_data, data.mv_size);
+					assert(json);
+					int matrix_ret = matrix_event_state_parse(&sevent, json);
+					assert(matrix_ret == 0);
+					assert(sevent.type == MATRIX_ROOM_SPACE_PARENT);
+					parent_event_in_child = !!sevent.content.space_parent.via;
+					matrix_json_delete(json);
+				}
+
+				if (!parent_event_in_child) {
+					del_str(txn, cache->dbs[DB_SPACE_CHILDREN],
+					  deferred_event->parent, deferred_event->child);
+					LOG(LOG_MESSAGE, "Removed child '%s' from space '%s'",
+					  deferred_event->child, deferred_event->parent);
+					ret = CACHE_DEFERRED_REMOVED;
+				}
+				break;
+			}
+
+			if ((mdb_ret = put_str(txn, cache->dbs[DB_SPACE_CHILDREN],
+				   deferred_event->parent, deferred_event->child,
+				   MDB_NODUPDATA))
+				== MDB_KEYEXIST) {
+				LOG(LOG_WARN,
+				  "Tried to add child '%s' already present in space '%s'",
+				  deferred_event->child, deferred_event->parent);
+			} else {
+				assert(mdb_ret == MDB_SUCCESS);
+				LOG(LOG_MESSAGE, "Added child '%s' to space '%s'",
+				  deferred_event->child, deferred_event->parent);
+				ret = CACHE_DEFERRED_ADDED;
+			}
+		}
+		break;
+	case MATRIX_ROOM_SPACE_PARENT:
+		{
+			MDB_dbi parent_child_db = {0};
+			MDB_dbi parent_state_db = {0};
+
+			mdb_ret = get_dbi(ROOM_DB_SPACE_CHILD, txn, &parent_child_db,
+			  deferred_event->parent);
+			assert(mdb_ret == MDB_SUCCESS);
+
+			mdb_ret = get_dbi(
+			  ROOM_DB_STATE, txn, &parent_state_db, deferred_event->parent);
+			assert(mdb_ret == MDB_SUCCESS);
+
+			bool child_event_in_parent = false;
+
+			MDB_val data = {0};
+			mdb_ret
+			  = get_str(txn, parent_child_db, deferred_event->child, &data);
+
+			if (mdb_ret == MDB_SUCCESS) {
+				assert(is_str(&data));
+				matrix_json_t *json
+				  = matrix_json_parse(data.mv_data, data.mv_size);
+				assert(json);
+				int matrix_ret = matrix_event_state_parse(&sevent, json);
+				assert(matrix_ret == 0);
+				assert(sevent.type == MATRIX_ROOM_SPACE_CHILD);
+				child_event_in_parent = !!sevent.content.space_child.via;
+				matrix_json_delete(json);
+			}
+
+			bool sender_has_power_level_in_parent = false; /* TODO */
+
+			/* Only 1 condition needs to be true for the event to be
+			 * valid. */
+			if (!child_event_in_parent && !sender_has_power_level_in_parent) {
+				LOG(LOG_WARN,
+				  "Child event not present in parent space and sender "
+				  "doesn't have enough powers to add room '%s' to "
+				  "space '%s'",
+				  deferred_event->child, deferred_event->parent);
+				break;
+			}
+
+			/* Neither a m.space.child event, nor a m.space.parent event
+			 * should be present for the relation to be broken. */
+			if (deferred_event->via_was_null) {
+				if (!child_event_in_parent) {
+					del_str(txn, cache->dbs[DB_SPACE_CHILDREN],
+					  deferred_event->parent, deferred_event->child);
+					LOG(LOG_MESSAGE, "Removed child '%s' from space '%s'",
+					  deferred_event->child, deferred_event->parent);
+					ret = CACHE_DEFERRED_REMOVED;
+				}
+				break;
+			}
+
+			if ((mdb_ret = put_str(txn, cache->dbs[DB_SPACE_CHILDREN],
+				   deferred_event->parent, deferred_event->child,
+				   MDB_NODUPDATA))
+				== MDB_KEYEXIST) {
+				LOG(LOG_WARN,
+				  "Tried to add child '%s' already present in space "
+				  "'%s'",
+				  deferred_event->child, deferred_event->parent);
+			} else {
+				assert(mdb_ret == MDB_SUCCESS);
+				LOG(LOG_MESSAGE, "Added child '%s' to space '%s'",
+				  deferred_event->child, deferred_event->parent);
+				ret = CACHE_DEFERRED_ADDED;
+			}
+		}
+		break;
+	default:
+		assert(0);
+	}
+
+	mdb_txn_commit(txn);
+	return ret;
+}
+
 enum cache_save_error
 cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
-  uint64_t *redaction_index) {
+  uint64_t *redaction_index,
+  struct cache_deferred_space_event **deferred_events) {
 	assert(txn);
 	assert(event);
 	assert(redaction_index);
@@ -1037,49 +1162,42 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
 				}
 				break;
 			case MATRIX_ROOM_SPACE_CHILD:
-				if (!(room_is_space(txn->cache, txn->txn, txn->room_id))) {
-					break;
-				}
-
 				assert((strnlen(sevent->base.state_key, 1)) > 0);
 
-				if (!sevent->content.space_child.via) {
-					del_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
-					  txn->room_id, sevent->base.state_key);
-					break;
+				{
+					char *data = matrix_json_print(event->json);
+					ret = put_str(txn->txn, txn->dbs[ROOM_DB_SPACE_CHILD],
+					  sevent->base.state_key, data, 0);
+					free(data);
+					arrput(*deferred_events,
+					  ((struct cache_deferred_space_event) {
+						.via_was_null = !sevent->content.space_child.via,
+						.type = sevent->type,
+						.parent = txn->room_id,
+						.child = sevent->base.state_key,
+						.sender = sevent->base.sender}));
 				}
 
-				if ((ret = put_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
-					   txn->room_id, sevent->base.state_key, MDB_NODUPDATA))
-					== MDB_KEYEXIST) {
-					LOG(LOG_WARN,
-					  "Tried to add child '%s' already present in space '%s'",
-					  sevent->base.state_key, txn->room_id);
-				}
+				return CACHE_FAIL; /* TODO */
 				break;
 			case MATRIX_ROOM_SPACE_PARENT:
-				if (!(child_event_in_parent_space(txn->cache, txn->txn,
-					  sevent->base.state_key, txn->room_id))) {
-					break;
-				}
-
-				/* TODO if (!sender_has_power_level_in_parent) { break; } */
-
 				assert((strnlen(sevent->base.state_key, 1)) > 0);
 
-				if (!sevent->content.space_parent.via) {
-					del_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
-					  sevent->base.state_key, txn->room_id);
-					break;
+				{
+					char *data = matrix_json_print(event->json);
+					ret = put_str(txn->txn, txn->dbs[ROOM_DB_SPACE_PARENT],
+					  sevent->base.state_key, data, 0);
+					free(data);
+					arrput(*deferred_events,
+					  ((struct cache_deferred_space_event) {
+						.via_was_null = !sevent->content.space_parent.via,
+						.type = sevent->type,
+						.parent = sevent->base.state_key,
+						.child = txn->room_id,
+						.sender = sevent->base.sender}));
 				}
 
-				if ((ret = put_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
-					   sevent->base.state_key, txn->room_id, MDB_NODUPDATA))
-					== MDB_KEYEXIST) {
-					LOG(LOG_WARN,
-					  "Tried to add child '%s' already present in space '%s'",
-					  txn->room_id, sevent->base.state_key);
-				}
+				return CACHE_FAIL; /* TODO */
 				break;
 			default:
 				/* Empty state key */
@@ -1135,7 +1253,8 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
 					set_index = true;
 				} else {
 					LOG(LOG_WARN,
-					  "Got redaction '%s' for unknown event '%s' in room '%s'",
+					  "Got redaction '%s' for unknown event '%s' in room "
+					  "'%s'",
 					  tevent->base.event_id, tevent->redaction.redacts,
 					  txn->room_id);
 				}
@@ -1155,6 +1274,7 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
 	if (ret != MDB_SUCCESS) {
 		LOG(LOG_WARN, "Failed to save event '%s' in room '%s': %s",
 		  matrix_sync_event_id(event), txn->room_id, mdb_strerror(ret));
+		return CACHE_FAIL;
 	}
 
 	return CACHE_SUCCESS;

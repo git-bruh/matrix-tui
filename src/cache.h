@@ -38,6 +38,10 @@ enum room_db {
 	ROOM_DB_MEMBERS,
 	/* "m.room.type" => JSON */
 	ROOM_DB_STATE,
+	/* "!room_id:server.tld" => JSON */
+	ROOM_DB_SPACE_PARENT,
+	/* "!room_id:server.tld" => JSON */
+	ROOM_DB_SPACE_CHILD,
 	ROOM_DB_MAX,
 };
 
@@ -116,6 +120,22 @@ struct room_info {
 	char *topic;
 };
 
+enum cache_deferred_ret {
+	CACHE_DEFERRED_FAIL = 0,
+	CACHE_DEFERRED_ADDED,	/* Child added */
+	CACHE_DEFERRED_REMOVED, /* Child removed */
+};
+
+/* These events must be processed after the whole sync response as they rely
+ * on the state of other rooms. */
+struct cache_deferred_space_event {
+	bool via_was_null; /* Relation should be broken. */
+	enum matrix_state_type type;
+	const char *parent;
+	const char *child;
+	const char *sender;
+};
+
 int
 cache_init(struct cache *cache);
 void
@@ -133,10 +153,15 @@ int
 cache_set_room_dbs(struct cache_save_txn *txn, struct matrix_room *room);
 int
 cache_save_room(struct cache_save_txn *txn, struct matrix_room *room);
+/* Returns 0 if the intended operation was possible, else -1 */
+enum cache_deferred_ret
+cache_process_deferred_event(
+  struct cache *cache, struct cache_deferred_space_event *deferred_event);
 /* redaction_index is set if CACHE_GOT_REDACTION is returned. */
 enum cache_save_error
 cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
-  uint64_t *redaction_index);
+  uint64_t *redaction_index,
+  struct cache_deferred_space_event **deferred_events);
 int
 cache_iterator_next(struct cache_iterator *iterator);
 void
