@@ -20,6 +20,10 @@ static const char *const db_names[DB_MAX] = {
   [DB_SPACE_CHILDREN] = "space_children",
 };
 
+static const unsigned db_flags[DB_MAX] = {
+  [DB_SPACE_CHILDREN] = MDB_DUPSORT,
+};
+
 static const char *const db_keys[DB_KEY_MAX] = {
   [DB_KEY_ACCESS_TOKEN] = "access_token",
   [DB_KEY_NEXT_BATCH] = "next_batch",
@@ -31,8 +35,14 @@ static const char *const room_db_names[ROOM_DB_MAX] = {
   [ROOM_DB_EVENTS] = "events",
   [ROOM_DB_ORDER_TO_EVENTS] = "order2event",
   [ROOM_DB_EVENTS_TO_ORDER] = "event2order",
+  [ROOM_DB_RELATIONS] = "relations",
   [ROOM_DB_MEMBERS] = "members",
   [ROOM_DB_STATE] = "state",
+};
+
+static const unsigned room_db_flags[ROOM_DB_MAX] = {
+  [ROOM_DB_ORDER_TO_EVENTS] = MDB_INTEGERKEY,
+  [ROOM_DB_RELATIONS] = MDB_DUPSORT,
 };
 
 /* Modifies path[] in-place but restores it. */
@@ -56,8 +66,7 @@ mkdir_parents(char path[], mode_t mode) {
 	return 0;
 }
 
-/* Convert MDB_val to uint64_t with size verification and without tripping
- * ubsan about unaligned access on x86_64. */
+/* Convert MDB_val to uint64_t with size verification. */
 static void
 cpy_index(MDB_val *index, uint64_t *out_index) {
 	assert(index);
@@ -73,7 +82,7 @@ cpy_index(MDB_val *index, uint64_t *out_index) {
 	memcpy(out_index, index->mv_data, sizeof(*out_index));
 }
 
-/* Macro for getting line numbers. */
+/* Must be a macro for getting line numbers for LOG(). */
 #define ABORT_OR_RETURN(result)                                                \
 	do {                                                                       \
 		int _res = (result);                                                   \
@@ -94,12 +103,7 @@ get_dbi(enum room_db db, MDB_txn *txn, MDB_dbi *dbi, const char *room_id) {
 	assert(txn);
 	assert(dbi);
 	assert(room_id);
-
-	unsigned flags = MDB_CREATE;
-
-	if (db == ROOM_DB_ORDER_TO_EVENTS) {
-		flags |= MDB_INTEGERKEY;
-	}
+	assert(db >= 0 && db < ROOM_DB_MAX);
 
 	char *room = NULL;
 
@@ -107,7 +111,7 @@ get_dbi(enum room_db db, MDB_txn *txn, MDB_dbi *dbi, const char *room_id) {
 		return ENOMEM;
 	}
 
-	int ret = mdb_dbi_open(txn, room, flags, dbi);
+	int ret = mdb_dbi_open(txn, room, MDB_CREATE | room_db_flags[db], dbi);
 	free(room);
 
 	return ret;
@@ -239,11 +243,11 @@ cache_event_next(struct cache_iterator *iterator) {
 										  : mdb_cursor_get(iterator->cursor,
 											&db_index, &id, MDB_GET_CURRENT));
 
+		iterator->fetched_once = true;
+
 		if (ret != MDB_SUCCESS) {
 			return ret;
 		}
-
-		iterator->fetched_once = true;
 
 		assert(is_str(&id));
 
@@ -626,13 +630,8 @@ cache_init(struct cache *cache) {
 		&& (ret = get_txn(cache, 0, &txn)) == MDB_SUCCESS) {
 
 		for (size_t i = 0; i < DB_MAX; i++) {
-			unsigned flags = MDB_CREATE;
-
-			if (i == DB_SPACE_CHILDREN) {
-				flags |= MDB_DUPSORT;
-			}
-
-			if ((ret = mdb_dbi_open(txn, db_names[i], flags, &cache->dbs[i]))
+			if ((ret = mdb_dbi_open(
+				   txn, db_names[i], MDB_CREATE | db_flags[i], &cache->dbs[i]))
 				!= MDB_SUCCESS) {
 				cache_finish(cache);
 				mdb_txn_commit(txn);
@@ -980,12 +979,15 @@ save_json_with_index(
 	char *data = matrix_json_print(event->json);
 	assert(data);
 
-	/* MDB_NOOVERWRITE to ensure that we don't mess with txn->index if we get
-	 * duplicated events (Say we crashed in the sync_cb and get the same sync
-	 * response on next boot). */
+	/* TODO sort by index */
+	if (event->type == MATRIX_EVENT_TIMELINE
+		&& event->timeline.relation.event_id) {
+		put_str(txn->txn, txn->dbs[ROOM_DB_RELATIONS], event_id,
+		  event->timeline.relation.event_id, 0);
+	}
+
 	int ret = put_str(
 	  txn->txn, txn->dbs[ROOM_DB_EVENTS], event_id, data, MDB_NOOVERWRITE);
-	free(data);
 
 	if (ret == MDB_SUCCESS
 		&& (ret = put_int(txn->txn, txn->dbs[ROOM_DB_ORDER_TO_EVENTS],
@@ -996,6 +998,8 @@ save_json_with_index(
 			 == MDB_SUCCESS) {
 		txn->index++;
 	}
+
+	free(data);
 
 	return ret;
 }
@@ -1021,73 +1025,65 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
 				break;
 			}
 
-			switch (sevent->type) {
-#define ensure_state_key(sevent)                                               \
-	do {                                                                       \
-		if (!(sevent)->state_key || (strnlen((sevent)->state_key, 1)) == 0) {  \
-			assert(0);                                                         \
-			return CACHE_FAIL;                                                 \
-		}                                                                      \
-	} while (0)
-			case MATRIX_ROOM_MEMBER:
-				ensure_state_key(sevent);
+			assert(sevent->base.state_key);
 
+			switch (sevent->type) {
+			case MATRIX_ROOM_MEMBER:
 				{
 					char *data = matrix_json_print(event->json);
 					ret = put_str(txn->txn, txn->dbs[ROOM_DB_MEMBERS],
-					  sevent->state_key, data, 0);
+					  sevent->base.state_key, data, 0);
 					free(data);
 				}
 				break;
 			case MATRIX_ROOM_SPACE_CHILD:
-				ensure_state_key(sevent);
-
 				if (!(room_is_space(txn->cache, txn->txn, txn->room_id))) {
 					break;
 				}
 
+				assert((strnlen(sevent->base.state_key, 1)) > 0);
+
 				if (!sevent->content.space_child.via) {
 					del_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
-					  txn->room_id, sevent->state_key);
+					  txn->room_id, sevent->base.state_key);
 					break;
 				}
 
 				if ((ret = put_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
-					   txn->room_id, sevent->state_key, MDB_NODUPDATA))
+					   txn->room_id, sevent->base.state_key, MDB_NODUPDATA))
 					== MDB_KEYEXIST) {
 					LOG(LOG_WARN,
 					  "Tried to add child '%s' already present in space '%s'",
-					  sevent->state_key, txn->room_id);
+					  sevent->base.state_key, txn->room_id);
 				}
 				break;
 			case MATRIX_ROOM_SPACE_PARENT:
-				ensure_state_key(sevent);
-
-				if (!(child_event_in_parent_space(
-					  txn->cache, txn->txn, sevent->state_key, txn->room_id))) {
+				if (!(child_event_in_parent_space(txn->cache, txn->txn,
+					  sevent->base.state_key, txn->room_id))) {
 					break;
 				}
 
 				/* TODO if (!sender_has_power_level_in_parent) { break; } */
 
+				assert((strnlen(sevent->base.state_key, 1)) > 0);
+
 				if (!sevent->content.space_parent.via) {
 					del_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
-					  sevent->state_key, txn->room_id);
+					  sevent->base.state_key, txn->room_id);
 					break;
 				}
 
 				if ((ret = put_str(txn->txn, txn->cache->dbs[DB_SPACE_CHILDREN],
-					   sevent->state_key, txn->room_id, MDB_NODUPDATA))
+					   sevent->base.state_key, txn->room_id, MDB_NODUPDATA))
 					== MDB_KEYEXIST) {
 					LOG(LOG_WARN,
 					  "Tried to add child '%s' already present in space '%s'",
-					  txn->room_id, sevent->state_key);
+					  txn->room_id, sevent->base.state_key);
 				}
 				break;
-#undef ensure_state_key
 			default:
-				if (!sevent->state_key
-					|| (strnlen(sevent->state_key, 1)) == 0) {
+				/* Empty state key */
+				if ((strnlen(sevent->base.state_key, 1)) == 0) {
 					char *data = matrix_json_print(event->json);
 					ret = put_str(txn->txn, txn->dbs[ROOM_DB_STATE],
 					  sevent->base.type, data, 0);
@@ -1095,7 +1091,7 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
 				} else {
 					LOG(LOG_WARN,
 					  "Ignoring unknown state event with state key '%s'",
-					  sevent->state_key);
+					  sevent->base.state_key);
 				}
 				break;
 			}

@@ -156,6 +156,7 @@ room_put_message_event(struct room *room, enum timeline_type timeline,
 	assert(event->message.body);
 	assert(event->type == MATRIX_ROOM_MESSAGE);
 	assert(timeline < TIMELINE_MAX);
+	assert(!(room_bsearch(room, index)));
 
 	ptrdiff_t tmp = 0;
 	uint32_t **usernames = shget_ts(room->members, event->base.sender, tmp);

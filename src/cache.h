@@ -28,10 +28,12 @@ enum auth_key {
 enum room_db {
 	/* Event ID => JSON */
 	ROOM_DB_EVENTS = 0,
-	/* [1, 2, 3, ...] => Event ID */
+	/* [1, 2, 3, ...] => [Event ID, ...] */
 	ROOM_DB_ORDER_TO_EVENTS,
-	/* Event ID => [1, 2, 3, ...] */
+	/* [Event ID, ...] => [1, 2, 3, ...] */
 	ROOM_DB_EVENTS_TO_ORDER,
+	/* Event ID => [Event ID, ...] Array of related events. */
+	ROOM_DB_RELATIONS,
 	/* "@username:server.tld" => JSON */
 	ROOM_DB_MEMBERS,
 	/* "m.room.type" => JSON */
