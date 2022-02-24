@@ -229,11 +229,17 @@ room_redact_event(struct room *room, uint64_t index) {
 
 int
 room_put_event(struct room *room, const struct matrix_sync_event *event,
-  bool backward, uint64_t index, const uint64_t *redaction_index) {
+  bool backward, uint64_t index, uint64_t redaction_index) {
 	assert(room);
 	assert(event);
 
 	bool redaction_valid_if_present = false;
+
+	if (event->type == MATRIX_EVENT_STATE && !event->state.is_in_timeline) {
+		assert(index == (uint64_t) -1);
+	} else {
+		assert(index != (uint64_t) -1);
+	}
 
 	switch (event->type) {
 	case MATRIX_EVENT_EPHEMERAL:
@@ -255,8 +261,8 @@ room_put_event(struct room *room, const struct matrix_sync_event *event,
 			  &event->timeline);
 			break;
 		case MATRIX_ROOM_REDACTION:
-			if (redaction_index) {
-				room_redact_event(room, *redaction_index);
+			if (redaction_index != (uint64_t) -1) {
+				room_redact_event(room, redaction_index);
 				redaction_valid_if_present = true;
 			}
 			break;
@@ -270,7 +276,7 @@ room_put_event(struct room *room, const struct matrix_sync_event *event,
 		assert(0);
 	}
 
-	if (redaction_index) {
+	if (redaction_index != (uint64_t) -1) {
 		assert(redaction_valid_if_present);
 	}
 

@@ -552,7 +552,7 @@ populate_room_from_cache(struct state *state, const char *room_id) {
 		struct matrix_sync_event *sync_event = &event.event;
 		assert(sync_event->type != MATRIX_EVENT_EPHEMERAL);
 
-		room_put_event(room, sync_event, true, event.index, NULL);
+		room_put_event(room, sync_event, true, event.index, (uint64_t) -1);
 	}
 
 	cache_iterator_finish(&iterator);
@@ -929,18 +929,20 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 		}
 
 		while ((matrix_sync_event_next(&sync_room, &event)) == 0) {
-			uint64_t index = txn.index;
+			uint64_t index = 0;
 			uint64_t redaction_index = 0;
-			enum cache_save_error cache_ret = CACHE_FAIL;
 
-			if ((cache_ret = cache_save_event(
-				   &txn, &event, &redaction_index, &deferred_events))
-				== CACHE_FAIL) {
-				continue;
+			switch ((cache_save_event(
+			  &txn, &event, &index, &redaction_index, &deferred_events))) {
+			case CACHE_EVENT_SAVED:
+				room_put_event(room, &event, false, index, redaction_index);
+				break;
+			case CACHE_EVENT_IGNORED:
+			case CACHE_EVENT_DEFERRED:
+				break;
+			default:
+				assert(0);
 			}
-
-			room_put_event(room, &event, false, index,
-			  (cache_ret == CACHE_GOT_REDACTION ? &redaction_index : NULL));
 		}
 
 		cache_save_txn_finish(&txn);
@@ -973,7 +975,6 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 		switch (deferred_ret) {
 		case CACHE_DEFERRED_FAIL:
-			break;
 		case CACHE_DEFERRED_ADDED:
 		case CACHE_DEFERRED_REMOVED:
 			break;

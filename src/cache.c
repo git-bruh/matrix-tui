@@ -102,6 +102,13 @@ cpy_index(MDB_val *index, uint64_t *out_index) {
 	} while (0)
 
 static int
+commit(MDB_txn *txn) {
+	ABORT_OR_RETURN(mdb_txn_commit(txn));
+}
+
+#define mdb_txn_commit(txn) commit(txn)
+
+static int
 get_dbi(enum room_db db, MDB_txn *txn, MDB_dbi *dbi, const char *room_id) {
 	assert(txn);
 	assert(dbi);
@@ -117,7 +124,7 @@ get_dbi(enum room_db db, MDB_txn *txn, MDB_dbi *dbi, const char *room_id) {
 	int ret = mdb_dbi_open(txn, room, MDB_CREATE | room_db_flags[db], dbi);
 	free(room);
 
-	return ret;
+	ABORT_OR_RETURN(ret);
 }
 
 static int
@@ -276,15 +283,13 @@ cache_event_next(struct cache_iterator *iterator) {
 			if (iterator->event->event.type == MATRIX_EVENT_TIMELINE
 				&& !(matrix_json_has_content(json))) {
 				/* A redacted event. */
+				matrix_json_delete(json);
 				continue;
 			}
 
 			LOG(LOG_ERROR, "Failed to parse event JSON '%s'",
 			  (char *) db_json.mv_data);
-			assert(0);
-
-			matrix_json_delete(json);
-			return EINVAL;
+			abort();
 		}
 
 		switch (iterator->event->event.type) {
@@ -294,6 +299,8 @@ cache_event_next(struct cache_iterator *iterator) {
 				matrix_json_delete(json);
 				continue;
 			}
+
+			iterator->event->event.state.is_in_timeline = true;
 			break;
 		case MATRIX_EVENT_TIMELINE:
 			if ((iterator->timeline_events
@@ -884,12 +891,7 @@ cache_save_txn_init(
 void
 cache_save_txn_finish(struct cache_save_txn *txn) {
 	if (txn) {
-		int ret = mdb_txn_commit(txn->txn);
-
-		if (ret != MDB_SUCCESS) {
-			LOG(LOG_ERROR, "Failed to commit txn: %s", mdb_strerror(ret));
-			abort(); /* TODO better handling. */
-		}
+		mdb_txn_commit(txn->txn);
 	}
 }
 
@@ -937,10 +939,11 @@ cache_save_room(struct cache_save_txn *txn, struct matrix_room *room) {
 }
 
 static int
-save_json_with_index(
-  struct cache_save_txn *txn, struct matrix_sync_event *event) {
+save_json_with_index(struct cache_save_txn *txn,
+  struct matrix_sync_event *event, uint64_t *index) {
 	assert(txn);
 	assert(event);
+	assert(index);
 
 	const char *event_id = matrix_sync_event_id(event);
 	assert(event_id);
@@ -965,6 +968,7 @@ save_json_with_index(
 		&& (ret = put_str_int(txn->txn, txn->dbs[ROOM_DB_EVENTS_TO_ORDER],
 			  event_id, txn->index, 0))
 			 == MDB_SUCCESS) {
+		*index = txn->index;
 		txn->index++;
 	}
 
@@ -984,7 +988,7 @@ cache_process_deferred_event(
 
 	assert(mdb_ret == MDB_SUCCESS);
 
-	int ret = CACHE_DEFERRED_FAIL;
+	enum cache_deferred_ret ret = CACHE_DEFERRED_FAIL;
 
 	struct matrix_state_event sevent = {0};
 
@@ -1130,43 +1134,46 @@ cache_process_deferred_event(
 
 enum cache_save_error
 cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
-  uint64_t *redaction_index,
+  uint64_t *index, uint64_t *redaction_index,
   struct cache_deferred_space_event **deferred_events) {
 	assert(txn);
 	assert(event);
+	assert(index);
 	assert(redaction_index);
+	assert(deferred_events);
+
+	*index = (uint64_t) -1;
+	*redaction_index = (uint64_t) -1;
 
 	/* TODO power level checking. */
-
-	int ret = MDB_SUCCESS;
 
 	switch (event->type) {
 	case MATRIX_EVENT_STATE:
 		{
 			struct matrix_state_event *sevent = &event->state;
+			assert(sevent->base.state_key);
 
 			if (sevent->is_in_timeline
-				&& (ret = save_json_with_index(txn, event)) != MDB_SUCCESS) {
-				break;
+				&& (save_json_with_index(txn, event, index)) == MDB_KEYEXIST) {
+				return CACHE_EVENT_IGNORED;
 			}
-
-			assert(sevent->base.state_key);
 
 			switch (sevent->type) {
 			case MATRIX_ROOM_MEMBER:
 				{
 					char *data = matrix_json_print(event->json);
-					ret = put_str(txn->txn, txn->dbs[ROOM_DB_MEMBERS],
+					put_str(txn->txn, txn->dbs[ROOM_DB_MEMBERS],
 					  sevent->base.state_key, data, 0);
 					free(data);
 				}
-				break;
+
+				return CACHE_EVENT_SAVED;
 			case MATRIX_ROOM_SPACE_CHILD:
 				assert((strnlen(sevent->base.state_key, 1)) > 0);
 
 				{
 					char *data = matrix_json_print(event->json);
-					ret = put_str(txn->txn, txn->dbs[ROOM_DB_SPACE_CHILD],
+					put_str(txn->txn, txn->dbs[ROOM_DB_SPACE_CHILD],
 					  sevent->base.state_key, data, 0);
 					free(data);
 					arrput(*deferred_events,
@@ -1178,14 +1185,13 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
 						.sender = sevent->base.sender}));
 				}
 
-				return CACHE_FAIL; /* TODO */
-				break;
+				return CACHE_EVENT_DEFERRED;
 			case MATRIX_ROOM_SPACE_PARENT:
 				assert((strnlen(sevent->base.state_key, 1)) > 0);
 
 				{
 					char *data = matrix_json_print(event->json);
-					ret = put_str(txn->txn, txn->dbs[ROOM_DB_SPACE_PARENT],
+					put_str(txn->txn, txn->dbs[ROOM_DB_SPACE_PARENT],
 					  sevent->base.state_key, data, 0);
 					free(data);
 					arrput(*deferred_events,
@@ -1197,87 +1203,80 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
 						.sender = sevent->base.sender}));
 				}
 
-				return CACHE_FAIL; /* TODO */
-				break;
+				return CACHE_EVENT_DEFERRED;
 			default:
 				/* Empty state key */
 				if ((strnlen(sevent->base.state_key, 1)) == 0) {
 					char *data = matrix_json_print(event->json);
-					ret = put_str(txn->txn, txn->dbs[ROOM_DB_STATE],
+					put_str(txn->txn, txn->dbs[ROOM_DB_STATE],
 					  sevent->base.type, data, 0);
 					free(data);
+
+					return CACHE_EVENT_SAVED;
 				} else {
 					LOG(LOG_WARN,
 					  "Ignoring unknown state event with state key '%s'",
 					  sevent->base.state_key);
+
+					return CACHE_EVENT_IGNORED;
 				}
-				break;
 			}
 		}
-		break;
 	case MATRIX_EVENT_TIMELINE:
 		{
 			struct matrix_timeline_event *tevent = &event->timeline;
 
+			if ((save_json_with_index(txn, event, index)) == MDB_KEYEXIST) {
+				return CACHE_EVENT_IGNORED;
+			}
+
 			if (tevent->type == MATRIX_ROOM_REDACTION) {
 				MDB_val del_index = {0};
-				bool set_index = false;
 
 				if ((get_str(txn->txn, txn->dbs[ROOM_DB_EVENTS_TO_ORDER],
 					  tevent->redaction.redacts, &del_index))
 					== MDB_SUCCESS) {
 					MDB_val raw_json = {0};
-					ret = get_str(txn->txn, txn->dbs[ROOM_DB_EVENTS],
+
+					int ret = get_str(txn->txn, txn->dbs[ROOM_DB_EVENTS],
 					  tevent->redaction.redacts, &raw_json);
 
-					if (ret == MDB_SUCCESS) {
-						assert(is_str(&raw_json));
+					assert(ret == MDB_SUCCESS);
+					assert(is_str(&raw_json));
 
-						matrix_json_t *json = matrix_json_parse(
-						  raw_json.mv_data, raw_json.mv_size);
-						assert(json);
+					matrix_json_t *json
+					  = matrix_json_parse(raw_json.mv_data, raw_json.mv_size);
+					assert(json);
 
-						matrix_json_clear_content(json);
+					matrix_json_clear_content(json);
 
-						char *cleaned_json = matrix_json_print(json);
-						assert(cleaned_json);
+					char *cleaned_json = matrix_json_print(json);
+					assert(cleaned_json);
 
-						ret = put_str(txn->txn, txn->dbs[ROOM_DB_EVENTS],
-						  tevent->redaction.redacts, cleaned_json, 0);
+					ret = put_str(txn->txn, txn->dbs[ROOM_DB_EVENTS],
+					  tevent->redaction.redacts, cleaned_json, 0);
 
-						free(cleaned_json);
-						matrix_json_delete(json);
-					}
+					assert(ret == MDB_SUCCESS);
+
+					free(cleaned_json);
+					matrix_json_delete(json);
 
 					cpy_index(&del_index, redaction_index);
-					set_index = true;
 				} else {
 					LOG(LOG_WARN,
 					  "Got redaction '%s' for unknown event '%s' in room "
 					  "'%s'",
 					  tevent->base.event_id, tevent->redaction.redacts,
 					  txn->room_id);
-				}
 
-				if (set_index) {
-					return CACHE_GOT_REDACTION;
+					return CACHE_EVENT_IGNORED;
 				}
-			} else {
-				ret = save_json_with_index(txn, event);
 			}
+			return CACHE_EVENT_SAVED;
+		default:
+			return CACHE_EVENT_IGNORED;
 		}
-		break;
-	default:
-		break;
 	}
-
-	if (ret != MDB_SUCCESS) {
-		LOG(LOG_WARN, "Failed to save event '%s' in room '%s': %s",
-		  matrix_sync_event_id(event), txn->room_id, mdb_strerror(ret));
-		return CACHE_FAIL;
-	}
-
-	return CACHE_SUCCESS;
 }
 
 char *

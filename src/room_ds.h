@@ -85,7 +85,7 @@ int
 room_put_member(struct room *room, char *mxid, char *username);
 int
 room_put_event(struct room *room, const struct matrix_sync_event *event,
-  bool backward, uint64_t index, const uint64_t *redaction_index);
+  bool backward, uint64_t index, uint64_t redaction_index);
 bool
 room_fill_old_events(struct room *room, struct widget_points *points);
 bool

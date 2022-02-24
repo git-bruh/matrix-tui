@@ -45,7 +45,11 @@ enum room_db {
 	ROOM_DB_MAX,
 };
 
-enum cache_save_error { CACHE_FAIL = -1, CACHE_SUCCESS, CACHE_GOT_REDACTION };
+enum cache_save_error {
+	CACHE_EVENT_SAVED = 0,
+	CACHE_EVENT_IGNORED,
+	CACHE_EVENT_DEFERRED
+};
 
 struct cache {
 	MDB_env *env;
@@ -157,10 +161,9 @@ cache_save_room(struct cache_save_txn *txn, struct matrix_room *room);
 enum cache_deferred_ret
 cache_process_deferred_event(
   struct cache *cache, struct cache_deferred_space_event *deferred_event);
-/* redaction_index is set if CACHE_GOT_REDACTION is returned. */
 enum cache_save_error
 cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
-  uint64_t *redaction_index,
+  uint64_t *index, uint64_t *redaction_index,
   struct cache_deferred_space_event **deferred_events);
 int
 cache_iterator_next(struct cache_iterator *iterator);
