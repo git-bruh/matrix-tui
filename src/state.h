@@ -45,11 +45,9 @@ struct state {
 	pthread_cond_t cond;
 	struct cache cache;
 	struct queue queue;
-	/* Protected by rooms_mutex, along with the hashmap. */
-	struct treeview_node root_nodes[NODE_MAX];
-	struct treeview view_root;
 	struct matrix *matrix;
 	struct hm_room *rooms;
+	struct hm_room *root_rooms; /* Orphaned rooms without a parent space. */
 };
 
 #define read safe_read

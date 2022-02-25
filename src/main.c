@@ -68,12 +68,7 @@ cleanup(struct state *state) {
 		room_destroy(state->rooms[i].value);
 	}
 	shfree(state->rooms);
-
-	for (size_t i = 0; i < NODE_MAX; i++) {
-		arrfree(state->root_nodes[i].nodes);
-	}
-
-	arrfree(state->view_root.root.nodes);
+	shfree(state->root_rooms);
 
 	memset(state, 0, sizeof(*state));
 
@@ -325,10 +320,10 @@ handle_tab_room(
 
 		switch (tab_room->widget) {
 		case TAB_ROOM_INPUT:
-			ret = handle_input(tab_room->input, event, &enter_pressed);
+			ret = handle_input(&tab_room->input, event, &enter_pressed);
 
 			if (enter_pressed) {
-				char *buf = input_buf(tab_room->input);
+				char *buf = input_buf(&tab_room->input);
 
 				/* Empty field. */
 				if (!buf) {
@@ -347,7 +342,7 @@ handle_tab_room(
 				lock_and_push(
 				  state, queue_item_alloc(QUEUE_ITEM_MESSAGE, message));
 
-				ret = input_handle_event(tab_room->input, INPUT_CLEAR);
+				ret = input_handle_event(&tab_room->input, INPUT_CLEAR);
 			}
 			break;
 		default:
@@ -373,12 +368,93 @@ node_draw_cb(void *data, struct widget_points *points, bool is_selected) {
 }
 
 static void
-string_draw_cb(void *data, struct widget_points *points, bool is_selected) {
+draw_cb(void *data, struct widget_points *points, bool is_selected) {
 	assert(data);
 	assert(points);
 
 	widget_print_str(points->x1, points->y1, points->x2,
 	  is_selected ? TB_REVERSE : TB_DEFAULT, TB_DEFAULT, data);
+}
+
+static void
+room_draw_cb(void *data, struct widget_points *points, bool is_selected) {
+	assert(data);
+	assert(points);
+
+	struct room *room = data;
+
+	const char *str = room->info.name ? room->info.name : "Empty Room";
+	widget_print_str(points->x1, points->y1, points->x2,
+	  is_selected ? TB_REVERSE : TB_DEFAULT, TB_DEFAULT, str);
+}
+
+static void
+tab_room_finish(struct tab_room *tab_room) {
+	if (tab_room) {
+		input_finish(&tab_room->input);
+		treeview_node_finish(&tab_room->treeview.root);
+		memset(tab_room, 0, sizeof(*tab_room));
+	}
+}
+
+static int
+tab_room_init(struct tab_room *tab_room, struct hm_room **rooms,
+  pthread_mutex_t *rooms_mutex) {
+	assert(tab_room);
+	assert(rooms);
+	assert(rooms_mutex);
+
+	*tab_room = (struct tab_room) {
+	  .widget = TAB_ROOM_INPUT, .rooms = rooms, .rooms_mutex = rooms_mutex};
+
+	int ret = input_init(&tab_room->input, TB_DEFAULT, false);
+	assert(ret == 0);
+
+	ret = treeview_init(&tab_room->treeview);
+	assert(ret == 0);
+
+	for (size_t i = 0; i < NODE_MAX; i++) {
+		treeview_node_init(
+		  &tab_room->root_nodes[i], noconst(root_node_str[i]), draw_cb);
+		treeview_node_add_child(
+		  &tab_room->treeview.root, &tab_room->root_nodes[i]);
+	}
+
+	tab_room->treeview.selected = tab_room->treeview.root.nodes[0];
+
+	return 0;
+}
+
+/* We're lazy so we just reset the whole tree view on any space related change
+ * such as the removal/addition of a room from/to a space. This is much less
+ * error prone than manually managing the nodes, and isn't really that
+ * inefficient if you consider how infrequently room changes occur. */
+static void
+tab_room_reset_rooms(struct tab_room *tab_room, struct hm_room *root_rooms) {
+	assert(tab_room);
+
+	for (size_t i = 0; i < NODE_MAX; i++) {
+		arrsetlen(tab_room->treeview.root.nodes[i]->nodes, 0);
+	}
+
+	for (size_t i = 0, len = shlenu(root_rooms); i < len; i++) {
+		treeview_node_add_child(
+		  &tab_room
+			 ->root_nodes[root_rooms[i].value->info.is_space ? NODE_SPACES
+															 : NODE_ROOMS],
+		  &root_rooms[i].value->treeview_node);
+	}
+
+	/* Find the first non-empty node and choose it's first room as the
+	 * selected one. */
+	for (size_t i = 0; i < NODE_MAX; i++) {
+		struct treeview_node **nodes = tab_room->treeview.root.nodes[i]->nodes;
+
+		if (arrlenu(nodes) > 0) {
+			tab_room->treeview.selected = nodes[0];
+			return;
+		}
+	}
 }
 
 static void
@@ -392,21 +468,10 @@ ui_loop(struct state *state) {
 
 	get_fds(state, fds);
 
-	struct input input = {0};
+	struct tab_room tab_room = {0};
+	tab_room_init(&tab_room, &state->rooms, &state->rooms_mutex);
 
-	if ((input_init(&input, TB_DEFAULT, false)) != 0) {
-		return;
-	}
-
-	struct tab_room tab_room = {
-	  .widget = TAB_ROOM_INPUT,
-	  .input = &input,
-	  .tree = &state->view_root,
-	  .rooms = &state->rooms,
-	  .rooms_mutex = &state->rooms_mutex,
-	};
-
-	tab_room.tree->selected = tab_room.tree->root.nodes[0];
+	tab_room_reset_rooms(&tab_room, state->root_rooms);
 
 	if ((tab_room_set(&tab_room, 0)) == 0) {
 		struct widget_points points = {0};
@@ -489,7 +554,7 @@ ui_loop(struct state *state) {
 		}
 	}
 
-	input_finish(&input);
+	tab_room_finish(&tab_room);
 }
 
 static int
@@ -576,11 +641,10 @@ populate_from_cache(struct state *state) {
 
 	while ((cache_iterator_next(&iterator)) == MDB_SUCCESS) {
 		assert(id);
-		struct room *room = room_alloc();
 
-		assert(room);
+		struct room_info info = {0};
 
-		if ((ret = cache_room_info_init(&state->cache, &room->info, id))
+		if ((ret = cache_room_info_init(&state->cache, &info, id))
 			!= MDB_SUCCESS) {
 			LOG(LOG_ERROR, "Failed to get room info for room '%s': %s", id,
 			  mdb_strerror(ret));
@@ -588,6 +652,9 @@ populate_from_cache(struct state *state) {
 
 			return -1;
 		}
+
+		struct room *room = room_alloc(info, room_draw_cb);
+		assert(room);
 
 		shput(state->rooms, noconst(id), room);
 		populate_room_from_cache(state, id);
@@ -603,6 +670,9 @@ populate_from_cache(struct state *state) {
 		  LOG_ERROR, "Failed to create spaces iterator: %s", mdb_strerror(ret));
 		return -1;
 	}
+
+	struct hm_room *child_rooms = NULL;
+	/* Don't call sh_new_strdup() as we don't need to duplicate strings here. */
 
 	while ((cache_iterator_next(&iterator)) == MDB_SUCCESS) {
 		assert(space.id);
@@ -627,19 +697,12 @@ populate_from_cache(struct state *state) {
 				continue;
 			}
 
-			LOG(LOG_WARN, "Got %s '%s' in space '%s'",
+			LOG(LOG_MESSAGE, "Got %s '%s' in space '%s'",
 			  space_child->info.is_space ? "space" : "room", space.child_id,
 			  space.id);
 
-			/* Assign the .parent member of the node so we can use it
-			 * below to find orphans. */
-			space_child->tree_node.parent = &space_room->tree_node;
-
-			if (space_child->info.is_space) {
-				arrput(space_room->spaces, &space_child->tree_node);
-			} else {
-				arrput(space_room->rooms, &space_child->tree_node);
-			}
+			room_add_child(space_room, space_child);
+			shput(child_rooms, noconst(space.child_id), space_child);
 		}
 
 		/* No need to finish the children iterator since it only borrows a
@@ -647,27 +710,17 @@ populate_from_cache(struct state *state) {
 		 * finished. */
 	}
 
-	cache_iterator_finish(&iterator);
-
-	treeview_init(&state->view_root);
-
-	for (size_t i = 0; i < NODE_MAX; i++) {
-		treeview_node_init(&state->root_nodes[i], noconst(root_node_str[i]),
-		  string_draw_cb, NULL);
-		treeview_node_add_child(&state->view_root.root, &state->root_nodes[i]);
-	}
-
-	/* Construct initial tree from orphans. */
 	for (size_t i = 0, len = shlenu(state->rooms); i < len; i++) {
-		struct room *room = state->rooms[i].value;
-
-		if (!room->tree_node.parent) {
-			treeview_node_add_child(
-			  &state
-				 ->root_nodes[room->info.is_space ? NODE_SPACES : NODE_ROOMS],
-			  &room->tree_node);
+		if ((shget(child_rooms, state->rooms[i].key))) {
+			continue;
 		}
+
+		/* Orphan since the room/space hasn't been added to any space. */
+		shput(state->root_rooms, state->rooms[i].key, state->rooms[i].value);
 	}
+
+	shfree(child_rooms);
+	cache_iterator_finish(&iterator);
 
 	return 0;
 }
@@ -924,7 +977,9 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 		bool room_needs_info = !room;
 
 		if (room_needs_info) {
-			room = room_alloc();
+			/* TODO make room_alloc take a timeline so we don't need this hack
+			 */
+			room = room_alloc((struct room_info) {0}, room_draw_cb);
 			assert(room);
 		}
 

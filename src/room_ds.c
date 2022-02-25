@@ -114,6 +114,14 @@ room_bsearch(struct room *room, uint64_t index) {
 	return *message;
 }
 
+void
+room_add_child(struct room *room, struct room *child) {
+	assert(room);
+	assert(child);
+
+	arrput(room->children, child);
+}
+
 int
 room_put_member(struct room *room, char *mxid, char *username) {
 	assert(room);
@@ -370,17 +378,16 @@ room_reset_if_recalculate(struct room *room, struct widget_points *points) {
 }
 
 struct room *
-room_alloc(void) {
+room_alloc(struct room_info info, treeview_draw_cb draw_cb) {
 	struct room *room = malloc(sizeof(*room));
 
 	if (room) {
 		*room = (struct room) {
 		  .realloc_or_modify_mutex = PTHREAD_MUTEX_INITIALIZER,
+		  .info = info,
 		};
 
-		int ret
-		  = treeview_node_init(&room->tree_node, room, node_draw_cb, NULL);
-		assert(ret == 0);
+		treeview_node_init(&room->treeview_node, room, draw_cb);
 
 		SHMAP_INIT(room->members);
 
@@ -411,10 +418,9 @@ room_destroy(struct room *room) {
 			}
 			arrfree(room->members[i].value);
 		}
+
 		shfree(room->members);
-		arrfree(room->spaces);
-		arrfree(room->dms);
-		arrfree(room->rooms);
+		arrfree(room->children);
 		message_buffer_finish(&room->buffer);
 		cache_room_info_finish(&room->info);
 		free(room);

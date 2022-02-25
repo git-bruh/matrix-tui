@@ -9,7 +9,6 @@
 #include <math.h>
 
 enum {
-	BAR_HEIGHT = 1,
 	INPUT_HEIGHT = 5,
 	FORM_WIDTH = 68,
 	FORM_ART_GAP = 2,
@@ -55,14 +54,13 @@ tab_login_redraw(struct tab_login *login) {
 	struct widget_points points = {0};
 
 	int padding_x = widget_pad_center(FORM_WIDTH, width);
-	int padding_y = widget_pad_center(FORM_HEIGHT, height - BAR_HEIGHT);
+	int padding_y = widget_pad_center(FORM_HEIGHT, height);
 
-	widget_points_set(
-	  &points, 0, width, BAR_HEIGHT, (BAR_HEIGHT + padding_y) - FORM_ART_GAP);
+	widget_points_set(&points, 0, width, 0, padding_y - FORM_ART_GAP);
 	art_redraw(&points);
 
-	widget_points_set(&points, padding_x, width - padding_x,
-	  BAR_HEIGHT + padding_y, height - padding_y);
+	widget_points_set(
+	  &points, padding_x, width - padding_x, padding_y, height - padding_y);
 	form_redraw(&login->form, &points);
 
 	if (login->error) {
@@ -83,7 +81,7 @@ tab_room_get_buffer_points(struct widget_points *points) {
 	int width = tb_width();
 
 	widget_points_set(
-	  points, part_percent(width, TAB_ROOM_TREE_PERCENT) + 1, width, 0, 0);
+	  points, part_percent(width, TAB_ROOM_TREE_PERCENT) + 1, width - 1, 0, 0);
 }
 
 void
@@ -103,48 +101,41 @@ tab_room_redraw(struct tab_room *tab_room) {
 
 	int tree_width = part_percent(width, TAB_ROOM_TREE_PERCENT);
 
-	{
-		const char *name_or_id = "Default";
-
-		bool other_spaces_have_events = true;
-		uintattr_t fg = str_attr(name_or_id);
-
-		if (other_spaces_have_events) {
-			fg |= TB_REVERSE;
-		}
-
-		int x = widget_print_str(0, 0, tree_width, fg, TB_DEFAULT, name_or_id);
-
-		if (other_spaces_have_events) {
-			/* Fill gap between name and bar. */
-			for (; x < tree_width; x++) {
-				tb_set_cell(x, 0, ' ', fg, TB_DEFAULT);
-			}
-		}
-	}
-
-	/* + 1 for divider bar. */
-	widget_points_set(
-	  &points, tree_width + 1, width, height - INPUT_HEIGHT, height);
+	widget_points_set(&points, tree_width + 1, width - 1,
+	  height - INPUT_HEIGHT - 1, height - 1);
 
 	int input_rows = 0;
-	input_redraw(tab_room->input, &points, &input_rows);
+	input_redraw(&tab_room->input, &points, &input_rows);
+
+	const int input_border_start = height - 1 - input_rows - 1;
+	const int message_border_end = input_border_start - 1;
+
+	widget_points_set(&points, tree_width, width, input_border_start, height);
+	border_redraw(&points, TB_DEFAULT, TB_DEFAULT);
+
+	widget_print_str(
+	  tree_width, message_border_end, width, TB_DEFAULT, TB_DEFAULT, "[");
+	widget_print_str(
+	  width - 1, message_border_end, width, TB_DEFAULT, TB_DEFAULT, "]");
+
+	widget_points_set(&points, tree_width, width, 0, message_border_end);
+	border_redraw(&points, TB_DEFAULT, TB_DEFAULT);
 
 	widget_points_set(
-	  &points, tree_width + 1, width, BAR_HEIGHT, height - input_rows);
+	  &points, tree_width + 1, width - 1, 1, message_border_end - 1);
 
 	pthread_mutex_lock(&room->realloc_or_modify_mutex);
 	message_buffer_redraw(&room->buffer, &points);
 	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 
-	/* - 1 for divider bar. */
-	widget_points_set(&points, 0, tree_width - 1, BAR_HEIGHT, height);
+	widget_points_set(&points, 1, tree_width - 1, 1, height);
 
 	pthread_mutex_lock(tab_room->rooms_mutex);
-	treeview_redraw(tab_room->tree, &points);
+	treeview_redraw(&tab_room->treeview, &points);
 	pthread_mutex_unlock(tab_room->rooms_mutex);
 
-	for (int y = 0; y < height; y++) {
-		widget_print_str(tree_width, y, width, TB_DEFAULT, TB_DEFAULT, "│");
-	}
+	widget_points_set(&points, 1, tree_width - 1, 0, height);
+
+	widget_points_set(&points, 0, tree_width, 0, height);
+	border_redraw(&points, TB_DEFAULT, TB_DEFAULT);
 }

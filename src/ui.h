@@ -41,12 +41,13 @@ struct tab_room {
 		TAB_ROOM_MESSAGE,
 		TAB_ROOM_MEMBERS,
 	} widget;
-	struct tab_room_current_room current_room;
 	pthread_mutex_t *rooms_mutex;
 	struct hm_room **rooms; /* Double pointer as the array is realloc'd
 							 * (Originates in struct state) */
-	struct treeview *tree;
-	struct input *input;
+	struct input input;
+	struct tab_room_current_room current_room;
+	struct treeview_node root_nodes[NODE_MAX];
+	struct treeview treeview;
 };
 
 struct tab_login {

@@ -62,13 +62,9 @@ struct timeline {
 struct room {
 	size_t already_consumed; /* No. of items consumed from timeline. */
 	struct members_map *members;
-	/* Pointers copied over to children of root nodes when the
-	 * room is selected. */
-	struct treeview_node **spaces;
-	struct treeview_node **dms;
-	struct treeview_node **rooms;
-	struct treeview_node tree_node;
+	struct room **children; /* If the room is a space. */
 	struct room_info info;
+	struct treeview_node treeview_node;
 	/* Rendered message indices. */
 	struct message_buffer buffer;
 	/* .buf MUST have an initial capacity set with arrsetcap. Binary search is
@@ -81,6 +77,8 @@ struct room {
 
 struct message *
 room_bsearch(struct room *room, uint64_t index);
+void
+room_add_child(struct room *room, struct room *child);
 int
 room_put_member(struct room *room, char *mxid, char *username);
 int
@@ -93,7 +91,7 @@ room_fill_new_events(struct room *room, struct widget_points *points);
 bool
 room_reset_if_recalculate(struct room *room, struct widget_points *points);
 struct room *
-room_alloc(void);
+room_alloc(struct room_info info, treeview_draw_cb draw_cb);
 void
 room_destroy(struct room *room);
 #endif /* !ROOM_DS_H */
