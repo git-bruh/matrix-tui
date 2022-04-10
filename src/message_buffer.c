@@ -402,6 +402,8 @@ message_buffer_handle_event(
 			}
 		}
 		break;
+	default:
+		assert(0);
 	}
 
 	return WIDGET_NOOP;

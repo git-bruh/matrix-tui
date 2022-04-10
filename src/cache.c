@@ -1281,5 +1281,6 @@ cache_save_event(struct cache_save_txn *txn, struct matrix_sync_event *event,
 
 char *
 noconst(const char *str) {
+	/* NOLINTNEXTLINE(clang-diagnostic-cast-qual) */
 	return (char *) str;
 }

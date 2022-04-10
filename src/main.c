@@ -939,9 +939,7 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 	while ((matrix_sync_room_next(response, &sync_room)) == 0) {
 		switch (sync_room.type) {
 		case MATRIX_ROOM_LEAVE:
-			break;
 		case MATRIX_ROOM_JOIN:
-			break;
 		case MATRIX_ROOM_INVITE:
 			break;
 		default:
@@ -1113,6 +1111,8 @@ init_everything(struct state *state) {
 		return -1;
 	}
 
+	/* Only main thread active. */
+	/* NOLINTNEXTLINE(concurrency-mt-unsafe) */
 	if ((login(state)) != 0) {
 		LOG(LOG_ERROR, "Login cancelled");
 		return -1;
@@ -1141,11 +1141,15 @@ init_everything(struct state *state) {
 
 int
 main(void) {
+	/* Only main thread active. */
+
+	/* NOLINTNEXTLINE(concurrency-mt-unsafe) */
 	if (!(setlocale(LC_ALL, ""))) {
 		LOG(LOG_ERROR, "Failed to set locale");
 		return EXIT_FAILURE;
 	}
 
+	/* NOLINTNEXTLINE(concurrency-mt-unsafe) */
 	if ((strcmp("UTF-8", nl_langinfo(CODESET)) != 0)) {
 		LOG(LOG_ERROR, "Locale is not UTF-8");
 		return EXIT_FAILURE;

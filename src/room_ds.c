@@ -54,7 +54,7 @@ message_destroy(struct message *message) {
 	}
 }
 
-static struct message *
+static struct message * /* NOLINTNEXTLINE(readability-non-const-parameter) */
 message_alloc(const char *body, const char *sender, uint32_t *username,
   uint64_t index, const uint64_t *index_reply, bool formatted) {
 	assert(body);
