@@ -163,8 +163,8 @@ handle_input(struct input *input, struct tb_event *event, bool *enter_pressed) {
 		return input_handle_event(input, INPUT_ADD, event->ch);
 	}
 
-	bool mod = (event->mod & TB_MOD_SHIFT);
-	bool mod_enter = (event->mod & TB_MOD_ALT);
+	bool mod = (event->mod & TB_MOD_SHIFT) == TB_MOD_SHIFT;
+	bool mod_enter = (event->mod & TB_MOD_ALT) == TB_MOD_ALT;
 
 	switch (event->key) {
 	case TB_KEY_ENTER:
