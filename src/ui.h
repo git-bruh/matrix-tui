@@ -28,26 +28,18 @@ struct members_map {
 
 struct room;
 
-struct tab_room_current_room {
-	size_t index;
-	size_t already_consumed;
-	const char *id;
-	struct room *room;
-};
-
 struct tab_room {
 	enum tab_room_widget {
 		TAB_ROOM_INPUT = 0,
 		TAB_ROOM_MESSAGE,
 		TAB_ROOM_MEMBERS,
 	} widget;
-	pthread_mutex_t *rooms_mutex;
-	struct hm_room **rooms; /* Double pointer as the array is realloc'd
-							 * (Originates in struct state) */
 	struct input input;
-	struct tab_room_current_room current_room;
 	struct treeview_node root_nodes[NODE_MAX];
 	struct treeview treeview;
+	struct hm_room *selected_room;
+	struct treeview_node *room_nodes;
+	char **path; /* Path to follow to reach the current parent space. */
 };
 
 struct tab_login {

@@ -88,11 +88,11 @@ void
 tab_room_redraw(struct tab_room *tab_room) {
 	assert(tab_room);
 
-	struct room *room = tab_room->current_room.room;
-
-	if (!room) {
+	if (!tab_room->selected_room) {
 		return;
 	}
+
+	struct room *room = tab_room->selected_room->value;
 
 	int height = tb_height();
 	int width = tb_width();
@@ -129,10 +129,7 @@ tab_room_redraw(struct tab_room *tab_room) {
 	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 
 	widget_points_set(&points, 1, tree_width - 1, 1, height);
-
-	pthread_mutex_lock(tab_room->rooms_mutex);
 	treeview_redraw(&tab_room->treeview, &points);
-	pthread_mutex_unlock(tab_room->rooms_mutex);
 
 	widget_points_set(&points, 1, tree_width - 1, 0, height);
 

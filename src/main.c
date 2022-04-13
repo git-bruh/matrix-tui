@@ -25,6 +25,30 @@ const char *const root_node_str[NODE_MAX] = {
   [NODE_ROOMS] = "Rooms",
 };
 
+struct accumulated_sync_room {
+	enum matrix_room_type type;
+	struct room *room;
+	char *id;
+};
+
+struct accumulated_space_event {
+	enum cache_deferred_ret status;
+	const char *parent;
+	const char *child;
+};
+
+/* We pass this struct to the main thread after processing each sync response.
+ * This saves us from most threading related issues but wastes a bit more
+ * space as temp arrays are constructed instead of using the data in-place
+ * when consuming an iterator. */
+struct accumulated_sync_data {
+	struct accumulated_sync_room
+	  *rooms; /* Array of rooms that received events. */
+	/* Array of space-related events which might require shifting nodes
+	 * in the treeview. */
+	struct accumulated_space_event *space_events;
+};
+
 static void
 cleanup(struct state *state) {
 	tb_shutdown();
@@ -39,7 +63,7 @@ cleanup(struct state *state) {
 	}
 
 	if (state->threads[THREAD_QUEUE]) {
-		pthread_cond_signal(&state->cond);
+		pthread_cond_signal(&state->queue_cond);
 		pthread_join(state->threads[THREAD_QUEUE], NULL);
 	}
 
@@ -49,8 +73,8 @@ cleanup(struct state *state) {
 		}
 	}
 
-	pthread_cond_destroy(&state->cond);
-	pthread_mutex_destroy(&state->mutex);
+	pthread_cond_destroy(&state->queue_cond);
+	pthread_mutex_destroy(&state->queue_mutex);
 
 	struct queue_item *item = NULL;
 
@@ -67,8 +91,9 @@ cleanup(struct state *state) {
 	for (size_t i = 0, len = shlenu(state->rooms); i < len; i++) {
 		room_destroy(state->rooms[i].value);
 	}
+
 	shfree(state->rooms);
-	shfree(state->root_rooms);
+	shfree(state->rooms);
 
 	memset(state, 0, sizeof(*state));
 
@@ -113,16 +138,16 @@ lock_and_push(struct state *state, struct queue_item *item) {
 		return -1;
 	}
 
-	pthread_mutex_lock(&state->mutex);
+	pthread_mutex_lock(&state->queue_mutex);
 	if ((queue_push_tail(&state->queue, item)) == -1) {
 		queue_item_free(item);
-		pthread_mutex_unlock(&state->mutex);
+		pthread_mutex_unlock(&state->queue_mutex);
 		return -1;
 	}
-	pthread_cond_broadcast(&state->cond);
+	pthread_cond_broadcast(&state->queue_cond);
 	/* pthread_cond_wait in queue thread blocks until we unlock the mutex here
 	 * before relocking it. */
-	pthread_mutex_unlock(&state->mutex);
+	pthread_mutex_unlock(&state->queue_mutex);
 
 	return 0;
 }
@@ -132,15 +157,15 @@ queue_listener(void *arg) {
 	struct state *state = arg;
 
 	while (!state->done) {
-		pthread_mutex_lock(&state->mutex);
+		pthread_mutex_lock(&state->queue_mutex);
 
 		struct queue_item *item = NULL;
 
 		while (!(item = queue_pop_head(&state->queue)) && !state->done) {
-			pthread_cond_wait(&state->cond, &state->mutex);
+			pthread_cond_wait(&state->queue_cond, &state->queue_mutex);
 		}
 
-		pthread_mutex_unlock(&state->mutex);
+		pthread_mutex_unlock(&state->queue_mutex);
 
 		if (item) {
 			if (!state->done) {
@@ -241,37 +266,16 @@ get_fds(struct state *state, struct pollfd fds[FD_MAX]) {
 	return 0;
 }
 
-static int
-tab_room_set(struct tab_room *tab_room, size_t index) {
-	assert(tab_room);
-
-	int ret = -1;
-
-	pthread_mutex_lock(tab_room->rooms_mutex);
-	struct hm_room *rooms_map = *tab_room->rooms;
-	if ((shlenu(rooms_map)) > index) {
-		tab_room->current_room = (struct tab_room_current_room) {
-		  .index = index,
-		  .id = rooms_map[index].key,
-		  .room = rooms_map[index].value,
-		};
-
-		ret = 0;
-	}
-	pthread_mutex_unlock(tab_room->rooms_mutex);
-
-	return ret;
-}
-
 static enum widget_error
 handle_tab_room(
   struct state *state, struct tab_room *tab_room, struct tb_event *event) {
 	enum widget_error ret = WIDGET_NOOP;
-	struct room *room = tab_room->current_room.room;
 
-	if (!room) {
+	if (!tab_room->selected_room) {
 		return ret;
 	}
+
+	struct room *room = tab_room->selected_room->value;
 
 	if (event->type == TB_EVENT_RESIZE) {
 		struct widget_points points = {0};
@@ -280,11 +284,9 @@ handle_tab_room(
 
 		/* Ensure that new events are filled if we didn't reset. */
 		if (!reset) {
-			pthread_mutex_lock(
-			  &tab_room->current_room.room->realloc_or_modify_mutex);
-			room_fill_new_events(tab_room->current_room.room, &points);
-			pthread_mutex_unlock(
-			  &tab_room->current_room.room->realloc_or_modify_mutex);
+			pthread_mutex_lock(&room->realloc_or_modify_mutex);
+			room_fill_new_events(room, &points);
+			pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 		}
 
 		return WIDGET_REDRAW;
@@ -301,14 +303,10 @@ handle_tab_room(
 		if (event->type == TB_EVENT_KEY && event->mod & TB_MOD_CTRL) {
 			int room_change_ret = -1;
 
+			/* TODO */
 			switch (event->key) {
 			case CTRL('n'):
-				room_change_ret
-				  = tab_room_set(tab_room, tab_room->current_room.index + 1);
-				break;
 			case CTRL('p'):
-				room_change_ret
-				  = tab_room_set(tab_room, tab_room->current_room.index - 1);
 				break;
 			}
 
@@ -332,11 +330,13 @@ handle_tab_room(
 
 				struct sent_message *message = malloc(sizeof(*message));
 
+				assert(tab_room->selected_room);
+
 				*message = (struct sent_message) {
 				  .has_reply = false,
 				  .reply_index = 0,
 				  .buf = buf,
-				  .room_id = tab_room->current_room.id,
+				  .room_id = tab_room->selected_room->key,
 				};
 
 				lock_and_push(
@@ -353,20 +353,6 @@ handle_tab_room(
 	return ret;
 }
 
-void
-node_draw_cb(void *data, struct widget_points *points, bool is_selected) {
-	assert(data);
-	assert(points);
-
-	(void) is_selected;
-
-	struct room *room = data;
-	const char *str = room->info.name ? room->info.name : "Empty Room";
-
-	widget_print_str(points->x1, points->y1, points->x2,
-	  is_selected ? TB_REVERSE : TB_DEFAULT, TB_DEFAULT, str);
-}
-
 static void
 draw_cb(void *data, struct widget_points *points, bool is_selected) {
 	assert(data);
@@ -381,7 +367,7 @@ room_draw_cb(void *data, struct widget_points *points, bool is_selected) {
 	assert(data);
 	assert(points);
 
-	struct room *room = data;
+	struct room *room = ((struct hm_room *) data)->value;
 
 	const char *str = room->info.name ? room->info.name : "Empty Room";
 	widget_print_str(points->x1, points->y1, points->x2,
@@ -393,19 +379,16 @@ tab_room_finish(struct tab_room *tab_room) {
 	if (tab_room) {
 		input_finish(&tab_room->input);
 		treeview_node_finish(&tab_room->treeview.root);
+		arrfree(tab_room->room_nodes);
 		memset(tab_room, 0, sizeof(*tab_room));
 	}
 }
 
 static int
-tab_room_init(struct tab_room *tab_room, struct hm_room **rooms,
-  pthread_mutex_t *rooms_mutex) {
+tab_room_init(struct tab_room *tab_room) {
 	assert(tab_room);
-	assert(rooms);
-	assert(rooms_mutex);
 
-	*tab_room = (struct tab_room) {
-	  .widget = TAB_ROOM_INPUT, .rooms = rooms, .rooms_mutex = rooms_mutex};
+	*tab_room = (struct tab_room) {.widget = TAB_ROOM_INPUT};
 
 	int ret = input_init(&tab_room->input, TB_DEFAULT, false);
 	assert(ret == 0);
@@ -430,19 +413,35 @@ tab_room_init(struct tab_room *tab_room, struct hm_room **rooms,
  * error prone than manually managing the nodes, and isn't really that
  * inefficient if you consider how infrequently room changes occur. */
 static void
-tab_room_reset_rooms(struct tab_room *tab_room, struct hm_room *root_rooms) {
+tab_room_reset_rooms(struct tab_room *tab_room, struct hm_room *rooms) {
 	assert(tab_room);
+
+	if (arrlenu(tab_room->path) > 0) {
+#ifndef NDEBUG
+		/* TODO verify path. */
+#endif
+
+		ptrdiff_t tmp = 0;
+		struct room *space
+		  = shget_ts(rooms, tab_room->path[arrlenu(tab_room->path) - 1], tmp);
+		assert(space);
+		/* TODO rooms = space->children; */
+		rooms = NULL;
+	}
+
+	arrsetlen(tab_room->room_nodes, shlenu(rooms));
 
 	for (size_t i = 0; i < NODE_MAX; i++) {
 		arrsetlen(tab_room->treeview.root.nodes[i]->nodes, 0);
 	}
 
-	for (size_t i = 0, len = shlenu(root_rooms); i < len; i++) {
+	for (size_t i = 0, len = shlenu(rooms); i < len; i++) {
+		treeview_node_init(&tab_room->room_nodes[i], &rooms[i], room_draw_cb);
+
 		treeview_node_add_child(
-		  &tab_room
-			 ->root_nodes[root_rooms[i].value->info.is_space ? NODE_SPACES
-															 : NODE_ROOMS],
-		  &root_rooms[i].value->treeview_node);
+		  &tab_room->root_nodes[rooms[i].value->info.is_space ? NODE_SPACES
+															  : NODE_ROOMS],
+		  &tab_room->room_nodes[i]);
 	}
 
 	/* Find the first non-empty node and choose it's first room as the
@@ -452,8 +451,73 @@ tab_room_reset_rooms(struct tab_room *tab_room, struct hm_room *root_rooms) {
 
 		if (arrlenu(nodes) > 0) {
 			tab_room->treeview.selected = nodes[0];
+			tab_room->selected_room = nodes[0]->data;
+
 			return;
 		}
+	}
+}
+
+static void
+handle_accumulated_sync(struct hm_room **rooms, struct tab_room *tab_room,
+  struct accumulated_sync_data *data) {
+	assert(rooms);
+	assert(tab_room);
+	assert(data);
+
+	bool any_changes = false;
+
+	for (size_t i = 0, len = arrlenu(data->rooms); i < len; i++) {
+		struct accumulated_sync_room *room = &data->rooms[i];
+
+		assert(room->id);
+		assert(room->room);
+
+		switch (room->type) {
+		case MATRIX_ROOM_LEAVE:
+		case MATRIX_ROOM_JOIN:
+		case MATRIX_ROOM_INVITE:
+			break;
+		default:
+			assert(0);
+		}
+
+		ptrdiff_t tmp = 0;
+		if (!(shget_ts(*rooms, room->id, tmp))) {
+			any_changes = true; /* New room added */
+			shput(*rooms, room->id, room->room);
+		}
+
+		if (tab_room->selected_room
+			&& room->id == tab_room->selected_room->key) {
+			assert(room->room == tab_room->selected_room->value);
+
+			struct widget_points points = {0};
+			tab_room_get_buffer_points(&points);
+
+			pthread_mutex_lock(&room->room->realloc_or_modify_mutex);
+			room_fill_new_events(room->room, &points);
+			pthread_mutex_unlock(&room->room->realloc_or_modify_mutex);
+		}
+	}
+
+	for (size_t i = 0, len = arrlenu(data->space_events); i < len; i++) {
+		struct accumulated_space_event *event = &data->space_events[i];
+
+		assert(event->parent);
+		assert(event->child);
+
+		switch (event->status) {
+		case CACHE_DEFERRED_ADDED:
+		case CACHE_DEFERRED_REMOVED:
+			break;
+		default:
+			assert(0);
+		}
+	}
+
+	if (any_changes || arrlenu(data->space_events) > 0) {
+		tab_room_reset_rooms(tab_room, *rooms);
 	}
 }
 
@@ -469,15 +533,9 @@ ui_loop(struct state *state) {
 	get_fds(state, fds);
 
 	struct tab_room tab_room = {0};
-	tab_room_init(&tab_room, &state->rooms, &state->rooms_mutex);
+	tab_room_init(&tab_room);
 
-	tab_room_reset_rooms(&tab_room, state->root_rooms);
-
-	if ((tab_room_set(&tab_room, 0)) == 0) {
-		struct widget_points points = {0};
-		tab_room_get_buffer_points(&points);
-		room_fill_old_events(tab_room.current_room.room, &points);
-	}
+	tab_room_reset_rooms(&tab_room, state->rooms);
 
 	for (bool redraw = true;;) {
 		if (redraw) {
@@ -504,28 +562,19 @@ ui_loop(struct state *state) {
 		if (fds_with_data > 0 && (fds[FD_PIPE].revents & POLLIN)) {
 			fds_with_data--;
 
-			uintptr_t read_room = 0;
+			uintptr_t data = 0;
 
-			if ((read(state->thread_comm_pipe[PIPE_READ], &read_room,
-				  sizeof(read_room)))
-				  == 0
-				&& read_room == (uintptr_t) tab_room.current_room.room) {
-				if (!tab_room.current_room.room) {
-					int ret = tab_room_set(&tab_room, 0);
-					assert(ret == 0);
-				}
+			ssize_t ret
+			  = read(state->thread_comm_pipe[PIPE_READ], &data, sizeof(data));
 
-				struct widget_points points = {0};
-				tab_room_get_buffer_points(&points);
+			assert(ret == 0);
+			assert(data);
 
-				pthread_mutex_lock(
-				  &tab_room.current_room.room->realloc_or_modify_mutex);
-				room_fill_new_events(tab_room.current_room.room, &points);
-				pthread_mutex_unlock(
-				  &tab_room.current_room.room->realloc_or_modify_mutex);
+			handle_accumulated_sync(
+			  &state->rooms, &tab_room, (struct accumulated_sync_data *) data);
 
-				redraw = true;
-			}
+			state->sync_cond_signaled = true;
+			pthread_cond_signal(&state->sync_cond);
 		}
 
 		if (fds_with_data <= 0 || (tb_poll_event(&event)) != TB_OK) {
@@ -535,6 +584,11 @@ ui_loop(struct state *state) {
 		enum widget_error ret = WIDGET_NOOP;
 
 		if (event.key == TB_KEY_CTRL_C) {
+			/* Ensure that the syncer thread never deadlocks if we break here.
+			 * TODO verify that this works. */
+			state->sync_cond_signaled = true;
+			pthread_cond_signal(&state->sync_cond);
+
 			break;
 		}
 
@@ -653,7 +707,7 @@ populate_from_cache(struct state *state) {
 			return -1;
 		}
 
-		struct room *room = room_alloc(info, room_draw_cb);
+		struct room *room = room_alloc(info);
 		assert(room);
 
 		shput(state->rooms, noconst(id), room);
@@ -671,6 +725,7 @@ populate_from_cache(struct state *state) {
 		return -1;
 	}
 
+	/* Hashmap for finding orphaned rooms with no children. */
 	struct hm_room *child_rooms = NULL;
 	/* Don't call sh_new_strdup() as we don't need to duplicate strings here. */
 
@@ -693,6 +748,8 @@ populate_from_cache(struct state *state) {
 			struct room *space_child
 			  = shget(state->rooms, noconst(space.child_id));
 
+			/* TOOD change .children to just be strings so we can handle
+			 * newly joined rooms. */
 			if (!space_child) {
 				continue;
 			}
@@ -716,7 +773,7 @@ populate_from_cache(struct state *state) {
 		}
 
 		/* Orphan since the room/space hasn't been added to any space. */
-		shput(state->root_rooms, state->rooms[i].key, state->rooms[i].value);
+		shput(state->rooms, state->rooms[i].key, state->rooms[i].value);
 	}
 
 	shfree(child_rooms);
@@ -932,9 +989,10 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 	struct matrix_room sync_room;
 	struct cache_save_txn txn = {0};
 
-	int ret = 0;
-
+	struct accumulated_sync_data data = {0};
 	struct cache_deferred_space_event *deferred_events = NULL;
+
+	int ret = 0;
 
 	while ((matrix_sync_room_next(response, &sync_room)) == 0) {
 		switch (sync_room.type) {
@@ -977,7 +1035,7 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 		if (room_needs_info) {
 			/* TODO make room_alloc take a timeline so we don't need this hack
 			 */
-			room = room_alloc((struct room_info) {0}, room_draw_cb);
+			room = room_alloc((struct room_info) {0});
 			assert(room);
 		}
 
@@ -1001,39 +1059,34 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 		cache_save_txn_finish(&txn);
 
 		if (room_needs_info) {
-			if ((ret = cache_room_info_init(
-				   &state->cache, &room->info, sync_room.id))
-				== MDB_SUCCESS) {
-				pthread_mutex_lock(&state->rooms_mutex);
-				shput(state->rooms, sync_room.id, room);
-				pthread_mutex_unlock(&state->rooms_mutex);
+			ret
+			  = cache_room_info_init(&state->cache, &room->info, sync_room.id);
 
-				/* Signal that a new room was added. */
-				uintptr_t ptr = (uintptr_t) NULL;
-				write(state->thread_comm_pipe[PIPE_WRITE], &ptr, sizeof(ptr));
-			} else {
+			if (ret != MDB_SUCCESS) {
 				LOG(LOG_ERROR, "Failed to get room info for room '%s': %s",
 				  sync_room.id, mdb_strerror(ret));
-				room_destroy(room);
+				assert(0);
 			}
-		} else {
-			uintptr_t ptr = (uintptr_t) room;
-			write(state->thread_comm_pipe[PIPE_WRITE], &ptr, sizeof(ptr));
 		}
+
+		arrput(data.rooms,
+		  ((struct accumulated_sync_room) {
+			.type = sync_room.type, .room = room, .id = sync_room.id}));
 	}
 
 	for (size_t i = 0, len = arrlenu(deferred_events); i < len; i++) {
 		enum cache_deferred_ret deferred_ret
 		  = cache_process_deferred_event(&state->cache, &deferred_events[i]);
 
-		switch (deferred_ret) {
-		case CACHE_DEFERRED_FAIL:
-		case CACHE_DEFERRED_ADDED:
-		case CACHE_DEFERRED_REMOVED:
-			break;
-		default:
-			assert(0);
+		if (deferred_ret == CACHE_DEFERRED_FAIL) {
+			continue;
 		}
+
+		arrput(data.space_events, ((struct accumulated_space_event) {
+									.status = deferred_ret,
+									.parent = deferred_events[i].parent,
+									.child = deferred_events[i].child,
+								  }));
 	}
 
 	arrfree(deferred_events);
@@ -1045,7 +1098,26 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 		   &state->cache, DB_KEY_NEXT_BATCH, response->next_batch))
 		!= MDB_SUCCESS) {
 		LOG(LOG_ERROR, "Failed to save next batch: %s", mdb_strerror(ret));
+		assert(0);
 	}
+
+	uintptr_t ptr = (uintptr_t) &data;
+
+	write(state->thread_comm_pipe[PIPE_WRITE], &ptr, sizeof(ptr));
+
+	pthread_mutex_lock(&state->sync_mutex);
+
+	/* Wait until the main thread acknowledges the data passed above. */
+	while (!(state->sync_cond_signaled)) {
+		pthread_cond_wait(&state->sync_cond, &state->sync_mutex);
+	}
+
+	state->sync_cond_signaled = false;
+
+	pthread_mutex_unlock(&state->sync_mutex);
+
+	arrfree(data.rooms);
+	arrfree(data.space_events);
 }
 
 static int
@@ -1163,9 +1235,10 @@ main(void) {
 	LOG(LOG_MESSAGE, "Initialized");
 
 	struct state state = {
-	  .cond = PTHREAD_COND_INITIALIZER,
-	  .mutex = PTHREAD_MUTEX_INITIALIZER,
-	  .rooms_mutex = PTHREAD_MUTEX_INITIALIZER,
+	  .queue_cond = PTHREAD_COND_INITIALIZER,
+	  .queue_mutex = PTHREAD_MUTEX_INITIALIZER,
+	  .sync_cond = PTHREAD_COND_INITIALIZER,
+	  .sync_mutex = PTHREAD_MUTEX_INITIALIZER,
 	  .thread_comm_pipe = {-1, -1},
 	};
 

@@ -977,6 +977,8 @@ save_json_with_index(struct cache_save_txn *txn,
 	return ret;
 }
 
+/* TODO Just clean up and re-create the relations of all rooms with any
+ * space-related change. */
 enum cache_deferred_ret
 cache_process_deferred_event(
   struct cache *cache, struct cache_deferred_space_event *deferred_event) {

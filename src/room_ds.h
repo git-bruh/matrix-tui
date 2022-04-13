@@ -64,7 +64,6 @@ struct room {
 	struct members_map *members;
 	struct room **children; /* If the room is a space. */
 	struct room_info info;
-	struct treeview_node treeview_node;
 	/* Rendered message indices. */
 	struct message_buffer buffer;
 	/* .buf MUST have an initial capacity set with arrsetcap. Binary search is
@@ -91,7 +90,7 @@ room_fill_new_events(struct room *room, struct widget_points *points);
 bool
 room_reset_if_recalculate(struct room *room, struct widget_points *points);
 struct room *
-room_alloc(struct room_info info, treeview_draw_cb draw_cb);
+room_alloc(struct room_info info);
 void
 room_destroy(struct room *room);
 #endif /* !ROOM_DS_H */
