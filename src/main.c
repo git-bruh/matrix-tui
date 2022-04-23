@@ -97,7 +97,9 @@ cleanup(struct state *state) {
 
 	memset(state, 0, sizeof(*state));
 
-	printf("%s\n", "Any errors have been logged to '" LOG_PATH "'");
+	printf("%s '%s'\n", "Debug information has been logged to", log_path());
+
+	log_mutex_destroy();
 }
 
 static void
@@ -1123,7 +1125,7 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 static int
 redirect_stderr_log(void) {
 	const mode_t perms = 0600;
-	int fd = open(LOG_PATH, O_CREAT | O_RDWR | O_APPEND, perms);
+	int fd = open(log_path(), O_CREAT | O_RDWR | O_APPEND, perms);
 
 	if (fd == -1 || (dup2(fd, STDERR_FILENO)) == -1) {
 		return -1;
@@ -1213,6 +1215,8 @@ init_everything(struct state *state) {
 
 int
 main(void) {
+	log_path_set();
+
 	/* Only main thread active. */
 
 	/* NOLINTNEXTLINE(concurrency-mt-unsafe) */
@@ -1228,7 +1232,8 @@ main(void) {
 	}
 
 	if ((redirect_stderr_log()) == -1) {
-		perror("Failed to open log file '" LOG_PATH "'");
+		LOG(LOG_ERROR, "Failed to open log file '%s': %s", log_path(),
+		  strerror(errno));
 		return EXIT_FAILURE;
 	}
 

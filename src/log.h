@@ -33,9 +33,11 @@ log_level_and_time(enum log_level level) {
 #define LOG(level, ...)                                                        \
 	do {                                                                       \
 		_Static_assert(level < LOG_MAX, "Invalid log level!");                 \
+		log_mutex_lock();                                                      \
 		fprintf(stderr, "%s:%d ", __FILE__, __LINE__);                         \
 		log_level_and_time(level);                                             \
 		fprintf(stderr, __VA_ARGS__);                                          \
 		fputc('\n', stderr);                                                   \
+		log_mutex_unlock();                                                    \
 	} while (0)
 #endif /* !LOG_H */

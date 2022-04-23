@@ -21,6 +21,7 @@ common_src = [
     'src/queue_callbacks.c',
     'src/render_message.c',
     'src/room_ds.c',
+    'src/scoped_globals.c'
 ]
 
 src = common_src + 'src/main.c'
@@ -39,7 +40,6 @@ tests = []
 c_args = [
     '-D_GNU_SOURCE',
     '-D_FORTIFY_SOURCE=2',
-    '-DLOG_PATH="/tmp/matrix-tui.log"',
     '-DBUG_URL="https://github.com/git-bruh/matrix-tui/issues"',
     '-fstack-protector-strong',
     '--param=ssp-buffer-size=4',

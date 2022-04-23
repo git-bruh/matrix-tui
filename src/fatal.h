@@ -36,27 +36,41 @@ GEN_WRAPPER(
 
 #undef GEN_WRAPPER
 
-_Noreturn FATAL_DECL void
-fatal_die(const char *msg) {
-#define ESC "\033"
-	/* Stolen from busybox's 'console-tools/reset.c'.
-	 * We can't call tb_shutdown() as it is not thread safe. */
-	char reset[] = ESC "c" ESC "(B" ESC "[m" ESC "[J" ESC "[?25h";
-#undef ESC
+void
+log_path_set(void);
+const char *
+log_path(void);
+void
+log_mutex_lock();
+void
+log_mutex_unlock();
+void
+log_mutex_destroy();
 
-	safe_write(STDOUT_FILENO, reset, strlen(reset));
-	safe_write(STDOUT_FILENO, msg, strlen(msg));
-	abort();
-}
+/* Escape stolen from busybox's 'console-tools/reset.c'.
+ * We can't call tb_shutdown() as it is not thread safe. */
+#define FATAL_PRINT_DIE(s, ...)                                                \
+	do {                                                                       \
+		printf("%s", "\033c\033(B\033[m\033[J\033[?25h");                      \
+		printf(s, __VA_ARGS__);                                                \
+		fflush(stdout);                                                        \
+		abort();                                                               \
+	} while (0)
 
 #define return_or_fatal(ptr)                                                   \
 	do {                                                                       \
 		__typeof__((ptr)) _tmp = (ptr);                                        \
 		if (!_tmp) {                                                           \
-			fatal_die("Out Of Memory\n");                                      \
+			FATAL_PRINT_DIE("%s\n", "Out Of Memory");                          \
 		}                                                                      \
 		return _tmp;                                                           \
 	} while (0)
+
+#define fatal_abort(void)                                                      \
+	FATAL_PRINT_DIE(                                                           \
+	  "The program encountered a fatal bug. Please file an issue at " BUG_URL  \
+	  " with the contents of '%s'\n",                                          \
+	  log_path());
 
 FATAL_DECL void *
 fatal_calloc(size_t nelem, size_t elsize) {
@@ -81,10 +95,6 @@ fatal_strndup(const char *s, size_t size) {
 #undef return_or_fatal
 #undef FATAL_DECL
 
-#define fatal_abort()                                                          \
-	fatal_die(                                                                 \
-	  "The program encountered a fatal bug. Please file an issue at " BUG_URL  \
-	  " with the contents of '" LOG_PATH "'\n")
 #define fatal_malloc(size) fatal_realloc(NULL, size)
 #define calloc(nelem, elsize) fatal_calloc(nelem, elsize)
 #define malloc(size) fatal_malloc(size)
