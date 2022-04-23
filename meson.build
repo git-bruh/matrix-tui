@@ -64,6 +64,10 @@ warning_c_args = [
 add_project_arguments(c_args, language: 'c')
 add_project_arguments(cc.get_supported_arguments(warning_c_args), language: 'c')
 
+if get_option('b_sanitize').contains('undefined') and cc.get_id() == 'clang'
+	add_global_arguments('-fsanitize-blacklist=../asan.supp', language: 'c')
+endif
+
 libmatrix_proj = subproject('libmatrix')
 libmatrix_dep = libmatrix_proj.get_variable('libmatrix_dep')
 
