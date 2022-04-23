@@ -573,6 +573,7 @@ ui_loop(struct state *state) {
 			assert(data);
 
 			handle_accumulated_sync(
+			  /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
 			  &state->rooms, &tab_room, (struct accumulated_sync_data *) data);
 
 			state->sync_cond_signaled = true;
@@ -1233,6 +1234,7 @@ main(void) {
 
 	if ((redirect_stderr_log()) == -1) {
 		LOG(LOG_ERROR, "Failed to open log file '%s': %s", log_path(),
+		  /* NOLINTNEXTLINE(concurrency-mt-unsafe) */
 		  strerror(errno));
 		return EXIT_FAILURE;
 	}
