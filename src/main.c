@@ -181,6 +181,52 @@ queue_listener(void *arg) {
 	pthread_exit(NULL);
 }
 
+static void
+reset_room_buffer(struct room *room) {
+	struct widget_points points = {0};
+	tab_room_get_buffer_points(&points);
+	bool reset = room_reset_if_recalculate(room, &points);
+
+	/* Ensure that new events are filled if we didn't reset. */
+	if (!reset) {
+		pthread_mutex_lock(&room->realloc_or_modify_mutex);
+		room_fill_new_events(room, &points);
+		pthread_mutex_unlock(&room->realloc_or_modify_mutex);
+	}
+}
+
+static enum widget_error
+handle_tree(struct tab_room *tab_room, struct tb_event *event) {
+	assert(tab_room);
+	assert(event);
+
+	switch (event->key) {
+	case TB_KEY_ENTER:
+		/* Selected and not a root node (Invites/Spaces/DMs/Rooms/...) */
+		if (tab_room->treeview.selected
+			&& tab_room->treeview.selected->parent->parent) {
+			tab_room->selected_room = tab_room->treeview.selected->data;
+			assert(!tab_room->selected_room->value->children);
+
+			reset_room_buffer(tab_room->selected_room->value);
+
+			return WIDGET_REDRAW;
+		}
+
+		break;
+	case TB_KEY_SPACE:
+		return treeview_event(&tab_room->treeview, TREEVIEW_EXPAND);
+	case TB_KEY_ARROW_UP:
+		return treeview_event(&tab_room->treeview, TREEVIEW_UP);
+	case TB_KEY_ARROW_DOWN:
+		return treeview_event(&tab_room->treeview, TREEVIEW_DOWN);
+	default:
+		break;
+	}
+
+	return WIDGET_NOOP;
+}
+
 static enum widget_error
 handle_input(struct input *input, struct tb_event *event, bool *enter_pressed) {
 	assert(input);
@@ -280,17 +326,7 @@ handle_tab_room(
 	struct room *room = tab_room->selected_room->value;
 
 	if (event->type == TB_EVENT_RESIZE) {
-		struct widget_points points = {0};
-		tab_room_get_buffer_points(&points);
-		bool reset = room_reset_if_recalculate(room, &points);
-
-		/* Ensure that new events are filled if we didn't reset. */
-		if (!reset) {
-			pthread_mutex_lock(&room->realloc_or_modify_mutex);
-			room_fill_new_events(room, &points);
-			pthread_mutex_unlock(&room->realloc_or_modify_mutex);
-		}
-
+		reset_room_buffer(room);
 		return WIDGET_REDRAW;
 	}
 
@@ -301,24 +337,10 @@ handle_tab_room(
 	} else {
 		bool enter_pressed = false;
 
-		/* Shortcuts */
-		if (event->type == TB_EVENT_KEY && event->mod & TB_MOD_CTRL) {
-			int room_change_ret = -1;
-
-			/* TODO */
-			switch (event->key) {
-			case CTRL('n'):
-			case CTRL('p'):
-				break;
-			}
-
-			if (room_change_ret == 0) {
-				event->type = TB_EVENT_RESIZE;
-				return handle_tab_room(state, tab_room, event);
-			}
-		}
-
 		switch (tab_room->widget) {
+		case TAB_ROOM_TREE:
+			ret = handle_tree(tab_room, event);
+			break;
 		case TAB_ROOM_INPUT:
 			ret = handle_input(&tab_room->input, event, &enter_pressed);
 
@@ -348,7 +370,7 @@ handle_tab_room(
 			}
 			break;
 		default:
-			break;
+			assert(0);
 		}
 	}
 
@@ -390,7 +412,7 @@ static int
 tab_room_init(struct tab_room *tab_room) {
 	assert(tab_room);
 
-	*tab_room = (struct tab_room) {.widget = TAB_ROOM_INPUT};
+	*tab_room = (struct tab_room) {.widget = TAB_ROOM_TREE};
 
 	int ret = input_init(&tab_room->input, TB_DEFAULT, false);
 	assert(ret == 0);
@@ -452,15 +474,21 @@ tab_room_reset_rooms(struct tab_room *tab_room, struct hm_room *rooms) {
 		struct treeview_node **nodes = tab_room->treeview.root.nodes[i]->nodes;
 
 		if (arrlenu(nodes) > 0) {
-			tab_room->treeview.selected = nodes[0];
-			tab_room->selected_room = nodes[0]->data;
+			enum widget_error ret
+			  = treeview_event(&tab_room->treeview, TREEVIEW_JUMP, nodes[0]);
+			assert(ret == WIDGET_REDRAW);
+
+			tab_room->selected_room = tab_room->treeview.selected->data;
 
 			return;
 		}
 	}
+
+	tab_room->treeview.selected = NULL;
+	tab_room->selected_room = NULL;
 }
 
-static void
+static bool
 handle_accumulated_sync(struct hm_room **rooms, struct tab_room *tab_room,
   struct accumulated_sync_data *data) {
 	assert(rooms);
@@ -493,6 +521,10 @@ handle_accumulated_sync(struct hm_room **rooms, struct tab_room *tab_room,
 		if (tab_room->selected_room
 			&& room->id == tab_room->selected_room->key) {
 			assert(room->room == tab_room->selected_room->value);
+			/* Redraw if the current room was modified. We don't condition on
+			 * room_fill_new_events() returning true as events could've been
+			 * deleted in sync_cb aswell. */
+			any_changes = true;
 
 			struct widget_points points = {0};
 			tab_room_get_buffer_points(&points);
@@ -520,7 +552,10 @@ handle_accumulated_sync(struct hm_room **rooms, struct tab_room *tab_room,
 
 	if (any_changes || arrlenu(data->space_events) > 0) {
 		tab_room_reset_rooms(tab_room, *rooms);
+		return true;
 	}
+
+	return false;
 }
 
 static void
@@ -572,7 +607,8 @@ ui_loop(struct state *state) {
 			assert(ret == 0);
 			assert(data);
 
-			handle_accumulated_sync(
+			/* Ensure that we redraw if we had changes. */
+			redraw = handle_accumulated_sync(
 			  /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
 			  &state->rooms, &tab_room, (struct accumulated_sync_data *) data);
 

@@ -31,7 +31,9 @@ struct room;
 struct tab_room {
 	enum tab_room_widget {
 		TAB_ROOM_INPUT = 0,
-		TAB_ROOM_MESSAGE,
+		TAB_ROOM_TREE,
+		/* TODO */
+		TAB_ROOM_MESSAGE_BUFFER,
 		TAB_ROOM_MEMBERS,
 	} widget;
 	struct input input;
