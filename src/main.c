@@ -440,6 +440,8 @@ static void
 tab_room_reset_rooms(struct tab_room *tab_room, struct hm_room *rooms) {
 	assert(tab_room);
 
+	tab_room->treeview.selected = NULL;
+
 	if (arrlenu(tab_room->path) > 0) {
 #ifndef NDEBUG
 		/* TODO verify path. */
@@ -466,6 +468,17 @@ tab_room_reset_rooms(struct tab_room *tab_room, struct hm_room *rooms) {
 		  &tab_room->root_nodes[rooms[i].value->info.is_space ? NODE_SPACES
 															  : NODE_ROOMS],
 		  &tab_room->room_nodes[i]);
+
+		if (tab_room->selected_room
+			&& rooms[i].value == tab_room->selected_room->value) {
+			enum widget_error ret = treeview_event(
+			  &tab_room->treeview, TREEVIEW_JUMP, &tab_room->room_nodes[i]);
+			assert(ret == WIDGET_REDRAW);
+		}
+	}
+
+	if (tab_room->treeview.selected) {
+		return;
 	}
 
 	/* Find the first non-empty node and choose it's first room as the
@@ -474,17 +487,15 @@ tab_room_reset_rooms(struct tab_room *tab_room, struct hm_room *rooms) {
 		struct treeview_node **nodes = tab_room->treeview.root.nodes[i]->nodes;
 
 		if (arrlenu(nodes) > 0) {
-			enum widget_error ret
-			  = treeview_event(&tab_room->treeview, TREEVIEW_JUMP, nodes[0]);
+			enum widget_error ret = treeview_event(
+			  &tab_room->treeview, TREEVIEW_JUMP, &tab_room->room_nodes[i]);
 			assert(ret == WIDGET_REDRAW);
 
 			tab_room->selected_room = tab_room->treeview.selected->data;
-
 			return;
 		}
 	}
 
-	tab_room->treeview.selected = NULL;
 	tab_room->selected_room = NULL;
 }
 
