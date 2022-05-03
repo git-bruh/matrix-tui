@@ -495,7 +495,8 @@ handle_accumulated_sync(struct hm_room **rooms, struct tab_room *tab_room,
 	assert(tab_room);
 	assert(data);
 
-	bool any_changes = false;
+	bool any_tree_changes = false;
+	bool any_room_events = false;
 
 	for (size_t i = 0, len = arrlenu(data->rooms); i < len; i++) {
 		struct accumulated_sync_room *room = &data->rooms[i];
@@ -514,24 +515,15 @@ handle_accumulated_sync(struct hm_room **rooms, struct tab_room *tab_room,
 
 		ptrdiff_t tmp = 0;
 		if (!(shget_ts(*rooms, room->id, tmp))) {
-			any_changes = true; /* New room added */
+			any_tree_changes = true; /* New room added */
 			shput(*rooms, room->id, room->room);
 		}
 
 		if (tab_room->selected_room
-			&& room->id == tab_room->selected_room->key) {
+			&& strcmp(room->id, tab_room->selected_room->key) == 0) {
 			assert(room->room == tab_room->selected_room->value);
-			/* Redraw if the current room was modified. We don't condition on
-			 * room_fill_new_events() returning true as events could've been
-			 * deleted in sync_cb aswell. */
-			any_changes = true;
-
-			struct widget_points points = {0};
-			tab_room_get_buffer_points(&points);
-
-			pthread_mutex_lock(&room->room->realloc_or_modify_mutex);
-			room_fill_new_events(room->room, &points);
-			pthread_mutex_unlock(&room->room->realloc_or_modify_mutex);
+			any_room_events = true;
+			reset_room_buffer(tab_room->selected_room->value);
 		}
 	}
 
@@ -550,12 +542,12 @@ handle_accumulated_sync(struct hm_room **rooms, struct tab_room *tab_room,
 		}
 	}
 
-	if (any_changes || arrlenu(data->space_events) > 0) {
+	if (any_tree_changes || arrlenu(data->space_events) > 0) {
 		tab_room_reset_rooms(tab_room, *rooms);
 		return true;
 	}
 
-	return false;
+	return any_tree_changes || any_room_events;
 }
 
 static void
