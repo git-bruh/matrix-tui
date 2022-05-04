@@ -128,7 +128,7 @@ tab_room_redraw(struct tab_room *tab_room) {
 	message_buffer_redraw(&room->buffer, &points);
 	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 
-	widget_points_set(&points, 1, tree_width - 1, 1, height);
+	widget_points_set(&points, 1, tree_width - 1, 1, height - 1);
 	treeview_redraw(&tab_room->treeview, &points);
 
 	widget_points_set(&points, 1, tree_width - 1, 0, height);
