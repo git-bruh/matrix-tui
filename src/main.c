@@ -214,13 +214,15 @@ handle_tree(struct tab_room *tab_room, struct tb_event *event) {
 		}
 
 		break;
-	case TB_KEY_SPACE:
-		return treeview_event(&tab_room->treeview, TREEVIEW_EXPAND);
 	case TB_KEY_ARROW_UP:
 		return treeview_event(&tab_room->treeview, TREEVIEW_UP);
 	case TB_KEY_ARROW_DOWN:
 		return treeview_event(&tab_room->treeview, TREEVIEW_DOWN);
 	default:
+		if (event->ch == ' ') {
+			return treeview_event(&tab_room->treeview, TREEVIEW_EXPAND);
+		}
+
 		break;
 	}
 
