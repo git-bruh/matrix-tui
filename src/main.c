@@ -195,8 +195,12 @@ reset_room_buffer(struct room *room) {
 	}
 }
 
+static void
+tab_room_reset_rooms(struct tab_room *tab_room, struct hm_room *rooms);
+
 static enum widget_error
-handle_tree(struct tab_room *tab_room, struct tb_event *event) {
+handle_tree(
+  struct tab_room *tab_room, struct tb_event *event, struct hm_room *rooms) {
 	assert(tab_room);
 	assert(event);
 
@@ -206,9 +210,16 @@ handle_tree(struct tab_room *tab_room, struct tb_event *event) {
 		if (tab_room->treeview.selected
 			&& tab_room->treeview.selected->parent->parent) {
 			tab_room->selected_room = tab_room->treeview.selected->data;
-			assert(!tab_room->selected_room->value->children);
 
-			reset_room_buffer(tab_room->selected_room->value);
+			if (tab_room->selected_room->value->info.is_space) {
+				arrput(tab_room->path, tab_room->selected_room->key);
+				tab_room->selected_room = NULL;
+
+				/* Reset to the first room in the space. */
+				tab_room_reset_rooms(tab_room, rooms);
+			} else {
+				reset_room_buffer(tab_room->selected_room->value);
+			}
 
 			return WIDGET_REDRAW;
 		}
@@ -341,7 +352,7 @@ handle_tab_room(
 
 		switch (tab_room->widget) {
 		case TAB_ROOM_TREE:
-			ret = handle_tree(tab_room, event);
+			ret = handle_tree(tab_room, event, state->rooms);
 			break;
 		case TAB_ROOM_INPUT:
 			ret = handle_input(&tab_room->input, event, &enter_pressed);
@@ -406,6 +417,7 @@ tab_room_finish(struct tab_room *tab_room) {
 		input_finish(&tab_room->input);
 		treeview_node_finish(&tab_room->treeview.root);
 		arrfree(tab_room->room_nodes);
+		arrfree(tab_room->path);
 		memset(tab_room, 0, sizeof(*tab_room));
 	}
 }
@@ -434,6 +446,24 @@ tab_room_init(struct tab_room *tab_room) {
 	return 0;
 }
 
+static void
+tab_room_add_room(
+  struct tab_room *tab_room, size_t index, struct hm_room *room) {
+	treeview_node_init(&tab_room->room_nodes[index], room, room_draw_cb);
+
+	treeview_node_add_child(
+	  &tab_room
+		 ->root_nodes[room->value->info.is_space ? NODE_SPACES : NODE_ROOMS],
+	  &tab_room->room_nodes[index]);
+
+	if (tab_room->selected_room
+		&& room->value == tab_room->selected_room->value) {
+		enum widget_error ret = treeview_event(
+		  &tab_room->treeview, TREEVIEW_JUMP, &tab_room->room_nodes[index]);
+		assert(ret == WIDGET_REDRAW);
+	}
+}
+
 /* We're lazy so we just reset the whole tree view on any space related change
  * such as the removal/addition of a room from/to a space. This is much less
  * error prone than manually managing the nodes, and isn't really that
@@ -444,38 +474,38 @@ tab_room_reset_rooms(struct tab_room *tab_room, struct hm_room *rooms) {
 
 	tab_room->treeview.selected = NULL;
 
-	if (arrlenu(tab_room->path) > 0) {
-#ifndef NDEBUG
-		/* TODO verify path. */
-#endif
-
-		ptrdiff_t tmp = 0;
-		struct room *space
-		  = shget_ts(rooms, tab_room->path[arrlenu(tab_room->path) - 1], tmp);
-		assert(space);
-		/* TODO rooms = space->children; */
-		rooms = NULL;
-	}
-
-	arrsetlen(tab_room->room_nodes, shlenu(rooms));
-
 	for (size_t i = 0; i < NODE_MAX; i++) {
 		arrsetlen(tab_room->treeview.root.nodes[i]->nodes, 0);
 	}
 
-	for (size_t i = 0, len = shlenu(rooms); i < len; i++) {
-		treeview_node_init(&tab_room->room_nodes[i], &rooms[i], room_draw_cb);
+	if (arrlenu(tab_room->path) > 0) {
+		/* TODO verify path. */
+		ptrdiff_t tmp = 0;
+		struct room *space
+		  = shget_ts(rooms, tab_room->path[arrlenu(tab_room->path) - 1], tmp);
+		assert(space);
 
-		treeview_node_add_child(
-		  &tab_room->root_nodes[rooms[i].value->info.is_space ? NODE_SPACES
-															  : NODE_ROOMS],
-		  &tab_room->room_nodes[i]);
+		/* A child space might have more rooms than root orphans. */
+		arrsetlen(tab_room->room_nodes, shlenu(space->children));
 
-		if (tab_room->selected_room
-			&& rooms[i].value == tab_room->selected_room->value) {
-			enum widget_error ret = treeview_event(
-			  &tab_room->treeview, TREEVIEW_JUMP, &tab_room->room_nodes[i]);
-			assert(ret == WIDGET_REDRAW);
+		for (size_t i = 0, skipped = 0, len = shlenu(space->children); i < len;
+			 i++) {
+			ptrdiff_t child_index
+			  = shgeti_ts(rooms, space->children[i].key, tmp);
+
+			/* Child room not joined yet. */
+			if (child_index == -1) {
+				skipped++;
+				continue;
+			}
+
+			tab_room_add_room(tab_room, i - skipped, &rooms[child_index]);
+		}
+	} else {
+		arrsetlen(tab_room->room_nodes, shlenu(rooms));
+
+		for (size_t i = 0, len = shlenu(rooms); i < len; i++) {
+			tab_room_add_room(tab_room, i, &rooms[i]);
 		}
 	}
 
@@ -489,8 +519,8 @@ tab_room_reset_rooms(struct tab_room *tab_room, struct hm_room *rooms) {
 		struct treeview_node **nodes = tab_room->treeview.root.nodes[i]->nodes;
 
 		if (arrlenu(nodes) > 0) {
-			enum widget_error ret = treeview_event(
-			  &tab_room->treeview, TREEVIEW_JUMP, &tab_room->room_nodes[i]);
+			enum widget_error ret
+			  = treeview_event(&tab_room->treeview, TREEVIEW_JUMP, nodes[0]);
 			assert(ret == WIDGET_REDRAW);
 
 			tab_room->selected_room = tab_room->treeview.selected->data;
@@ -771,7 +801,7 @@ populate_from_cache(struct state *state) {
 
 	/* Hashmap for finding orphaned rooms with no children. */
 	struct hm_room *child_rooms = NULL;
-	/* Don't call sh_new_strdup() as we don't need to duplicate strings here. */
+	/* Don't call SHMAP_INIT() as we don't need to duplicate strings here. */
 
 	while ((cache_iterator_next(&iterator)) == MDB_SUCCESS) {
 		assert(space.id);
@@ -794,15 +824,16 @@ populate_from_cache(struct state *state) {
 
 			/* TOOD change .children to just be strings so we can handle
 			 * newly joined rooms. */
-			if (!space_child) {
-				continue;
+			if (space_child) {
+				LOG(LOG_MESSAGE, "Got %s '%s' in space '%s'",
+				  space_child->info.is_space ? "space" : "room", space.child_id,
+				  space.id);
+			} else {
+				LOG(LOG_MESSAGE, "Got unknown room '%s' in space '%s'",
+				  space.child_id, space.id);
 			}
 
-			LOG(LOG_MESSAGE, "Got %s '%s' in space '%s'",
-			  space_child->info.is_space ? "space" : "room", space.child_id,
-			  space.id);
-
-			room_add_child(space_room, space_child);
+			room_add_child(space_room, noconst(space.child_id));
 			shput(child_rooms, noconst(space.child_id), space_child);
 		}
 

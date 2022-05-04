@@ -112,11 +112,11 @@ room_bsearch(struct room *room, uint64_t index) {
 }
 
 void
-room_add_child(struct room *room, struct room *child) {
+room_add_child(struct room *room, char *child) {
 	assert(room);
 	assert(child);
 
-	arrput(room->children, child);
+	shput(room->children, child, NULL);
 }
 
 int
@@ -385,6 +385,7 @@ room_alloc(struct room_info info) {
 		};
 
 		SHMAP_INIT(room->members);
+		SHMAP_INIT(room->children);
 
 		for (size_t i = 0; i < TIMELINE_MAX; i++) {
 			if ((timeline_init(&room->timelines[i])) == -1) {
@@ -415,7 +416,7 @@ room_destroy(struct room *room) {
 		}
 
 		shfree(room->members);
-		arrfree(room->children);
+		shfree(room->children);
 		message_buffer_finish(&room->buffer);
 		cache_room_info_finish(&room->info);
 		free(room);

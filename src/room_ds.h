@@ -23,7 +23,8 @@
 		pthread_mutex_unlock(mutex);                                           \
 	} while (0)
 
-/* stb_ds doesn't duplicate strings by default. */
+/* stb_ds doesn't duplicate strings by default.
+ * We rarely delete from the hashmaps so we use an arena allocator. */
 #define SHMAP_INIT(map) sh_new_strdup(map)
 
 enum timeline_type {
@@ -62,7 +63,9 @@ struct timeline {
 struct room {
 	size_t already_consumed; /* No. of items consumed from timeline. */
 	struct members_map *members;
-	struct room **children; /* If the room is a space. */
+	/* If the room is a space. children[i].value is always NULL as we just use
+	 * this as a set, not hashmap. */
+	struct hm_room *children;
 	struct room_info info;
 	/* Rendered message indices. */
 	struct message_buffer buffer;
@@ -77,7 +80,7 @@ struct room {
 struct message *
 room_bsearch(struct room *room, uint64_t index);
 void
-room_add_child(struct room *room, struct room *child);
+room_add_child(struct room *room, char *child);
 int
 room_put_member(struct room *room, char *mxid, char *username);
 int
