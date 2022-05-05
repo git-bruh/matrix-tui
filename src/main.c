@@ -809,7 +809,8 @@ populate_from_cache(struct state *state) {
 		struct room *space_room = shget(state->rooms, noconst(space.id));
 
 		if (!space_room) {
-			/* TODO unknown room. */
+			LOG(LOG_WARN, "Got unknown space '%s'", space.id);
+			assert(0); /* TODO */
 			continue;
 		}
 
@@ -848,7 +849,8 @@ populate_from_cache(struct state *state) {
 		}
 
 		/* Orphan since the room/space hasn't been added to any space. */
-		shput(state->rooms, state->rooms[i].key, state->rooms[i].value);
+		/* TODO shput(state->rooms, state->rooms[i].key, state->rooms[i].value);
+		 */
 	}
 
 	shfree(child_rooms);
