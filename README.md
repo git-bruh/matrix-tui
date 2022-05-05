@@ -1,6 +1,55 @@
 # matrix-tui
 
-A terminal based Matrix client. WIP, not usable yet. Discard the following information for now.
+A terminal based Matrix client, WIP.
+
+# TODO
+
+- [ ] UI
+  - [x] Login
+  - [ ] Register
+  - [ ] Autocomplete Usernames
+  - [ ] Typing Indicators
+  - [ ] Indicators For Unread Messages
+  - [ ] Treeview
+    - [x] Navigation (Including Nested Spaces)
+    - [ ] Calculate Orphaned Rooms For Root
+    - [ ] Bottom Status Bar For Traversing Space Path
+    - [ ] Group Rooms
+      - [ ] DMs
+      - [ ] Invites
+      - [x] Spaces
+  - [ ] Maintaining State Of Rooms
+    - [ ] Previously Orphaned Room Added To A Space
+    - [ ] Room Removed From Space And Orphaned
+    - [ ] Room Removed From Space And Present In Another Space
+    - [ ] DM converted to Room / Room converted to DM
+    - [ ] Invite Accepted
+    - [x] Room Joined
+    - [ ] Room Left / Space Left, Orphaning All Rooms Under It
+    - [ ] Room Topic Changed
+    - [ ] Room Name Changed
+  - [ ] Fuzzy Search For Rooms
+  - [ ] Message Buffer
+    - [x] Word Wrap
+    - [ ] HTML Rendering
+      - [ ] Markdown
+      - [ ] Syntax Highlighting Code
+    - [ ] Interactive / Clickable Elements
+      - [ ] Horizontally Scrollable Code Blocks
+      - [ ] Clickable URLs / Hyperlinks
+- [ ] Rooms
+  - [ ] Sending Messages
+    - [x] Plaintext
+    - [ ] Markdown
+    - [ ] Mentioning Users
+    - [ ] Replies
+  - [ ] Editing Messages
+  - [ ] Display Topic
+  - [ ] Joining (Invites or by ID)
+  - [ ] Pagination
+  - [ ] Reactions
+- [ ] Write Tests
+
 
 # Pre-requisites
 
