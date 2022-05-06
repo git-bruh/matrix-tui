@@ -63,9 +63,12 @@ struct timeline {
 struct room {
 	size_t already_consumed; /* No. of items consumed from timeline. */
 	struct members_map *members;
-	/* If the room is a space. children[i].value is always NULL as we just use
+	/* If the room is a space. children[i].value is always true as we just use
 	 * this as a set, not hashmap. */
-	struct hm_room *children;
+	struct {
+		char *key;
+		bool value;
+	} * children;
 	struct room_info info;
 	/* Rendered message indices. */
 	struct message_buffer buffer;
@@ -81,6 +84,8 @@ struct message *
 room_bsearch(struct room *room, uint64_t index);
 void
 room_add_child(struct room *room, char *child);
+void
+room_remove_child(struct room *room, char *child);
 int
 room_put_member(struct room *room, char *mxid, char *username);
 int

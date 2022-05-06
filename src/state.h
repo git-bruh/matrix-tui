@@ -50,7 +50,7 @@ struct state {
 	struct matrix *matrix;
 	struct hm_room *rooms;
 	/* Orphaned rooms/spaces without a parent space. */
-	struct hm_room *root_rooms;
+	struct hm_room *orphaned_rooms;
 };
 
 #define read safe_read

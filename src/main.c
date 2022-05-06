@@ -93,7 +93,7 @@ cleanup(struct state *state) {
 	}
 
 	shfree(state->rooms);
-	shfree(state->rooms);
+	shfree(state->orphaned_rooms);
 
 	memset(state, 0, sizeof(*state));
 
@@ -196,11 +196,11 @@ reset_room_buffer(struct room *room) {
 }
 
 static void
-tab_room_reset_rooms(struct tab_room *tab_room, struct hm_room *rooms);
+tab_room_reset_rooms(struct tab_room *tab_room, struct state *state);
 
 static enum widget_error
 handle_tree(
-  struct tab_room *tab_room, struct tb_event *event, struct hm_room *rooms) {
+  struct tab_room *tab_room, struct tb_event *event, struct state *state) {
 	assert(tab_room);
 	assert(event);
 
@@ -216,7 +216,7 @@ handle_tree(
 				tab_room->selected_room = NULL;
 
 				/* Reset to the first room in the space. */
-				tab_room_reset_rooms(tab_room, rooms);
+				tab_room_reset_rooms(tab_room, state);
 			} else {
 				reset_room_buffer(tab_room->selected_room->value);
 			}
@@ -352,7 +352,7 @@ handle_tab_room(
 
 		switch (tab_room->widget) {
 		case TAB_ROOM_TREE:
-			ret = handle_tree(tab_room, event, state->rooms);
+			ret = handle_tree(tab_room, event, state);
 			break;
 		case TAB_ROOM_INPUT:
 			ret = handle_input(&tab_room->input, event, &enter_pressed);
@@ -469,7 +469,7 @@ tab_room_add_room(
  * error prone than manually managing the nodes, and isn't really that
  * inefficient if you consider how infrequently room changes occur. */
 static void
-tab_room_reset_rooms(struct tab_room *tab_room, struct hm_room *rooms) {
+tab_room_reset_rooms(struct tab_room *tab_room, struct state *state) {
 	assert(tab_room);
 
 	tab_room->treeview.selected = NULL;
@@ -481,8 +481,8 @@ tab_room_reset_rooms(struct tab_room *tab_room, struct hm_room *rooms) {
 	if (arrlenu(tab_room->path) > 0) {
 		/* TODO verify path. */
 		ptrdiff_t tmp = 0;
-		struct room *space
-		  = shget_ts(rooms, tab_room->path[arrlenu(tab_room->path) - 1], tmp);
+		struct room *space = shget_ts(
+		  state->rooms, tab_room->path[arrlenu(tab_room->path) - 1], tmp);
 		assert(space);
 
 		/* A child space might have more rooms than root orphans. */
@@ -491,7 +491,7 @@ tab_room_reset_rooms(struct tab_room *tab_room, struct hm_room *rooms) {
 		for (size_t i = 0, skipped = 0, len = shlenu(space->children); i < len;
 			 i++) {
 			ptrdiff_t child_index
-			  = shgeti_ts(rooms, space->children[i].key, tmp);
+			  = shgeti_ts(state->rooms, space->children[i].key, tmp);
 
 			/* Child room not joined yet. */
 			if (child_index == -1) {
@@ -499,13 +499,14 @@ tab_room_reset_rooms(struct tab_room *tab_room, struct hm_room *rooms) {
 				continue;
 			}
 
-			tab_room_add_room(tab_room, i - skipped, &rooms[child_index]);
+			tab_room_add_room(
+			  tab_room, i - skipped, &state->rooms[child_index]);
 		}
 	} else {
-		arrsetlen(tab_room->room_nodes, shlenu(rooms));
+		arrsetlen(tab_room->room_nodes, shlenu(state->orphaned_rooms));
 
-		for (size_t i = 0, len = shlenu(rooms); i < len; i++) {
-			tab_room_add_room(tab_room, i, &rooms[i]);
+		for (size_t i = 0, len = shlenu(state->orphaned_rooms); i < len; i++) {
+			tab_room_add_room(tab_room, i, &state->orphaned_rooms[i]);
 		}
 	}
 
@@ -531,10 +532,44 @@ tab_room_reset_rooms(struct tab_room *tab_room, struct hm_room *rooms) {
 	tab_room->selected_room = NULL;
 }
 
+static void
+state_reset_orphans(struct state *state) {
+	assert(state);
+
+	shfree(state->orphaned_rooms);
+
+	struct {
+		char *key;
+		bool value;
+	} *children = NULL;
+
+	/* Collect a hashmap of all rooms that are a child of any other room. */
+	for (size_t i = 0, len = shlenu(state->rooms); i < len; i++) {
+		struct room *room = state->rooms[i].value;
+
+		for (size_t j = 0, children_len = shlenu(room->children);
+			 j < children_len; j++) {
+			shput(children, room->children[j].key, true);
+		}
+	}
+
+	/* Now any rooms which aren't children of any other room are orphans. */
+	for (size_t i = 0, len = shlenu(state->rooms); i < len; i++) {
+		if (shget(children, state->rooms[i].key)) {
+			continue; /* A child */
+		}
+
+		shput(
+		  state->orphaned_rooms, state->rooms[i].key, state->rooms[i].value);
+	}
+
+	shfree(children);
+}
+
 static bool
-handle_accumulated_sync(struct hm_room **rooms, struct tab_room *tab_room,
+handle_accumulated_sync(struct state *state, struct tab_room *tab_room,
   struct accumulated_sync_data *data) {
-	assert(rooms);
+	assert(state);
 	assert(tab_room);
 	assert(data);
 
@@ -557,9 +592,9 @@ handle_accumulated_sync(struct hm_room **rooms, struct tab_room *tab_room,
 		}
 
 		ptrdiff_t tmp = 0;
-		if (!(shget_ts(*rooms, room->id, tmp))) {
+		if (!(shget_ts(state->rooms, room->id, tmp))) {
 			any_tree_changes = true; /* New room added */
-			shput(*rooms, room->id, room->room);
+			shput(state->rooms, room->id, room->room);
 		}
 
 		if (tab_room->selected_room
@@ -576,9 +611,16 @@ handle_accumulated_sync(struct hm_room **rooms, struct tab_room *tab_room,
 		assert(event->parent);
 		assert(event->child);
 
+		ptrdiff_t tmp = 0;
+		struct room *room = shget_ts(state->rooms, noconst(event->parent), tmp);
+		assert(room);
+
 		switch (event->status) {
 		case CACHE_DEFERRED_ADDED:
+			room_add_child(room, noconst(event->child));
+			break;
 		case CACHE_DEFERRED_REMOVED:
+			room_remove_child(room, noconst(event->child));
 			break;
 		default:
 			assert(0);
@@ -586,7 +628,8 @@ handle_accumulated_sync(struct hm_room **rooms, struct tab_room *tab_room,
 	}
 
 	if (any_tree_changes || arrlenu(data->space_events) > 0) {
-		tab_room_reset_rooms(tab_room, *rooms);
+		state_reset_orphans(state);
+		tab_room_reset_rooms(tab_room, state);
 		return true;
 	}
 
@@ -607,7 +650,7 @@ ui_loop(struct state *state) {
 	struct tab_room tab_room = {0};
 	tab_room_init(&tab_room);
 
-	tab_room_reset_rooms(&tab_room, state->rooms);
+	tab_room_reset_rooms(&tab_room, state);
 
 	for (bool redraw = true;;) {
 		if (redraw) {
@@ -645,7 +688,7 @@ ui_loop(struct state *state) {
 			/* Ensure that we redraw if we had changes. */
 			redraw = handle_accumulated_sync(
 			  /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-			  &state->rooms, &tab_room, (struct accumulated_sync_data *) data);
+			  state, &tab_room, (struct accumulated_sync_data *) data);
 
 			state->sync_cond_signaled = true;
 			pthread_cond_signal(&state->sync_cond);
@@ -799,10 +842,6 @@ populate_from_cache(struct state *state) {
 		return -1;
 	}
 
-	/* Hashmap for finding orphaned rooms with no children. */
-	struct hm_room *child_rooms = NULL;
-	/* Don't call SHMAP_INIT() as we don't need to duplicate strings here. */
-
 	while ((cache_iterator_next(&iterator)) == MDB_SUCCESS) {
 		assert(space.id);
 
@@ -835,7 +874,6 @@ populate_from_cache(struct state *state) {
 			}
 
 			room_add_child(space_room, noconst(space.child_id));
-			shput(child_rooms, noconst(space.child_id), space_child);
 		}
 
 		/* No need to finish the children iterator since it only borrows a
@@ -843,18 +881,9 @@ populate_from_cache(struct state *state) {
 		 * finished. */
 	}
 
-	for (size_t i = 0, len = shlenu(state->rooms); i < len; i++) {
-		if ((shget(child_rooms, state->rooms[i].key))) {
-			continue;
-		}
-
-		/* Orphan since the room/space hasn't been added to any space. */
-		/* TODO shput(state->rooms, state->rooms[i].key, state->rooms[i].value);
-		 */
-	}
-
-	shfree(child_rooms);
 	cache_iterator_finish(&iterator);
+
+	state_reset_orphans(state);
 
 	return 0;
 }
@@ -1268,6 +1297,8 @@ init_everything(struct state *state) {
 	}
 
 	SHMAP_INIT(state->rooms);
+	/* No need to call SHMAP_INIT on state->orphaned_rooms as it just takes
+	 * pointers from state->rooms. */
 
 	ret = populate_from_cache(state);
 

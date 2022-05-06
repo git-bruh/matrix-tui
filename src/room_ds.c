@@ -116,7 +116,15 @@ room_add_child(struct room *room, char *child) {
 	assert(room);
 	assert(child);
 
-	shput(room->children, child, NULL);
+	shput(room->children, child, true);
+}
+
+void
+room_remove_child(struct room *room, char *child) {
+	assert(room);
+	assert(child);
+
+	shdel(room->children, child);
 }
 
 int
