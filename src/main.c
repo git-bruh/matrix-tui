@@ -469,10 +469,14 @@ static void
 tab_room_reset_rooms(struct tab_room *tab_room, struct state *state) {
 	assert(tab_room);
 
+	/* Reset all indices and pointers so that the treeview indices aren't messed
+	 * up when we TREEVIEW_JUMP to the final node in certain cases. */
 	tab_room->treeview.selected = NULL;
+	tab_room->treeview.root.index = 0;
 
 	for (size_t i = 0; i < NODE_MAX; i++) {
 		arrsetlen(tab_room->treeview.root.nodes[i]->nodes, 0);
+		tab_room->treeview.root.nodes[i]->index = 0;
 	}
 
 	if (arrlenu(tab_room->path) > 0) {
@@ -511,6 +515,7 @@ tab_room_reset_rooms(struct tab_room *tab_room, struct state *state) {
 		}
 	}
 
+	/* Found current room. */
 	if (tab_room->treeview.selected) {
 		return;
 	}

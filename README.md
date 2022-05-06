@@ -12,7 +12,7 @@ A terminal based Matrix client, WIP.
   - [ ] Indicators For Unread Messages
   - [ ] Treeview
     - [x] Navigation (Including Nested Spaces)
-    - [ ] Calculate Orphaned Rooms For Root
+    - [x] Calculate Orphaned Rooms For Root
     - [ ] Bottom Status Bar For Traversing Space Path
     - [ ] Group Rooms
       - [ ] DMs
