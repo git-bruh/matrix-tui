@@ -181,6 +181,18 @@ queue_listener(void *arg) {
 	pthread_exit(NULL);
 }
 
+static struct room *
+rooms_get_room(struct hm_room *rooms, char *key) {
+	ptrdiff_t tmp = 0;
+	return shget_ts(rooms, key, tmp);
+}
+
+static ptrdiff_t
+rooms_get_index(struct hm_room *rooms, char *key) {
+	ptrdiff_t tmp = 0;
+	return shgeti_ts(rooms, key, tmp);
+}
+
 static void
 reset_room_buffer(struct room *room) {
 	struct widget_points points = {0};
@@ -481,9 +493,8 @@ tab_room_reset_rooms(struct tab_room *tab_room, struct state *state) {
 
 	if (arrlenu(tab_room->path) > 0) {
 		/* TODO verify path. */
-		ptrdiff_t tmp = 0;
-		struct room *space = shget_ts(
-		  state->rooms, tab_room->path[arrlenu(tab_room->path) - 1], tmp);
+		struct room *space = rooms_get_room(
+		  state->rooms, tab_room->path[arrlenu(tab_room->path) - 1]);
 		assert(space);
 
 		/* A child space might have more rooms than root orphans. */
@@ -492,7 +503,7 @@ tab_room_reset_rooms(struct tab_room *tab_room, struct state *state) {
 		for (size_t i = 0, skipped = 0, len = shlenu(space->children); i < len;
 			 i++) {
 			ptrdiff_t child_index
-			  = shgeti_ts(state->rooms, space->children[i].key, tmp);
+			  = rooms_get_index(state->rooms, space->children[i].key);
 
 			/* Child room not joined yet. */
 			if (child_index == -1) {
@@ -597,9 +608,10 @@ handle_accumulated_sync(struct state *state, struct tab_room *tab_room,
 			assert(0);
 		}
 
-		ptrdiff_t tmp = 0;
-		if (!(shget_ts(state->rooms, room->id, tmp))) {
+		if (!(rooms_get_room(state->rooms, room->id))) {
 			any_tree_changes = true; /* New room added */
+			/* This doesn't need locking as the syncer thread waits until
+			 * we use all the accumulated data (this function). */
 			shput(state->rooms, room->id, room->room);
 		}
 
@@ -616,8 +628,7 @@ handle_accumulated_sync(struct state *state, struct tab_room *tab_room,
 		assert(event->parent);
 		assert(event->child);
 
-		ptrdiff_t tmp = 0;
-		struct room *room = shget_ts(state->rooms, noconst(event->parent), tmp);
+		struct room *room = rooms_get_room(state->rooms, noconst(event->parent));
 		assert(room);
 
 		switch (event->status) {
@@ -744,8 +755,7 @@ populate_room_users(struct state *state, const char *room_id) {
 
 	struct cache_iterator iterator = {0};
 
-	ptrdiff_t tmp = 0;
-	struct room *room = shget_ts(state->rooms, noconst(room_id), tmp);
+	struct room *room = rooms_get_room(state->rooms, noconst(room_id));
 	struct cache_iterator_member member = {0};
 
 	assert(room);
@@ -776,8 +786,7 @@ populate_room_from_cache(struct state *state, const char *room_id) {
 
 	populate_room_users(state, room_id);
 
-	ptrdiff_t tmp = 0;
-	struct room *room = shget_ts(state->rooms, noconst(room_id), tmp);
+	struct room *room = rooms_get_room(state->rooms, noconst(room_id));
 	struct cache_iterator_event event = {0};
 
 	assert(room);
@@ -1142,8 +1151,7 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 		struct matrix_sync_event event;
 
-		ptrdiff_t tmp = 0;
-		struct room *room = shget_ts(state->rooms, sync_room.id, tmp);
+		struct room *room = rooms_get_room(state->rooms, sync_room.id);
 
 		bool room_needs_info = !room;
 
