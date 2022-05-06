@@ -503,7 +503,11 @@ tab_room_reset_rooms(struct tab_room *tab_room, struct state *state) {
 		arrsetlen(tab_room->room_nodes, shlenu(state->orphaned_rooms));
 
 		for (size_t i = 0, len = shlenu(state->orphaned_rooms); i < len; i++) {
-			tab_room_add_room(tab_room, i, &state->orphaned_rooms[i]);
+			ptrdiff_t index
+			  = shgeti(state->rooms, state->orphaned_rooms[i].key);
+			assert(index != -1);
+
+			tab_room_add_room(tab_room, i, &state->rooms[index]);
 		}
 	}
 

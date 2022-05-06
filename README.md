@@ -19,9 +19,7 @@ A terminal based Matrix client, WIP.
       - [ ] Invites
       - [x] Spaces
   - [ ] Maintaining State Of Rooms
-    - [ ] Previously Orphaned Room Added To A Space
-    - [ ] Room Removed From Space And Orphaned
-    - [ ] Room Removed From Space And Present In Another Space
+    - [x] (Un)Orphaning Of Rooms
     - [ ] DM converted to Room / Room converted to DM
     - [ ] Invite Accepted
     - [x] Room Joined
