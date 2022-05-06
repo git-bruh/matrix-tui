@@ -217,8 +217,6 @@ handle_tree(
 
 				/* Reset to the first room in the space. */
 				tab_room_reset_rooms(tab_room, state);
-			} else {
-				reset_room_buffer(tab_room->selected_room->value);
 			}
 
 			return WIDGET_REDRAW;
@@ -339,7 +337,6 @@ handle_tab_room(
 	struct room *room = tab_room->selected_room->value;
 
 	if (event->type == TB_EVENT_RESIZE) {
-		reset_room_buffer(room);
 		return WIDGET_REDRAW;
 	}
 
@@ -601,7 +598,6 @@ handle_accumulated_sync(struct state *state, struct tab_room *tab_room,
 			&& strcmp(room->id, tab_room->selected_room->key) == 0) {
 			assert(room->room == tab_room->selected_room->value);
 			any_room_events = true;
-			reset_room_buffer(tab_room->selected_room->value);
 		}
 	}
 
@@ -663,6 +659,10 @@ ui_loop(struct state *state) {
 			case TAB_HOME:
 				break;
 			case TAB_ROOM:
+				if (tab_room.selected_room) {
+					reset_room_buffer(tab_room.selected_room->value);
+				}
+
 				tab_room_redraw(&tab_room);
 				break;
 			default:
