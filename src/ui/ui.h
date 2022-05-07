@@ -1,5 +1,4 @@
-#ifndef UI_H
-#define UI_H
+#pragma once
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "ui/login_form.h"
@@ -73,4 +72,3 @@ void
 tab_room_redraw(struct tab_room *room);
 void
 tab_login_redraw(struct tab_login *login);
-#endif /* !UI_H */

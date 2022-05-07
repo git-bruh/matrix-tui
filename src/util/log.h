@@ -1,5 +1,4 @@
-#ifndef LOG_H
-#define LOG_H
+#pragma once
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include <assert.h>
@@ -40,4 +39,3 @@ log_level_and_time(enum log_level level) {
 		fputc('\n', stderr);                                                   \
 		log_mutex_unlock();                                                    \
 	} while (0)
-#endif /* !LOG_H */

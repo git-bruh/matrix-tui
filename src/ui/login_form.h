@@ -1,5 +1,4 @@
-#ifndef LOGIN_FORM_H
-#define LOGIN_FORM_H
+#pragma once
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "widgets.h"
@@ -37,4 +36,3 @@ struct input *
 form_current_input(struct form *form);
 void
 form_redraw(struct form *form, struct widget_points *points);
-#endif /* !LOGIN_FORM_H */

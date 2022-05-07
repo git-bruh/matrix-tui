@@ -1,5 +1,4 @@
-#ifndef STATE_H
-#define STATE_H
+#pragma once
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "app/hm_room.h"
@@ -41,4 +40,3 @@ lock_and_push(struct state *state, struct queue_item *item);
 
 #define read safe_read
 #define write safe_write
-#endif /* !STATE_H */

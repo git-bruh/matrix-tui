@@ -1,7 +1,7 @@
-#ifndef FATAL_ASSERT_H
-#define FATAL_ASSERT_H
+#pragma once
 #undef assert
 #ifdef NDEBUG
+#error "Build without NDEBUG!"
 #define assert(x) (void) 0
 #else
 _Noreturn __attribute__((unused)) static inline void
@@ -15,4 +15,3 @@ fatal_assert_fail(
 #define assert(x)                                                              \
 	((void) ((x) || (fatal_assert_fail(#x, __FILE__, __LINE__, __func__), 0)))
 #endif /* NDEBUG */
-#endif /* !FATAL_ASSERT_H */

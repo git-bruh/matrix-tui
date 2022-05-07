@@ -1,5 +1,4 @@
-#ifndef QUEUE_CALLBACKS_H
-#define QUEUE_CALLBACKS_H
+#pragma once
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "app/state.h"
@@ -31,4 +30,3 @@ void
 queue_item_free(struct queue_item *item);
 struct queue_item *
 queue_item_alloc(enum queue_item_type type, void *data);
-#endif /* !QUEUE_CALLBACKS_H */

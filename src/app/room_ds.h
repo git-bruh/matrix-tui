@@ -1,5 +1,4 @@
-#ifndef ROOM_DS_H
-#define ROOM_DS_H
+#pragma once
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "db/cache.h"
@@ -100,4 +99,3 @@ struct room *
 room_alloc(struct room_info info);
 void
 room_destroy(struct room *room);
-#endif /* !ROOM_DS_H */

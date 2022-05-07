@@ -1,5 +1,4 @@
-#ifndef FATAL_H
-#define FATAL_H
+#pragma once
 /* This file must be included in every source file with the --include option. */
 #include <errno.h>
 #include <stdint.h>
@@ -102,4 +101,3 @@ fatal_strndup(const char *s, size_t size) {
 #define strdup(s) fatal_strdup(s)
 #define strndup(s, size) fatal_strndup(s, size)
 #define abort() fatal_abort()
-#endif /* !FATAL_H */

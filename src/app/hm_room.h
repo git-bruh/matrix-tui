@@ -1,8 +1,6 @@
+#pragma once
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
-#ifndef HM_ROOM_H
-#define HM_ROOM_H
-
 #include "app/room_ds.h"
 #include "stb_ds.h"
 
@@ -27,4 +25,3 @@ rooms_get_index(struct hm_room *rooms, char *key) {
 	ptrdiff_t tmp = 0;
 	return shgeti_ts(rooms, key, tmp);
 }
-#endif

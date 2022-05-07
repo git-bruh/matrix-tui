@@ -1,5 +1,4 @@
-#ifndef QUEUE_H
-#define QUEUE_H
+#pragma once
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include <stddef.h>
@@ -16,4 +15,3 @@ int
 queue_push_tail(struct queue *queue, void *data);
 void *
 queue_pop_head(struct queue *queue);
-#endif /* !QUEUE_H */

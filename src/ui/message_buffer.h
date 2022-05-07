@@ -1,5 +1,4 @@
-#ifndef MESSAGE_BUFFER_H
-#define MESSAGE_BUFFER_H
+#pragma once
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "ui/ui.h"
@@ -53,4 +52,3 @@ message_buffer_handle_event(
   struct message_buffer *buf, enum message_buffer_event event, ...);
 void
 message_buffer_redraw(struct message_buffer *buf, struct widget_points *points);
-#endif /* !MESSAGE_BUFFER_H */

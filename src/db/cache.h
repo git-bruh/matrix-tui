@@ -1,5 +1,4 @@
-#ifndef CACHE_H
-#define CACHE_H
+#pragma once
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "matrix.h"
@@ -199,4 +198,3 @@ cache_room_info_finish(struct room_info *info);
 /* Hack for MDB APIs that don't mark their args as const. */
 char *
 noconst(const char *str);
-#endif /* !CACHE_H */
