@@ -12,6 +12,8 @@ project(
 cc = meson.get_compiler('c')
 
 src_app = [
+    'src/app/handle_ui.c',
+    'src/app/hm_room.h',
     'src/app/queue_callbacks.c',
     'src/app/queue_callbacks.h',
     'src/app/room_ds.c',
@@ -37,6 +39,8 @@ src_ui = [
     'src/ui/message_buffer.c',
     'src/ui/message_buffer.h',
     'src/ui/render_message.c',
+    'src/ui/tab_room.c',
+    'src/ui/tab_room.h',
     'src/ui/ui.h',
 ]
 

@@ -2,7 +2,6 @@
 #define UI_H
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
-#include "app/state.h" /* TODO remove */
 #include "ui/login_form.h"
 #include "widgets.h"
 
@@ -27,6 +26,14 @@ struct members_map {
 };
 
 struct room;
+
+enum tab_room_nodes {
+	NODE_INVITES = 0,
+	NODE_SPACES,
+	NODE_DMS,
+	NODE_ROOMS,
+	NODE_MAX
+};
 
 struct tab_room {
 	enum tab_room_widget {

@@ -3,6 +3,7 @@
 #include "app/queue_callbacks.h"
 #include "app/room_ds.h"
 #include "ui/login_form.h"
+#include "ui/tab_room.h"
 #include "ui/ui.h"
 #include "util/log.h"
 
@@ -16,14 +17,15 @@ enum widget {
 	WIDGET_TREE,
 };
 
-enum tab { TAB_LOGIN = 0, TAB_HOME, TAB_ROOM };
-
-const char *const root_node_str[NODE_MAX] = {
-  [NODE_INVITES] = "Invites",
-  [NODE_SPACES] = "Spaces",
-  [NODE_DMS] = "DMs",
-  [NODE_ROOMS] = "Rooms",
+enum {
+	EVENTS_IN_TIMELINE = MATRIX_ROOM_MESSAGE | MATRIX_ROOM_ATTACHMENT,
+	STATE_IN_TIMELINE
+	= MATRIX_ROOM_MEMBER | MATRIX_ROOM_NAME | MATRIX_ROOM_TOPIC
 };
+
+enum { FD_TTY = 0, FD_RESIZE, FD_PIPE, FD_MAX };
+
+enum tab { TAB_LOGIN = 0, TAB_HOME, TAB_ROOM };
 
 struct accumulated_sync_room {
 	enum matrix_room_type type;
@@ -48,6 +50,16 @@ struct accumulated_sync_data {
 	 * in the treeview. */
 	struct accumulated_space_event *space_events;
 };
+
+enum widget_error
+handle_tab_room(
+  struct state *state, struct tab_room *tab_room, struct tb_event *event);
+enum widget_error
+handle_tab_login(
+  struct state *state, struct tab_login *login, struct tb_event *event);
+
+static void
+sync_cb(struct matrix *matrix, struct matrix_sync_response *response);
 
 static void
 cleanup(struct state *state) {
@@ -102,9 +114,6 @@ cleanup(struct state *state) {
 	log_mutex_destroy();
 }
 
-static void
-sync_cb(struct matrix *matrix, struct matrix_sync_response *response);
-
 static void *
 syncer(void *arg) {
 	assert(arg);
@@ -134,7 +143,7 @@ syncer(void *arg) {
 	pthread_exit(NULL);
 }
 
-static int
+int
 lock_and_push(struct state *state, struct queue_item *item) {
 	if (!item) {
 		return -1;
@@ -181,18 +190,6 @@ queue_listener(void *arg) {
 	pthread_exit(NULL);
 }
 
-static struct room *
-rooms_get_room(struct hm_room *rooms, char *key) {
-	ptrdiff_t tmp = 0;
-	return shget_ts(rooms, key, tmp);
-}
-
-static ptrdiff_t
-rooms_get_index(struct hm_room *rooms, char *key) {
-	ptrdiff_t tmp = 0;
-	return shgeti_ts(rooms, key, tmp);
-}
-
 static void
 reset_room_buffer(struct room *room) {
 	struct widget_points points = {0};
@@ -205,112 +202,6 @@ reset_room_buffer(struct room *room) {
 		room_fill_new_events(room, &points);
 		pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 	}
-}
-
-static void
-tab_room_reset_rooms(struct tab_room *tab_room, struct state *state);
-
-static enum widget_error
-handle_tree(
-  struct tab_room *tab_room, struct tb_event *event, struct state *state) {
-	assert(tab_room);
-	assert(event);
-
-	switch (event->key) {
-	case TB_KEY_ENTER:
-		/* Selected and not a root node (Invites/Spaces/DMs/Rooms/...) */
-		if (tab_room->treeview.selected
-			&& tab_room->treeview.selected->parent->parent) {
-			tab_room->selected_room = tab_room->treeview.selected->data;
-
-			if (tab_room->selected_room->value->info.is_space) {
-				arrput(tab_room->path, tab_room->selected_room->key);
-				tab_room->selected_room = NULL;
-
-				/* Reset to the first room in the space. */
-				tab_room_reset_rooms(tab_room, state);
-			}
-
-			return WIDGET_REDRAW;
-		}
-
-		break;
-	case TB_KEY_ARROW_UP:
-		return treeview_event(&tab_room->treeview, TREEVIEW_UP);
-	case TB_KEY_ARROW_DOWN:
-		return treeview_event(&tab_room->treeview, TREEVIEW_DOWN);
-	default:
-		if (event->ch == ' ') {
-			return treeview_event(&tab_room->treeview, TREEVIEW_EXPAND);
-		}
-
-		break;
-	}
-
-	return WIDGET_NOOP;
-}
-
-static enum widget_error
-handle_input(struct input *input, struct tb_event *event, bool *enter_pressed) {
-	assert(input);
-	assert(event);
-
-	if (!event->key && event->ch) {
-		return input_handle_event(input, INPUT_ADD, event->ch);
-	}
-
-	bool mod = (event->mod & TB_MOD_SHIFT) == TB_MOD_SHIFT;
-	bool mod_enter = (event->mod & TB_MOD_ALT) == TB_MOD_ALT;
-
-	switch (event->key) {
-	case TB_KEY_ENTER:
-		if (mod_enter) {
-			return input_handle_event(input, INPUT_ADD, '\n');
-		}
-
-		if (enter_pressed) {
-			*enter_pressed = true;
-		}
-		break;
-	case TB_KEY_BACKSPACE:
-	case TB_KEY_BACKSPACE2:
-		return input_handle_event(
-		  input, mod ? INPUT_DELETE_WORD : INPUT_DELETE);
-	case TB_KEY_ARROW_RIGHT:
-		return input_handle_event(input, mod ? INPUT_RIGHT_WORD : INPUT_RIGHT);
-	case TB_KEY_ARROW_LEFT:
-		return input_handle_event(input, mod ? INPUT_LEFT_WORD : INPUT_LEFT);
-	default:
-		break;
-	}
-
-	return WIDGET_NOOP;
-}
-
-static enum widget_error
-handle_message_buffer(struct message_buffer *buf, struct tb_event *event) {
-	assert(event->type == TB_EVENT_MOUSE);
-
-	switch (event->key) {
-	case TB_KEY_MOUSE_WHEEL_UP:
-		if ((message_buffer_handle_event(buf, MESSAGE_BUFFER_UP))
-			== WIDGET_NOOP) {
-			/* TODO paginate(); */
-		} else {
-			return WIDGET_REDRAW;
-		}
-		break;
-	case TB_KEY_MOUSE_WHEEL_DOWN:
-		return message_buffer_handle_event(buf, MESSAGE_BUFFER_DOWN);
-	case TB_KEY_MOUSE_RELEASE:
-		return message_buffer_handle_event(
-		  buf, MESSAGE_BUFFER_SELECT, event->x, event->y);
-		break;
-	default:
-		break;
-	}
-
-	return WIDGET_NOOP;
 }
 
 static int
@@ -335,218 +226,6 @@ get_fds(struct state *state, struct pollfd fds[FD_MAX]) {
 	  .fd = state->thread_comm_pipe[PIPE_READ], .events = POLLIN};
 
 	return 0;
-}
-
-static enum widget_error
-handle_tab_room(
-  struct state *state, struct tab_room *tab_room, struct tb_event *event) {
-	enum widget_error ret = WIDGET_NOOP;
-
-	if (!tab_room->selected_room) {
-		return ret;
-	}
-
-	struct room *room = tab_room->selected_room->value;
-
-	if (event->type == TB_EVENT_RESIZE) {
-		return WIDGET_REDRAW;
-	}
-
-	if (event->type == TB_EVENT_MOUSE) {
-		pthread_mutex_lock(&room->realloc_or_modify_mutex);
-		ret = handle_message_buffer(&room->buffer, event);
-		pthread_mutex_unlock(&room->realloc_or_modify_mutex);
-	} else {
-		bool enter_pressed = false;
-
-		switch (tab_room->widget) {
-		case TAB_ROOM_TREE:
-			ret = handle_tree(tab_room, event, state);
-			break;
-		case TAB_ROOM_INPUT:
-			ret = handle_input(&tab_room->input, event, &enter_pressed);
-
-			if (enter_pressed) {
-				char *buf = input_buf(&tab_room->input);
-
-				/* Empty field. */
-				if (!buf) {
-					break;
-				}
-
-				struct sent_message *message = malloc(sizeof(*message));
-
-				assert(tab_room->selected_room);
-
-				*message = (struct sent_message) {
-				  .has_reply = false,
-				  .reply_index = 0,
-				  .buf = buf,
-				  .room_id = tab_room->selected_room->key,
-				};
-
-				lock_and_push(
-				  state, queue_item_alloc(QUEUE_ITEM_MESSAGE, message));
-
-				ret = input_handle_event(&tab_room->input, INPUT_CLEAR);
-			}
-			break;
-		default:
-			assert(0);
-		}
-	}
-
-	return ret;
-}
-
-static void
-draw_cb(void *data, struct widget_points *points, bool is_selected) {
-	assert(data);
-	assert(points);
-
-	widget_print_str(points->x1, points->y1, points->x2,
-	  is_selected ? TB_REVERSE : TB_DEFAULT, TB_DEFAULT, data);
-}
-
-static void
-room_draw_cb(void *data, struct widget_points *points, bool is_selected) {
-	assert(data);
-	assert(points);
-
-	struct room *room = ((struct hm_room *) data)->value;
-
-	const char *str = room->info.name ? room->info.name : "Empty Room";
-	widget_print_str(points->x1, points->y1, points->x2,
-	  is_selected ? TB_REVERSE : TB_DEFAULT, TB_DEFAULT, str);
-}
-
-static void
-tab_room_finish(struct tab_room *tab_room) {
-	if (tab_room) {
-		input_finish(&tab_room->input);
-		treeview_node_finish(&tab_room->treeview.root);
-		arrfree(tab_room->room_nodes);
-		arrfree(tab_room->path);
-		memset(tab_room, 0, sizeof(*tab_room));
-	}
-}
-
-static int
-tab_room_init(struct tab_room *tab_room) {
-	assert(tab_room);
-
-	*tab_room = (struct tab_room) {.widget = TAB_ROOM_TREE};
-
-	int ret = input_init(&tab_room->input, TB_DEFAULT, false);
-	assert(ret == 0);
-
-	ret = treeview_init(&tab_room->treeview);
-	assert(ret == 0);
-
-	for (size_t i = 0; i < NODE_MAX; i++) {
-		treeview_node_init(
-		  &tab_room->root_nodes[i], noconst(root_node_str[i]), draw_cb);
-		treeview_node_add_child(
-		  &tab_room->treeview.root, &tab_room->root_nodes[i]);
-	}
-
-	tab_room->treeview.selected = tab_room->treeview.root.nodes[0];
-
-	return 0;
-}
-
-static void
-tab_room_add_room(
-  struct tab_room *tab_room, size_t index, struct hm_room *room) {
-	treeview_node_init(&tab_room->room_nodes[index], room, room_draw_cb);
-
-	treeview_node_add_child(
-	  &tab_room
-		 ->root_nodes[room->value->info.is_space ? NODE_SPACES : NODE_ROOMS],
-	  &tab_room->room_nodes[index]);
-
-	if (tab_room->selected_room
-		&& room->value == tab_room->selected_room->value) {
-		enum widget_error ret = treeview_event(
-		  &tab_room->treeview, TREEVIEW_JUMP, &tab_room->room_nodes[index]);
-		assert(ret == WIDGET_REDRAW);
-	}
-}
-
-/* We're lazy so we just reset the whole tree view on any space related change
- * such as the removal/addition of a room from/to a space. This is much less
- * error prone than manually managing the nodes, and isn't really that
- * inefficient if you consider how infrequently room changes occur. */
-static void
-tab_room_reset_rooms(struct tab_room *tab_room, struct state *state) {
-	assert(tab_room);
-
-	/* Reset all indices and pointers so that the treeview indices aren't messed
-	 * up when we TREEVIEW_JUMP to the final node in certain cases. */
-	tab_room->treeview.selected = NULL;
-	tab_room->treeview.root.index = 0;
-
-	for (size_t i = 0; i < NODE_MAX; i++) {
-		arrsetlen(tab_room->treeview.root.nodes[i]->nodes, 0);
-		tab_room->treeview.root.nodes[i]->index = 0;
-	}
-
-	if (arrlenu(tab_room->path) > 0) {
-		/* TODO verify path. */
-		struct room *space = rooms_get_room(
-		  state->rooms, tab_room->path[arrlenu(tab_room->path) - 1]);
-		assert(space);
-
-		/* A child space might have more rooms than root orphans. */
-		arrsetlen(tab_room->room_nodes, shlenu(space->children));
-
-		for (size_t i = 0, skipped = 0, len = shlenu(space->children); i < len;
-			 i++) {
-			ptrdiff_t child_index
-			  = rooms_get_index(state->rooms, space->children[i].key);
-
-			/* Child room not joined yet. */
-			if (child_index == -1) {
-				skipped++;
-				continue;
-			}
-
-			tab_room_add_room(
-			  tab_room, i - skipped, &state->rooms[child_index]);
-		}
-	} else {
-		arrsetlen(tab_room->room_nodes, shlenu(state->orphaned_rooms));
-
-		for (size_t i = 0, len = shlenu(state->orphaned_rooms); i < len; i++) {
-			ptrdiff_t index
-			  = shgeti(state->rooms, state->orphaned_rooms[i].key);
-			assert(index != -1);
-
-			tab_room_add_room(tab_room, i, &state->rooms[index]);
-		}
-	}
-
-	/* Found current room. */
-	if (tab_room->treeview.selected) {
-		return;
-	}
-
-	/* Find the first non-empty node and choose it's first room as the
-	 * selected one. */
-	for (size_t i = 0; i < NODE_MAX; i++) {
-		struct treeview_node **nodes = tab_room->treeview.root.nodes[i]->nodes;
-
-		if (arrlenu(nodes) > 0) {
-			enum widget_error ret
-			  = treeview_event(&tab_room->treeview, TREEVIEW_JUMP, nodes[0]);
-			assert(ret == WIDGET_REDRAW);
-
-			tab_room->selected_room = tab_room->treeview.selected->data;
-			return;
-		}
-	}
-
-	tab_room->selected_room = NULL;
 }
 
 static void
@@ -905,98 +584,6 @@ populate_from_cache(struct state *state) {
 	state_reset_orphans(state);
 
 	return 0;
-}
-
-static int
-login_with_info(struct state *state, struct form *form) {
-	assert(state);
-
-	int ret = -1;
-
-	char *username = input_buf(&form->fields[FIELD_MXID]);
-	char *password = input_buf(&form->fields[FIELD_PASSWORD]);
-	char *homeserver = input_buf(&form->fields[FIELD_HOMESERVER]);
-
-	bool password_sent_to_queue = false;
-
-	if (username && password && homeserver) {
-		if (state->matrix) {
-			if ((matrix_set_mxid_homeserver(
-				  state->matrix, username, homeserver))
-				== 0) {
-				ret = 0;
-			}
-		} else {
-			ret = (state->matrix = matrix_alloc(username, homeserver, state))
-				  ? 0
-				  : -1;
-		}
-
-		if (ret == 0) {
-			if (lock_and_push(
-				  state, queue_item_alloc(QUEUE_ITEM_LOGIN, password))
-				== 0) {
-				password_sent_to_queue = true;
-				ret = 0;
-			} else {
-				password = NULL; /* Freed */
-			}
-		}
-	}
-
-	free(username);
-	free(homeserver);
-
-	if (!password_sent_to_queue) {
-		free(password);
-	}
-
-	return ret;
-}
-
-static enum widget_error
-handle_tab_login(
-  struct state *state, struct tab_login *login, struct tb_event *event) {
-	assert(login);
-	assert(event);
-
-	if (event->type == TB_EVENT_RESIZE) {
-		return WIDGET_REDRAW;
-	}
-
-	if (login->logging_in) {
-		return WIDGET_NOOP;
-	}
-
-	switch (event->key) {
-	case TB_KEY_ARROW_UP:
-		return form_handle_event(&login->form, FORM_UP);
-	case TB_KEY_ARROW_DOWN:
-		return form_handle_event(&login->form, FORM_DOWN);
-	case TB_KEY_ENTER:
-		if (!login->form.button_is_selected) {
-			return WIDGET_NOOP;
-		}
-
-		if ((login_with_info(state, &login->form)) == 0) {
-			login->error = NULL;
-			login->logging_in = true;
-		} else {
-			login->error = "Invalid Information";
-		}
-
-		return WIDGET_REDRAW;
-	default:
-		{
-			struct input *input = form_current_input(&login->form);
-
-			if (input) {
-				return handle_input(input, event, NULL);
-			}
-
-			return WIDGET_NOOP;
-		}
-	}
 }
 
 static int

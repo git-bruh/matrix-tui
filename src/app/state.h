@@ -2,6 +2,7 @@
 #define STATE_H
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
+#include "app/hm_room.h"
 #include "db/cache.h"
 #include "util/queue.h"
 #include "widgets.h"
@@ -11,26 +12,6 @@
 
 enum { THREAD_SYNC = 0, THREAD_QUEUE, THREAD_MAX };
 enum { PIPE_READ = 0, PIPE_WRITE, PIPE_MAX };
-enum { FD_TTY = 0, FD_RESIZE, FD_PIPE, FD_MAX };
-
-enum {
-	EVENTS_IN_TIMELINE = MATRIX_ROOM_MESSAGE | MATRIX_ROOM_ATTACHMENT,
-	STATE_IN_TIMELINE
-	= MATRIX_ROOM_MEMBER | MATRIX_ROOM_NAME | MATRIX_ROOM_TOPIC,
-};
-
-enum space_tree_root_nodes {
-	NODE_INVITES = 0,
-	NODE_SPACES,
-	NODE_DMS,
-	NODE_ROOMS,
-	NODE_MAX
-};
-
-struct hm_room {
-	char *key;
-	struct room *value;
-};
 
 struct state {
 	_Atomic bool done;
@@ -52,6 +33,11 @@ struct state {
 	/* Orphaned rooms/spaces without a parent space. */
 	struct hm_room *orphaned_rooms;
 };
+
+struct queue_item;
+
+int
+lock_and_push(struct state *state, struct queue_item *item);
 
 #define read safe_read
 #define write safe_write
