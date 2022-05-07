@@ -2,10 +2,9 @@
 #define ROOM_DS_H
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
-#include "cache.h"
-#include "message_buffer.h"
+#include "db/cache.h"
 #include "stb_ds.h"
-#include "ui.h"
+#include "ui/message_buffer.h"
 
 #include <pthread.h>
 #include <stdatomic.h>

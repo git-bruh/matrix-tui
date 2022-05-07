@@ -1,10 +1,8 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
-#include "room_ds.h"
+#include "app/room_ds.h"
 
-#include "message_buffer.h"
 #include "stb_ds.h"
-#include "ui.h"
 
 #include <assert.h>
 #include <stdlib.h>

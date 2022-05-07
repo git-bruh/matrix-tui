@@ -1,8 +1,8 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
-#include "queue_callbacks.h"
+#include "app/queue_callbacks.h"
 
-#include "log.h"
+#include "util/log.h"
 
 #include <assert.h>
 #include <stdio.h>

@@ -1,7 +1,7 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "stb_ds.h"
-#include "ui.h"
+#include "ui/ui.h"
 #include "widgets.h"
 
 #include <assert.h>

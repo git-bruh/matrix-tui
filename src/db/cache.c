@@ -2,10 +2,10 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 /* Uses Nheko's cache as reference:
  * https://github.com/Nheko-Reborn/nheko/blob/master/src/Cache.cpp */
-#include "cache.h"
+#include "db/cache.h"
 
-#include "log.h"
 #include "stb_ds.h"
+#include "util/log.h"
 
 #include <assert.h>
 #include <errno.h>

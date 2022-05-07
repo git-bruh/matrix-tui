@@ -1,10 +1,10 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
-#include "log.h"
-#include "login_form.h"
-#include "queue_callbacks.h"
-#include "room_ds.h"
-#include "ui.h"
+#include "app/queue_callbacks.h"
+#include "app/room_ds.h"
+#include "ui/login_form.h"
+#include "ui/ui.h"
+#include "util/log.h"
 
 #include <assert.h>
 #include <langinfo.h>
@@ -628,7 +628,8 @@ handle_accumulated_sync(struct state *state, struct tab_room *tab_room,
 		assert(event->parent);
 		assert(event->child);
 
-		struct room *room = rooms_get_room(state->rooms, noconst(event->parent));
+		struct room *room
+		  = rooms_get_room(state->rooms, noconst(event->parent));
 		assert(room);
 
 		switch (event->status) {

@@ -2,8 +2,8 @@
 #define STATE_H
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
-#include "cache.h"
-#include "queue.h"
+#include "db/cache.h"
+#include "util/queue.h"
 #include "widgets.h"
 
 #include <errno.h>

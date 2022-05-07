@@ -2,8 +2,8 @@
 #define UI_H
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
-#include "login_form.h"
-#include "state.h"
+#include "app/state.h" /* TODO remove */
+#include "ui/login_form.h"
 #include "widgets.h"
 
 #undef CTRL
