@@ -11,20 +11,44 @@ project(
 
 cc = meson.get_compiler('c')
 
-common_src = [
-    'src/cache.c',
-    'src/draw.c',
-    'src/header_libs.c',
-    'src/login_form.c',
-    'src/message_buffer.c',
-    'src/queue.c',
-    'src/queue_callbacks.c',
-    'src/render_message.c',
-    'src/room_ds.c',
-    'src/scoped_globals.c'
+src_app = [
+    'src/app/queue_callbacks.c',
+    'src/app/queue_callbacks.h',
+    'src/app/room_ds.c',
+    'src/app/room_ds.h',
+    'src/app/state.h',
 ]
 
-src = common_src + 'src/main.c'
+src_db = [
+    'src/db/cache.c',
+    'src/db/cache.h',
+]
+
+src_header_libs = [
+    'src/header_libs/stb_ds.c',
+    'src/header_libs/termbox.c',
+    'src/header_libs/widgets.c',
+]
+
+src_ui = [
+    'src/ui/draw.c',
+    'src/ui/login_form.c',
+    'src/ui/login_form.h',
+    'src/ui/message_buffer.c',
+    'src/ui/message_buffer.h',
+    'src/ui/render_message.c',
+    'src/ui/ui.h',
+]
+
+src_util = [
+    'src/util/fatal.h',
+    'src/util/log.h',
+    'src/util/queue.c',
+    'src/util/queue.h',
+    'src/util/scoped_globals.c',
+]
+
+src_main = src_app + src_db + src_header_libs + src_ui + src_util + 'src/main.c'
 
 tests = [
     'test_cache',
@@ -43,7 +67,7 @@ c_args = [
     '-DBUG_URL="https://github.com/git-bruh/matrix-tui/issues"',
     '-fstack-protector-strong',
     '--param=ssp-buffer-size=4',
-    ['--include', 'src/fatal.h'],
+    ['--include', 'src/util/fatal.h'],
 ]
 
 warning_c_args = [
@@ -65,7 +89,7 @@ add_project_arguments(c_args, language: 'c')
 add_project_arguments(cc.get_supported_arguments(warning_c_args), language: 'c')
 
 if get_option('b_sanitize').contains('undefined') and cc.get_id() == 'clang'
-	add_global_arguments('-fsanitize-blacklist=../asan.supp', language: 'c')
+    add_global_arguments('-fsanitize-blacklist=../asan.supp', language: 'c')
 endif
 
 libmatrix_proj = subproject('libmatrix')
@@ -83,6 +107,7 @@ endif
 deps = [libmatrix_dep, lmdb_dep, threads_dep, m_dep]
 
 incdirs = [
+    include_directories('src'),
     include_directories('src/assert_override_hack'),
     include_directories('third_party/stb', is_system: true),
     include_directories('third_party/termbox2', is_system: true),
@@ -106,7 +131,7 @@ endif
 
 executable(
     'matrix-tui',
-    src,
+    src_main,
     dependencies: deps,
     include_directories: incdirs,
     install: true,
