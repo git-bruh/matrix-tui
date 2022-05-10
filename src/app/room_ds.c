@@ -273,8 +273,8 @@ room_put_event(struct room *room, const struct matrix_sync_event *event,
 			break;
 		case MATRIX_ROOM_REDACTION:
 			if (redaction_index != (uint64_t) -1) {
-				room_redact_event(room, redaction_index);
-				redaction_valid_if_present = true;
+				redaction_valid_if_present
+				  = (room_redact_event(room, redaction_index) == 0);
 			}
 			break;
 		case MATRIX_ROOM_ATTACHMENT:
@@ -287,8 +287,8 @@ room_put_event(struct room *room, const struct matrix_sync_event *event,
 		assert(0);
 	}
 
-	if (redaction_index != (uint64_t) -1) {
-		assert(redaction_valid_if_present);
+	if (redaction_index != (uint64_t) -1 && !redaction_valid_if_present) {
+		return -1;
 	}
 
 	return 0;
