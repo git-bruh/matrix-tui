@@ -17,6 +17,7 @@ meson \
 	--buildtype=debug \
 	-Dtests=true \
 	-Db_sanitize="$sanitize" \
+	-Db_coverage=true \
 	-Db_lto=false \
 	"$@" \
 	build
