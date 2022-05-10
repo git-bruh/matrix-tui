@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "app/queue_callbacks.h"
 
+#include "app/state.h"
 #include "util/log.h"
 
 #include <assert.h>
@@ -32,6 +33,26 @@ queue_item_alloc(enum queue_item_type type, void *data) {
 	}
 
 	return item;
+}
+
+int
+lock_and_push(struct state *state, struct queue_item *item) {
+	if (!item) {
+		return -1;
+	}
+
+	pthread_mutex_lock(&state->queue_mutex);
+	if ((queue_push_tail(&state->queue, item)) == -1) {
+		queue_item_free(item);
+		pthread_mutex_unlock(&state->queue_mutex);
+		return -1;
+	}
+	pthread_cond_broadcast(&state->queue_cond);
+	/* pthread_cond_wait in queue thread blocks until we unlock the mutex here
+	 * before relocking it. */
+	pthread_mutex_unlock(&state->queue_mutex);
+
+	return 0;
 }
 
 static void

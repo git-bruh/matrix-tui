@@ -2,6 +2,7 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "app/hm_room.h"
+#include "app/queue_callbacks.h"
 #include "db/cache.h"
 #include "util/queue.h"
 #include "widgets.h"
@@ -34,9 +35,6 @@ struct state {
 };
 
 struct queue_item;
-
-int
-lock_and_push(struct state *state, struct queue_item *item);
 
 #define read safe_read
 #define write safe_write

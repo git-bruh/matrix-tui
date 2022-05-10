@@ -1,7 +1,9 @@
 #pragma once
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
-#include "app/state.h"
+#include <stdbool.h>
+
+struct state;
 
 struct sent_message {
 	bool has_reply;		  /* This exists as reply can be <= UINT64_MAX. */
@@ -30,3 +32,5 @@ void
 queue_item_free(struct queue_item *item);
 struct queue_item *
 queue_item_alloc(enum queue_item_type type, void *data);
+int
+lock_and_push(struct state *state, struct queue_item *item);
