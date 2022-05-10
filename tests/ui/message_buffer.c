@@ -1,5 +1,6 @@
-#include "message_buffer.h"
-#include "room_ds.h"
+#include "ui/message_buffer.h"
+
+#include "app/room_ds.h"
 #include "unity.h"
 
 struct message_buffer buf = {0};
@@ -24,6 +25,7 @@ setUp(void) {
 		messages[i].index = i;
 		messages[i].body = body;
 		messages[i].sender = sender;
+		messages[i].username = body;
 	}
 
 	SHMAP_INIT(map);
@@ -109,7 +111,7 @@ action() {
 
 	for (size_t i = 0; i < size; i++) {
 		TEST_ASSERT_EQUAL(
-		  0, message_buffer_insert(&buf, map, &points, &messages[i]));
+		  0, message_buffer_insert(&buf, &points, &messages[i]));
 	}
 
 	/* Select the topmost message and ensure the correct index. */
@@ -131,7 +133,7 @@ action() {
 			check_select(&messages[i - 1], NULL);
 		}
 
-		message_buffer_redraw(&buf, map, &points);
+		message_buffer_redraw(&buf, &points);
 	}
 
 	for (size_t i = 0; i < size; i++) {
@@ -205,7 +207,7 @@ test_wrapping(void) {
 		messages[i].index = i;
 		messages[i].body = wrapped_bufs[i];
 		TEST_ASSERT_EQUAL(
-		  0, message_buffer_insert(&buf, map, &points, &messages[i]));
+		  0, message_buffer_insert(&buf, &points, &messages[i]));
 	}
 
 	size_t len_items = arrlenu(buf.buf);
@@ -214,6 +216,10 @@ test_wrapping(void) {
 	for (size_t i = 0; i < len_items; i++) {
 		TEST_ASSERT_EQUAL(start_end[i][0], buf.buf[i].start);
 		TEST_ASSERT_EQUAL(start_end[i][1], buf.buf[i].end);
+	}
+
+	for (size_t i = 0; i < len; i++) {
+		arrfree(wrapped_bufs[i]);
 	}
 }
 

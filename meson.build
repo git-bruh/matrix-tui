@@ -52,10 +52,6 @@ src_util = [
     'src/util/scoped_globals.c',
 ]
 
-src_common = src_app + src_db + src_header_libs + src_ui + src_util
-
-src_main = src_common + 'src/main.c'
-
 c_args = [
     '-D_GNU_SOURCE',
     '-D_FORTIFY_SOURCE=2',
@@ -99,8 +95,6 @@ if not lmdb_dep.found()
     lmdb_dep = lmdb_proj.get_variable('lmdb_dep')
 endif
 
-deps = [libmatrix_dep, lmdb_dep, threads_dep, m_dep]
-
 incdirs = [
     include_directories('src'),
     include_directories('src/assert_override_hack'),
@@ -108,6 +102,18 @@ incdirs = [
     include_directories('third_party/termbox2', is_system: true),
     include_directories('third_party/termbox-widgets'),
 ]
+
+deps = [libmatrix_dep, lmdb_dep, threads_dep, m_dep]
+
+deps += declare_dependency(
+    link_with: static_library(
+        'common',
+        src_app + src_db + src_header_libs + src_ui + src_util,
+        dependencies: deps,
+        include_directories: incdirs,
+    ),
+    include_directories: incdirs,
+)
 
 if get_option('tests')
     unity_proj = subproject('unity', default_options: ['werror=false'])
@@ -125,10 +131,9 @@ if get_option('tests')
 
     foreach test_name : tests
         exe = executable(
-            test_name,
-            src_common + 'tests/@0@.c'.format(test_name),
+            test_name.replace('/', '_'),
+            'tests/@0@.c'.format(test_name),
             dependencies: deps + unity_dep,
-            include_directories: incdirs,
         )
         test(test_name, exe)
     endforeach
@@ -136,8 +141,7 @@ endif
 
 executable(
     'matrix-tui',
-    src_main,
+    'src/main.c',
     dependencies: deps,
-    include_directories: incdirs,
     install: true,
 )

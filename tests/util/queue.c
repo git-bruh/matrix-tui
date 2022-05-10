@@ -1,4 +1,5 @@
-#include "queue.h"
+#include "util/queue.h"
+
 #include "unity.h"
 
 static struct queue queue = {0};

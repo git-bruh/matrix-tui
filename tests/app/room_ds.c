@@ -1,11 +1,27 @@
-#include "room_ds.h"
+#include "app/room_ds.h"
+
 #include "unity.h"
 
 static struct room *room = NULL;
 
+static char displayname[] = "Testing";
+static char sender[] = "@sender:localhost";
+
 void
 setUp(void) {
-	room = room_alloc();
+	room = room_alloc((struct room_info) {0});
+	TEST_ASSERT_EQUAL(0, room_put_event(room, &(struct matrix_sync_event) {
+		.type = MATRIX_EVENT_STATE,
+		.state = {
+			.type = MATRIX_ROOM_MEMBER,
+			.base = {.sender = sender},
+			.content = {
+				.member = {
+					.displayname = displayname,
+				},
+			},
+		},
+	}, false, (uint64_t) -1, (uint64_t) -1));
 }
 
 void
@@ -40,27 +56,47 @@ test_lock(void) {
 void
 test_insertion_deletion(void) {
 	/* Empty timeline */
-	TEST_ASSERT_EQUAL(-1, room_redact_event(room, 2500));
+	struct matrix_sync_event redaction = 	{
+		.type = MATRIX_EVENT_TIMELINE,
+		.timeline = {
+		  .type = MATRIX_ROOM_REDACTION,
+		},
+	};
+
+	TEST_ASSERT_EQUAL(-1, room_put_event(room, &redaction, false, 0, 2500));
+
+	struct matrix_sync_event sync_message = 			{
+			.type = MATRIX_EVENT_TIMELINE,
+			.timeline = {
+				.type = MATRIX_ROOM_MESSAGE,
+				.base = {
+					.sender = sender,
+				},
+				.message = {
+					.body = displayname,
+				},
+			}};
 
 	/* 2499 - 1 backfill. */
 	for (size_t i = 2499; i > 0; i--) {
-		struct message *message
-		  = message_alloc("Test", "@sender:localhost", 0, i, NULL, false);
+		TEST_ASSERT_EQUAL(
+		  0, room_put_event(room, &sync_message, true, i, (uint64_t) -1));
+
+		struct message *message = room_bsearch(room, i);
 
 		TEST_ASSERT_FALSE(message->reply);
 		TEST_ASSERT_EQUAL(i, message->index);
-		TEST_ASSERT_EQUAL(
-		  0, room_put_message(room, TIMELINE_BACKWARD, message));
 	}
 
 	/* 2500 - 4999 */
 	for (size_t i = 2500; i < 5000; i++) {
-		struct message *message
-		  = message_alloc("Test", "@sender:localhost", 0, i, NULL, false);
+		TEST_ASSERT_EQUAL(
+		  0, room_put_event(room, &sync_message, false, i, (uint64_t) -1));
+
+		struct message *message = room_bsearch(room, i);
 
 		TEST_ASSERT_FALSE(message->reply);
 		TEST_ASSERT_EQUAL(i, message->index);
-		TEST_ASSERT_EQUAL(0, room_put_message(room, TIMELINE_FORWARD, message));
 	}
 
 	/* Array of random indices including min/max indices. */
@@ -71,24 +107,33 @@ test_insertion_deletion(void) {
 	const size_t invalid[] = {5000, 0, 5001};
 
 	for (size_t i = 0; i < sizeof(invalid) / sizeof(*invalid); i++) {
-		TEST_ASSERT_EQUAL(-1, room_redact_event(room, invalid[i]));
+		TEST_ASSERT_EQUAL(
+		  -1, room_put_event(room, &redaction, false, 0, invalid[i]));
 	}
 
 	for (size_t i = 0; i < sizeof(redact) / sizeof(*redact); i++) {
-		TEST_ASSERT_EQUAL(0, room_redact_event(room, redact[i]));
-		struct room_index out;
-		TEST_ASSERT_EQUAL(0, room_bsearch(room, redact[i], &out));
 		TEST_ASSERT_EQUAL(
-		  redact[i] < 2500 ? TIMELINE_BACKWARD : TIMELINE_FORWARD,
-		  out.index_timeline);
-		struct message *message
-		  = room->timelines[out.index_timeline].buf[out.index_buf];
+		  0, room_put_event(room, &redaction, false, 0, redact[i]));
+
+		struct message *message = room_bsearch(room, redact[i]);
+
 		TEST_ASSERT_NULL(message->body);
 		TEST_ASSERT_TRUE(message->redacted);
+		TEST_ASSERT_NOT_NULL(message);
+
+		struct message **buf
+		  = room
+			  ->timelines[redact[i] < 2500 ? TIMELINE_BACKWARD
+										   : TIMELINE_FORWARD]
+			  .buf;
+		size_t index = (redact[i] < 2500 ? 2499 - redact[i] : redact[i] - 2500);
+
+		TEST_ASSERT_EQUAL(buf[index], message);
 	}
 
 	for (size_t i = 0; i < sizeof(invalid) / sizeof(*invalid); i++) {
-		TEST_ASSERT_EQUAL(-1, room_redact_event(room, invalid[i]));
+		TEST_ASSERT_EQUAL(
+		  -1, room_put_event(room, &redaction, false, 0, invalid[i]));
 	}
 }
 
