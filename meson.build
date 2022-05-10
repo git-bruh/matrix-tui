@@ -52,18 +52,9 @@ src_util = [
     'src/util/scoped_globals.c',
 ]
 
-src_main = src_app + src_db + src_header_libs + src_ui + src_util + 'src/main.c'
+src_common = src_app + src_db + src_header_libs + src_ui + src_util
 
-tests = [
-    'test_cache',
-    'test_login_form',
-    'test_message_buffer',
-    'test_queue',
-    'test_render_message',
-    'test_room_ds',
-]
-
-tests = []
+src_main = src_common + 'src/main.c'
 
 c_args = [
     '-D_GNU_SOURCE',
@@ -122,12 +113,22 @@ if get_option('tests')
     unity_proj = subproject('unity', default_options: ['werror=false'])
     unity_dep = unity_proj.get_variable('unity_dep')
 
+    tests = [
+        'ui/login_form',
+        'ui/render_message',
+        'ui/message_buffer',
+        'util/queue',
+        # 'util/scoped_globals',
+        # 'db/cache',
+        'app/room_ds',
+    ]
+
     foreach test_name : tests
         exe = executable(
             test_name,
-            common_src + 'tests/stub.c' + 'tests/@0@.c'.format(test_name),
+            src_common + 'tests/@0@.c'.format(test_name),
             dependencies: deps + unity_dep,
-            include_directories: incdirs + include_directories('src'),
+            include_directories: incdirs,
         )
         test(test_name, exe)
     endforeach

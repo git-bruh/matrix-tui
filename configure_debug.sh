@@ -15,6 +15,7 @@ fi
 
 meson \
 	--buildtype=debug \
+	-Dtests=true \
 	-Db_sanitize="$sanitize" \
 	-Db_lto=false \
 	"$@" \
