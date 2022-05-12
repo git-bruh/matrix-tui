@@ -7,6 +7,25 @@ static struct room *room = NULL;
 static char displayname[] = "Testing";
 static char sender[] = "@sender:localhost";
 
+static const struct matrix_sync_event redaction = 	{
+		.type = MATRIX_EVENT_TIMELINE,
+		.timeline = {
+		  .type = MATRIX_ROOM_REDACTION,
+		},
+	};
+
+static const struct matrix_sync_event sync_message = 			{
+			.type = MATRIX_EVENT_TIMELINE,
+			.timeline = {
+				.type = MATRIX_ROOM_MESSAGE,
+				.base = {
+					.sender = sender,
+				},
+				.message = {
+					.body = displayname,
+				},
+			}};
+
 void
 setUp(void) {
 	room = room_alloc((struct room_info) {0});
@@ -56,26 +75,7 @@ test_lock(void) {
 void
 test_insertion_deletion(void) {
 	/* Empty timeline */
-	struct matrix_sync_event redaction = 	{
-		.type = MATRIX_EVENT_TIMELINE,
-		.timeline = {
-		  .type = MATRIX_ROOM_REDACTION,
-		},
-	};
-
 	TEST_ASSERT_EQUAL(-1, room_put_event(room, &redaction, false, 0, 2500));
-
-	struct matrix_sync_event sync_message = 			{
-			.type = MATRIX_EVENT_TIMELINE,
-			.timeline = {
-				.type = MATRIX_ROOM_MESSAGE,
-				.base = {
-					.sender = sender,
-				},
-				.message = {
-					.body = displayname,
-				},
-			}};
 
 	/* 2499 - 1 backfill. */
 	for (size_t i = 2499; i > 0; i--) {
@@ -137,11 +137,68 @@ test_insertion_deletion(void) {
 	}
 }
 
+void
+test_child(void) {
+	char *const children[]
+	  = {(char[]) {"!test:matrix.org"}, (char[]) {"!qq:matrix.org"}};
+
+	for (size_t i = 0; i < sizeof(children) / sizeof(*children); i++) {
+		room_add_child(room, children[i]);
+		TEST_ASSERT_TRUE(shget(room->children, children[i]));
+
+		room_remove_child(room, children[i]);
+		TEST_ASSERT_FALSE(shget(room->children, children[i]));
+	}
+}
+
+void
+test_fill(void) {
+	struct widget_points points = {0, 200, 0, 0};
+
+	/* Backfill */
+	for (size_t i = 99; i > 0; i--) {
+		room_put_event(room, &sync_message, true, i, (uint64_t) -1);
+	}
+
+	TEST_ASSERT_TRUE(room_maybe_reset_and_fill_events(room, &points));
+	/* Events already filled and points not changed. */
+	TEST_ASSERT_FALSE(room_maybe_reset_and_fill_events(room, &points));
+
+	points.x2++;
+	/* Events filled but points changed. */
+	TEST_ASSERT_TRUE(room_maybe_reset_and_fill_events(room, &points));
+
+	room_put_event(room, &sync_message, true, 0, (uint64_t) -1);
+
+	/* Points same but new event. */
+	TEST_ASSERT_TRUE(room_maybe_reset_and_fill_events(room, &points));
+
+	/* Fill new events. */
+	for (size_t i = 100; i < 200; i++) {
+		room_put_event(room, &sync_message, false, i, (uint64_t) -1);
+	}
+
+	TEST_ASSERT_TRUE(room_maybe_reset_and_fill_events(room, &points));
+	/* Events already filled and points not changed. */
+	TEST_ASSERT_FALSE(room_maybe_reset_and_fill_events(room, &points));
+
+	points.x2++;
+	/* Events filled but points changed. */
+	TEST_ASSERT_TRUE(room_maybe_reset_and_fill_events(room, &points));
+
+	room_put_event(room, &sync_message, false, 200, (uint64_t) -1);
+
+	/* Points same but new event. */
+	TEST_ASSERT_TRUE(room_maybe_reset_and_fill_events(room, &points));
+}
+
 int
 main(void) {
 	UNITY_BEGIN();
 	RUN_TEST(test_lock);
 	/* Tests bsearch aswell. */
 	RUN_TEST(test_insertion_deletion);
+	RUN_TEST(test_child);
+	RUN_TEST(test_fill);
 	return UNITY_END();
 }
