@@ -2,6 +2,9 @@
 #include "ui/ui.h"
 #include "unity.h"
 
+#define TEST_ASSERT_EQUAL_ARRAY(x, y, len)                                     \
+	TEST_ASSERT_EQUAL_MEMORY(x, y, len * sizeof(*x))
+
 void
 setUp(void) {
 }
@@ -32,8 +35,9 @@ test_buf(void) {
 		  = buf_to_uint32_t(bufs[i], strlen(bufs[i]));
 
 		TEST_ASSERT_EQUAL(expected_lens[i], arrlenu(converted));
-		TEST_ASSERT_EQUAL_MEMORY(converted, expected[i], arrlenu(converted));
-		TEST_ASSERT_EQUAL_MEMORY(
+
+		TEST_ASSERT_EQUAL_ARRAY(converted, expected[i], arrlenu(converted));
+		TEST_ASSERT_EQUAL_ARRAY(
 		  converted, converted_with_len, arrlenu(converted));
 
 		arrfree(converted);
@@ -56,7 +60,7 @@ test_mxid(void) {
 	for (size_t i = 0; i < (sizeof(bufs) / sizeof(*bufs)); i++) {
 		uint32_t *buf = mxid_to_uint32_t(bufs[i]);
 		TEST_ASSERT_NOT_NULL(buf);
-		TEST_ASSERT_EQUAL_MEMORY(buf, expected[i], arrlenu(buf));
+		TEST_ASSERT_EQUAL_ARRAY(buf, expected[i], arrlenu(buf));
 		arrfree(buf);
 	}
 }
