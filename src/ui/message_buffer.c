@@ -131,6 +131,11 @@ message_buffer_insert(struct message_buffer *buf, struct widget_points *points,
 	/* XXX: Expensive assertion, maybe disable it. */
 	assert(message_is_not_duplicate(buf, message));
 
+	if (buf->zeroed) {
+		buf->zeroed = false;
+		buf->last_points = *points;
+	}
+
 	/* TODO account for large username and truncate it. */
 	int padding
 	  = points->x1 + uint32_width(message->username) + widget_str_width("<> ");
@@ -145,11 +150,6 @@ message_buffer_insert(struct message_buffer *buf, struct widget_points *points,
 
 	if (start_x >= points->x2) {
 		return -1;
-	}
-
-	if (buf->zeroed) {
-		buf->zeroed = false;
-		buf->last_points = *points;
 	}
 
 	int x = start_x;
