@@ -126,13 +126,15 @@ mxid_to_uint32_t(const char *mxid) {
 		return NULL;
 	}
 
+	mxid = &mxid[start_index];
+
 	char *end_colon = strchr(mxid, ':');
 
 	if (!end_colon) {
 		return NULL;
 	}
 
-	return buf_to_uint32_t(&mxid[start_index], (size_t) (end_colon - mxid));
+	return buf_to_uint32_t(mxid, (size_t) (end_colon - mxid));
 }
 
 uintattr_t
