@@ -324,60 +324,73 @@ timeline_init(struct timeline *timeline) {
 }
 
 bool
-room_fill_old_events(struct room *room, struct widget_points *points) {
-	assert(room);
-	assert(points);
-
-	struct message **buf = room->timelines[TIMELINE_BACKWARD].buf;
-	size_t len = room->timelines[TIMELINE_BACKWARD].len;
-
-	for (size_t i = len; i > 0; i--) {
-		if (!buf[i - 1]->redacted) {
-			message_buffer_insert(&room->buffer, points, buf[i - 1]);
-		}
-	}
-
-	return (len > 0);
-}
-
-bool
-room_fill_new_events(struct room *room, struct widget_points *points) {
-	assert(room);
-	assert(points);
-
-	size_t original_consumed = room->already_consumed;
-
-	struct message **buf = room->timelines[TIMELINE_FORWARD].buf;
-	size_t len = room->timelines[TIMELINE_FORWARD].len;
-
-	for (; room->already_consumed < len; room->already_consumed++) {
-		if (!buf[room->already_consumed]->redacted) {
-			message_buffer_insert(
-			  &room->buffer, points, buf[room->already_consumed]);
-		}
-	}
-
-	return (room->already_consumed > original_consumed);
-}
-
-bool
-room_reset_if_recalculate(struct room *room, struct widget_points *points) {
+room_maybe_reset_and_fill_events(
+  struct room *room, struct widget_points *points) {
 	assert(room);
 	assert(points);
 
 	pthread_mutex_lock(&room->realloc_or_modify_mutex);
-	bool recalculate = message_buffer_should_recalculate(&room->buffer, points);
 
-	if (recalculate) {
-		room->already_consumed = 0;
+	if (message_buffer_should_recalculate(&room->buffer, points)) {
+		room->timelines[TIMELINE_BACKWARD].consumed
+		  = room->timelines[TIMELINE_FORWARD].consumed = 0;
 		message_buffer_zero(&room->buffer);
-		room_fill_old_events(room, points);
-		room_fill_new_events(room, points);
-		message_buffer_ensure_sane_scroll(&room->buffer);
 	}
+
+	bool filled = false;
+
+	enum timeline_type types[TIMELINE_MAX]
+	  = {TIMELINE_BACKWARD, TIMELINE_FORWARD};
+
+	for (size_t type_idx = 0; type_idx < TIMELINE_MAX; type_idx++) {
+		enum timeline_type type = types[type_idx];
+
+		struct timeline *timeline = &room->timelines[type];
+		size_t len = timeline->len;
+		size_t original_consumed = timeline->consumed;
+
+		switch (type) {
+		case TIMELINE_BACKWARD:
+			if (timeline->consumed == len) {
+				continue;
+			}
+
+			message_buffer_zero(&room->buffer);
+			timeline->consumed = 0;
+
+			for (size_t i = len; i > 0; i--, timeline->consumed++) {
+				if (!timeline->buf[i - 1]->redacted) {
+					message_buffer_insert(
+					  &room->buffer, points, timeline->buf[i - 1]);
+				}
+			}
+
+			break;
+		case TIMELINE_FORWARD:
+			for (; timeline->consumed < len; timeline->consumed++) {
+				if (!timeline->buf[timeline->consumed]->redacted) {
+					message_buffer_insert(
+					  &room->buffer, points, timeline->buf[timeline->consumed]);
+				}
+			}
+
+			break;
+		default:
+			assert(0);
+		}
+
+		assert(timeline->consumed == len);
+
+		if (!filled) {
+			filled = timeline->consumed > original_consumed;
+		}
+	}
+
+	message_buffer_ensure_sane_scroll(&room->buffer);
+
 	pthread_mutex_unlock(&room->realloc_or_modify_mutex);
 
-	return recalculate;
+	return filled;
 }
 
 struct room *

@@ -56,10 +56,10 @@ struct timeline {
 	 * writing events. This allows the reader thread to read old events while
 	 * the writer inserts after the reader's index. */
 	_Atomic size_t len;
+	size_t consumed;
 };
 
 struct room {
-	size_t already_consumed; /* No. of items consumed from timeline. */
 	struct members_map *members;
 	/* If the room is a space. children[i].value is always true as we just use
 	 * this as a set, not hashmap. */
@@ -90,11 +90,8 @@ int
 room_put_event(struct room *room, const struct matrix_sync_event *event,
   bool backward, uint64_t index, uint64_t redaction_index);
 bool
-room_fill_old_events(struct room *room, struct widget_points *points);
-bool
-room_fill_new_events(struct room *room, struct widget_points *points);
-bool
-room_reset_if_recalculate(struct room *room, struct widget_points *points);
+room_maybe_reset_and_fill_events(
+  struct room *room, struct widget_points *points);
 struct room *
 room_alloc(struct room_info info);
 void

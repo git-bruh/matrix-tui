@@ -175,14 +175,8 @@ static void
 reset_room_buffer(struct room *room) {
 	struct widget_points points = {0};
 	tab_room_get_buffer_points(&points);
-	bool reset = room_reset_if_recalculate(room, &points);
 
-	/* Ensure that new events are filled if we didn't reset. */
-	if (!reset) {
-		pthread_mutex_lock(&room->realloc_or_modify_mutex);
-		room_fill_new_events(room, &points);
-		pthread_mutex_unlock(&room->realloc_or_modify_mutex);
-	}
+	room_maybe_reset_and_fill_events(room, &points);
 }
 
 static int
