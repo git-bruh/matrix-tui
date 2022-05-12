@@ -49,6 +49,7 @@ void
 test_mxid(void) {
 	TEST_ASSERT_NULL(mxid_to_uint32_t(""));
 	TEST_ASSERT_NULL(mxid_to_uint32_t("@x:"));
+	TEST_ASSERT_NULL(mxid_to_uint32_t("@xxx"));
 
 	const char *const bufs[] = {"@test:kde.org", "@😄asdf:localhost"};
 
