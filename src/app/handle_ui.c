@@ -202,7 +202,6 @@ login_with_info(struct state *state, struct form *form) {
 				  state, queue_item_alloc(QUEUE_ITEM_LOGIN, password))
 				== 0) {
 				password_sent_to_queue = true;
-				ret = 0;
 			} else {
 				password = NULL; /* Freed */
 			}
