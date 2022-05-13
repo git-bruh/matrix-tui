@@ -26,8 +26,6 @@ enum {
 
 enum { FD_TTY = 0, FD_RESIZE, FD_PIPE, FD_MAX };
 
-enum tab { TAB_LOGIN = 0, TAB_HOME, TAB_ROOM };
-
 struct accumulated_sync_room {
 	enum matrix_room_type type;
 	struct room *room;
@@ -311,8 +309,6 @@ static void
 ui_loop(struct state *state) {
 	assert(state);
 
-	enum tab tab = TAB_ROOM;
-
 	struct tb_event event = {0};
 	struct pollfd fds[FD_MAX] = {0};
 
@@ -330,19 +326,11 @@ ui_loop(struct state *state) {
 			tb_clear();
 			tb_hide_cursor();
 
-			switch (tab) {
-			case TAB_HOME:
-				break;
-			case TAB_ROOM:
-				if (tab_room.selected_room) {
-					reset_room_buffer(tab_room.selected_room->value);
-				}
-
-				tab_room_redraw(&tab_room);
-				break;
-			default:
-				assert(0);
+			if (tab_room.selected_room) {
+				reset_room_buffer(tab_room.selected_room->value);
 			}
+
+			tab_room_redraw(&tab_room);
 
 			tb_present();
 		}
@@ -373,8 +361,6 @@ ui_loop(struct state *state) {
 			continue;
 		}
 
-		enum widget_error ret = WIDGET_NOOP;
-
 		if (event.key == TB_KEY_CTRL_C) {
 			/* Ensure that the syncer thread never deadlocks if we break here.
 			 * TODO verify that this works. */
@@ -384,18 +370,7 @@ ui_loop(struct state *state) {
 			break;
 		}
 
-		switch (tab) {
-		case TAB_HOME:
-			// handle_tab_home();
-			break;
-		case TAB_ROOM:
-			ret = handle_tab_room(state, &tab_room, &event);
-			break;
-		default:
-			assert(0);
-		}
-
-		if (ret == WIDGET_REDRAW) {
+		if (handle_tab_room(state, &tab_room, &event) == WIDGET_REDRAW) {
 			redraw = true;
 		}
 	}
