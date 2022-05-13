@@ -571,6 +571,7 @@ cache_iterator_spaces(struct cache *cache, struct cache_iterator *iterator,
 
 	if ((ret = mdb_cursor_open(txn, cache->dbs[DB_SPACE_CHILDREN], &cursor))
 		!= MDB_SUCCESS) {
+		mdb_txn_commit(txn);
 		return ret;
 	}
 
@@ -579,10 +580,6 @@ cache_iterator_spaces(struct cache *cache, struct cache_iterator *iterator,
 	  .cursor = cursor,
 	  .cache = cache,
 	  .space = space};
-
-	if (ret != MDB_SUCCESS) {
-		cache_iterator_finish(iterator);
-	}
 
 	return ret;
 }
