@@ -159,13 +159,13 @@ queue_listener(void *arg) {
 
 		pthread_mutex_unlock(&state->queue_mutex);
 
-		if (item) {
-			if (!state->done) {
-				queue_callbacks[item->type].cb(state, item->data);
-			}
-			queue_callbacks[item->type].free(item->data);
-			free(item);
+		/* Could've been set to false in between the above function calls. */
+		if (!state->done) {
+			queue_callbacks[item->type].cb(state, item->data);
 		}
+
+		queue_callbacks[item->type].free(item->data);
+		free(item);
 	}
 
 	pthread_exit(NULL);
