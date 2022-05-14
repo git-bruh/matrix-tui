@@ -2,6 +2,8 @@
 
 #include "unity.h"
 
+#include <string.h>
+
 static struct queue queue = {0};
 static int test_data[QUEUE_SIZE] = {0};
 

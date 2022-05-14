@@ -7,6 +7,17 @@
 
 enum log_level { LOG_MESSAGE, LOG_WARN, LOG_ERROR, LOG_MAX };
 
+void
+log_path_set(void);
+const char *
+log_path(void);
+void
+log_mutex_lock();
+void
+log_mutex_unlock();
+void
+log_mutex_destroy();
+
 __attribute__((unused)) static inline void
 log_level_and_time(enum log_level level) {
 	assert(level < LOG_MAX);

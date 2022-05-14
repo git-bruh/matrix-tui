@@ -2,6 +2,7 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include <stdbool.h>
+#include <stdint.h>
 
 struct state;
 

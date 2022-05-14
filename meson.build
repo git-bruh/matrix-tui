@@ -45,6 +45,7 @@ src_ui = [
 ]
 
 src_util = [
+    'src/util/fatal.c',
     'src/util/fatal.h',
     'src/util/log.h',
     'src/util/queue.c',
@@ -55,11 +56,7 @@ src_util = [
 
 c_args = [
     '-D_GNU_SOURCE',
-    '-D_FORTIFY_SOURCE=2',
     '-DBUG_URL="https://github.com/git-bruh/matrix-tui/issues"',
-    '-fstack-protector-strong',
-    '--param=ssp-buffer-size=4',
-    ['--include', 'src/util/fatal.h'],
 ]
 
 warning_c_args = [
@@ -79,6 +76,8 @@ warning_c_args = [
 
 add_project_arguments(c_args, language: 'c')
 add_project_arguments(cc.get_supported_arguments(warning_c_args), language: 'c')
+
+add_global_arguments([['--include', '../src/util/fatal.h']], language: 'c')
 
 if get_option('b_sanitize').contains('undefined') and cc.get_id() == 'clang'
     add_global_arguments('-fsanitize-blacklist=../asan.supp', language: 'c')

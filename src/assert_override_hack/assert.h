@@ -4,6 +4,9 @@
 #error "Build without NDEBUG!"
 #define assert(x) (void) 0
 #else
+#include <stdio.h>
+#include <stdlib.h>
+
 _Noreturn __attribute__((unused)) static inline void
 fatal_assert_fail(
   const char *expr, const char *file, int line, const char *func) {
