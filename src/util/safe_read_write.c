@@ -2,13 +2,11 @@
 #include <stdint.h>
 #include <unistd.h>
 
-#define FATAL_DECL __attribute__((unused)) static inline
-
 /* Wrapper for read() / write() immune to EINTR.
  * Must be a macro so we can generate 2 functions with const and
  * non-const args. This is for use in program code, not library code. */
 #define GEN_WRAPPER(name, func, increment_type, ...)                           \
-	FATAL_DECL ssize_t name(__VA_ARGS__) {                                     \
+	ssize_t name(__VA_ARGS__) {                                                \
 		ssize_t ret = 0;                                                       \
 		while (nbyte > 0) {                                                    \
 			do {                                                               \

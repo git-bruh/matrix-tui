@@ -119,7 +119,7 @@ handle_login(struct state *state, void *data) {
 		}
 	}
 
-	write(state->thread_comm_pipe[PIPE_WRITE], &code, sizeof(code));
+	safe_write(state->thread_comm_pipe[PIPE_WRITE], &code, sizeof(code));
 
 	free(access_token);
 }

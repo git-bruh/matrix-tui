@@ -342,8 +342,8 @@ ui_loop(struct state *state) {
 
 			uintptr_t data = 0;
 
-			ssize_t ret
-			  = read(state->thread_comm_pipe[PIPE_READ], &data, sizeof(data));
+			ssize_t ret = safe_read(
+			  state->thread_comm_pipe[PIPE_READ], &data, sizeof(data));
 
 			assert(ret == 0);
 			assert(data);
@@ -589,7 +589,8 @@ login(struct state *state) {
 
 			enum matrix_code code = MATRIX_SUCCESS;
 
-			if ((read(state->thread_comm_pipe[PIPE_READ], &code, sizeof(code)))
+			if ((safe_read(
+				  state->thread_comm_pipe[PIPE_READ], &code, sizeof(code)))
 				== 0) {
 				login.logging_in = false;
 
@@ -764,7 +765,7 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 	uintptr_t ptr = (uintptr_t) &data;
 
-	write(state->thread_comm_pipe[PIPE_WRITE], &ptr, sizeof(ptr));
+	safe_write(state->thread_comm_pipe[PIPE_WRITE], &ptr, sizeof(ptr));
 
 	pthread_mutex_lock(&state->sync_mutex);
 
