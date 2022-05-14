@@ -14,13 +14,13 @@ struct state_rooms {
 	struct hm_room *orphaned_rooms;
 };
 
-static inline struct room *
+__attribute__((unused)) static inline struct room *
 rooms_get_room(struct hm_room *rooms, char *key) {
 	ptrdiff_t tmp = 0;
 	return shget_ts(rooms, key, tmp);
 }
 
-static inline ptrdiff_t
+__attribute__((unused)) static inline ptrdiff_t
 rooms_get_index(struct hm_room *rooms, char *key) {
 	ptrdiff_t tmp = 0;
 	return shgeti_ts(rooms, key, tmp);
