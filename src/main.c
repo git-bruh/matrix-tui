@@ -825,6 +825,8 @@ init_everything(struct state *state) {
 
 	if (ret != 0) {
 		LOG(LOG_ERROR, "Failed to initialize database: %s", mdb_strerror(ret));
+
+		return ret;
 	}
 
 	ret = pthread_create(
