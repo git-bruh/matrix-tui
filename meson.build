@@ -49,6 +49,7 @@ src_util = [
     'src/util/log.h',
     'src/util/queue.c',
     'src/util/queue.h',
+    'src/util/safe_read_write.c',
     'src/util/scoped_globals.c',
 ]
 

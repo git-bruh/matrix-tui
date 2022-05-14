@@ -36,5 +36,7 @@ struct state {
 
 struct queue_item;
 
-#define read safe_read
-#define write safe_write
+ssize_t
+safe_read(int fildes, void *buf, size_t nbyte);
+ssize_t
+safe_write(int fildes, const void *buf, size_t nbyte);
