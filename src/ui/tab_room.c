@@ -2,9 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "ui/tab_room.h"
 
-#include "app/hm_room.h"
 #include "app/room_ds.h"
-#include "app/state.h" /* TODO remove */
 #include "stb_ds.h"
 
 #include <assert.h>
@@ -73,7 +71,7 @@ tab_room_init(struct tab_room *tab_room) {
 	return 0;
 }
 
-void
+static void
 tab_room_add_room(
   struct tab_room *tab_room, size_t index, struct hm_room *room) {
 	treeview_node_init(&tab_room->room_nodes[index], room, room_draw_cb);
@@ -96,7 +94,8 @@ tab_room_add_room(
  * error prone than manually managing the nodes, and isn't really that
  * inefficient if you consider how infrequently room changes occur. */
 void
-tab_room_reset_rooms(struct tab_room *tab_room, struct state *state) {
+tab_room_reset_rooms(
+  struct tab_room *tab_room, struct state_rooms *state_rooms) {
 	assert(tab_room);
 
 	/* Reset all indices and pointers so that the treeview indices aren't messed
@@ -112,7 +111,7 @@ tab_room_reset_rooms(struct tab_room *tab_room, struct state *state) {
 	if (arrlenu(tab_room->path) > 0) {
 		/* TODO verify path. */
 		struct room *space = rooms_get_room(
-		  state->rooms, tab_room->path[arrlenu(tab_room->path) - 1]);
+		  state_rooms->rooms, tab_room->path[arrlenu(tab_room->path) - 1]);
 		assert(space);
 
 		/* A child space might have more rooms than root orphans. */
@@ -121,7 +120,7 @@ tab_room_reset_rooms(struct tab_room *tab_room, struct state *state) {
 		for (size_t i = 0, skipped = 0, len = shlenu(space->children); i < len;
 			 i++) {
 			ptrdiff_t child_index
-			  = rooms_get_index(state->rooms, space->children[i].key);
+			  = rooms_get_index(state_rooms->rooms, space->children[i].key);
 
 			/* Child room not joined yet. */
 			if (child_index == -1) {
@@ -130,17 +129,18 @@ tab_room_reset_rooms(struct tab_room *tab_room, struct state *state) {
 			}
 
 			tab_room_add_room(
-			  tab_room, i - skipped, &state->rooms[child_index]);
+			  tab_room, i - skipped, &state_rooms->rooms[child_index]);
 		}
 	} else {
-		arrsetlen(tab_room->room_nodes, shlenu(state->orphaned_rooms));
+		arrsetlen(tab_room->room_nodes, shlenu(state_rooms->orphaned_rooms));
 
-		for (size_t i = 0, len = shlenu(state->orphaned_rooms); i < len; i++) {
+		for (size_t i = 0, len = shlenu(state_rooms->orphaned_rooms); i < len;
+			 i++) {
 			ptrdiff_t index
-			  = shgeti(state->rooms, state->orphaned_rooms[i].key);
+			  = shgeti(state_rooms->rooms, state_rooms->orphaned_rooms[i].key);
 			assert(index != -1);
 
-			tab_room_add_room(tab_room, i, &state->rooms[index]);
+			tab_room_add_room(tab_room, i, &state_rooms->rooms[index]);
 		}
 	}
 

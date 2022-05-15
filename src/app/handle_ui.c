@@ -8,9 +8,10 @@
 #include <assert.h>
 
 static enum widget_error
-handle_tree(
-  struct tab_room *tab_room, struct tb_event *event, struct state *state) {
+handle_tree(struct tab_room *tab_room, struct state_rooms *state_rooms,
+  struct tb_event *event) {
 	assert(tab_room);
+	assert(state_rooms);
 	assert(event);
 
 	switch (event->key) {
@@ -25,7 +26,7 @@ handle_tree(
 				tab_room->selected_room = NULL;
 
 				/* Reset to the first room in the space. */
-				tab_room_reset_rooms(tab_room, state);
+				tab_room_reset_rooms(tab_room, state_rooms);
 			}
 
 			return WIDGET_REDRAW;
@@ -134,7 +135,7 @@ handle_tab_room(
 
 		switch (tab_room->widget) {
 		case TAB_ROOM_TREE:
-			ret = handle_tree(tab_room, event, state);
+			ret = handle_tree(tab_room, &state->state_rooms, event);
 			break;
 		case TAB_ROOM_INPUT:
 			ret = handle_input(&tab_room->input, event, &enter_pressed);

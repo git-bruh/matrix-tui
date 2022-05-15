@@ -99,12 +99,12 @@ cleanup(struct state *state) {
 	matrix_destroy(state->matrix);
 	matrix_global_cleanup();
 
-	for (size_t i = 0, len = shlenu(state->rooms); i < len; i++) {
-		room_destroy(state->rooms[i].value);
+	for (size_t i = 0, len = shlenu(state->state_rooms.rooms); i < len; i++) {
+		room_destroy(state->state_rooms.rooms[i].value);
 	}
 
-	shfree(state->rooms);
-	shfree(state->orphaned_rooms);
+	shfree(state->state_rooms.rooms);
+	shfree(state->state_rooms.orphaned_rooms);
 
 	memset(state, 0, sizeof(*state));
 
@@ -202,10 +202,10 @@ get_fds(struct state *state, struct pollfd fds[FD_MAX]) {
 }
 
 static void
-state_reset_orphans(struct state *state) {
-	assert(state);
+state_reset_orphans(struct state_rooms *state_rooms) {
+	assert(state_rooms);
 
-	shfree(state->orphaned_rooms);
+	shfree(state_rooms->orphaned_rooms);
 
 	struct {
 		char *key;
@@ -213,8 +213,8 @@ state_reset_orphans(struct state *state) {
 	} *children = NULL;
 
 	/* Collect a hashmap of all rooms that are a child of any other room. */
-	for (size_t i = 0, len = shlenu(state->rooms); i < len; i++) {
-		struct room *room = state->rooms[i].value;
+	for (size_t i = 0, len = shlenu(state_rooms->rooms); i < len; i++) {
+		struct room *room = state_rooms->rooms[i].value;
 
 		for (size_t j = 0, children_len = shlenu(room->children);
 			 j < children_len; j++) {
@@ -223,22 +223,21 @@ state_reset_orphans(struct state *state) {
 	}
 
 	/* Now any rooms which aren't children of any other room are orphans. */
-	for (size_t i = 0, len = shlenu(state->rooms); i < len; i++) {
-		if (shget(children, state->rooms[i].key)) {
+	for (size_t i = 0, len = shlenu(state_rooms->rooms); i < len; i++) {
+		if (shget(children, state_rooms->rooms[i].key)) {
 			continue; /* A child */
 		}
 
-		shput(
-		  state->orphaned_rooms, state->rooms[i].key, state->rooms[i].value);
+		shput(state_rooms->orphaned_rooms, state_rooms->rooms[i].key,
+		  state_rooms->rooms[i].value);
 	}
 
 	shfree(children);
 }
 
 static bool
-handle_accumulated_sync(struct state *state, struct tab_room *tab_room,
-  struct accumulated_sync_data *data) {
-	assert(state);
+handle_accumulated_sync(struct state_rooms *state_rooms,
+  struct tab_room *tab_room, struct accumulated_sync_data *data) {
 	assert(tab_room);
 	assert(data);
 
@@ -260,11 +259,11 @@ handle_accumulated_sync(struct state *state, struct tab_room *tab_room,
 			assert(0);
 		}
 
-		if (!(rooms_get_room(state->rooms, room->id))) {
+		if (!(rooms_get_room(state_rooms->rooms, room->id))) {
 			any_tree_changes = true; /* New room added */
 			/* This doesn't need locking as the syncer thread waits until
 			 * we use all the accumulated data (this function). */
-			shput(state->rooms, room->id, room->room);
+			shput(state_rooms->rooms, room->id, room->room);
 		}
 
 		if (tab_room->selected_room
@@ -281,7 +280,7 @@ handle_accumulated_sync(struct state *state, struct tab_room *tab_room,
 		assert(event->child);
 
 		struct room *room
-		  = rooms_get_room(state->rooms, noconst(event->parent));
+		  = rooms_get_room(state_rooms->rooms, noconst(event->parent));
 		assert(room);
 
 		switch (event->status) {
@@ -297,8 +296,9 @@ handle_accumulated_sync(struct state *state, struct tab_room *tab_room,
 	}
 
 	if (any_tree_changes || arrlenu(data->space_events) > 0) {
-		state_reset_orphans(state);
-		tab_room_reset_rooms(tab_room, state);
+		state_reset_orphans(state_rooms);
+		tab_room_reset_rooms(tab_room, state_rooms);
+
 		return true;
 	}
 
@@ -317,7 +317,7 @@ ui_loop(struct state *state) {
 	struct tab_room tab_room = {0};
 	tab_room_init(&tab_room);
 
-	tab_room_reset_rooms(&tab_room, state);
+	tab_room_reset_rooms(&tab_room, &state->state_rooms);
 
 	for (bool redraw = true;;) {
 		if (redraw) {
@@ -349,9 +349,9 @@ ui_loop(struct state *state) {
 			assert(data);
 
 			/* Ensure that we redraw if we had changes. */
-			redraw = handle_accumulated_sync(
+			redraw = handle_accumulated_sync(&state->state_rooms, &tab_room,
 			  /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-			  state, &tab_room, (struct accumulated_sync_data *) data);
+			  (struct accumulated_sync_data *) data);
 
 			state->sync_cond_signaled = true;
 			pthread_cond_signal(&state->sync_cond);
@@ -385,7 +385,8 @@ populate_room_users(struct state *state, const char *room_id) {
 
 	struct cache_iterator iterator = {0};
 
-	struct room *room = rooms_get_room(state->rooms, noconst(room_id));
+	struct room *room
+	  = rooms_get_room(state->state_rooms.rooms, noconst(room_id));
 	struct cache_iterator_member member = {0};
 
 	assert(room);
@@ -416,7 +417,8 @@ populate_room_from_cache(struct state *state, const char *room_id) {
 
 	populate_room_users(state, room_id);
 
-	struct room *room = rooms_get_room(state->rooms, noconst(room_id));
+	struct room *room
+	  = rooms_get_room(state->state_rooms.rooms, noconst(room_id));
 	struct cache_iterator_event event = {0};
 
 	assert(room);
@@ -475,7 +477,7 @@ populate_from_cache(struct state *state) {
 		struct room *room = room_alloc(info);
 		assert(room);
 
-		shput(state->rooms, noconst(id), room);
+		shput(state->state_rooms.rooms, noconst(id), room);
 		populate_room_from_cache(state, id);
 	}
 
@@ -493,7 +495,8 @@ populate_from_cache(struct state *state) {
 	while ((cache_iterator_next(&iterator)) == MDB_SUCCESS) {
 		assert(space.id);
 
-		struct room *space_room = shget(state->rooms, noconst(space.id));
+		struct room *space_room
+		  = shget(state->state_rooms.rooms, noconst(space.id));
 
 		if (!space_room) {
 			LOG(LOG_WARN, "Got unknown space '%s'", space.id);
@@ -508,7 +511,7 @@ populate_from_cache(struct state *state) {
 			assert(space.child_id);
 
 			struct room *space_child
-			  = shget(state->rooms, noconst(space.child_id));
+			  = shget(state->state_rooms.rooms, noconst(space.child_id));
 
 			/* TOOD change .children to just be strings so we can handle
 			 * newly joined rooms. */
@@ -531,7 +534,7 @@ populate_from_cache(struct state *state) {
 
 	cache_iterator_finish(&iterator);
 
-	state_reset_orphans(state);
+	state_reset_orphans(&state->state_rooms);
 
 	return 0;
 }
@@ -690,7 +693,8 @@ sync_cb(struct matrix *matrix, struct matrix_sync_response *response) {
 
 		struct matrix_sync_event event;
 
-		struct room *room = rooms_get_room(state->rooms, sync_room.id);
+		struct room *room
+		  = rooms_get_room(state->state_rooms.rooms, sync_room.id);
 
 		bool room_needs_info = !room;
 
@@ -854,9 +858,9 @@ init_everything(struct state *state) {
 		return -1;
 	}
 
-	SHMAP_INIT(state->rooms);
-	/* No need to call SHMAP_INIT on state->orphaned_rooms as it just takes
-	 * pointers from state->rooms. */
+	SHMAP_INIT(state->state_rooms.rooms);
+	/* No need to call SHMAP_INIT on state->state_rooms.orphaned_rooms as it
+	 * just takes pointers from state->state_rooms.rooms. */
 
 	ret = populate_from_cache(state);
 

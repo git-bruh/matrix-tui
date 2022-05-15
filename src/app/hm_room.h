@@ -11,6 +11,7 @@ struct hm_room {
 
 struct state_rooms {
 	struct hm_room *rooms;
+	/* Orphaned rooms/spaces without a parent space. */
 	struct hm_room *orphaned_rooms;
 };
 

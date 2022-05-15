@@ -29,9 +29,7 @@ struct state {
 	struct cache cache;
 	struct queue queue;
 	struct matrix *matrix;
-	struct hm_room *rooms;
-	/* Orphaned rooms/spaces without a parent space. */
-	struct hm_room *orphaned_rooms;
+	struct state_rooms state_rooms;
 };
 
 struct queue_item;
