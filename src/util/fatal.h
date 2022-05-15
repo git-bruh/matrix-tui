@@ -4,7 +4,6 @@
 #define calloc fatal_calloc
 #define malloc fatal_malloc
 #define realloc fatal_realloc
-#define reallocarray fatal_reallocarray
 #define strdup fatal_strdup
 #define strndup fatal_strndup
 #endif

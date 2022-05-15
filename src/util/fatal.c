@@ -50,10 +50,6 @@ void *
 fatal_realloc(void *ptr, size_t size) {
 	FATAL_CHECK(realloc(ptr, size));
 }
-void *
-fatal_reallocarray(void *ptr, size_t nmemb, size_t size) {
-	FATAL_CHECK(reallocarray(ptr, nmemb, size));
-}
 char *
 fatal_strdup(const char *s) {
 	FATAL_CHECK(strdup(s));
