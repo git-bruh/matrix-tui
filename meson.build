@@ -18,6 +18,7 @@ src_app = [
     'src/app/queue_callbacks.h',
     'src/app/room_ds.c',
     'src/app/room_ds.h',
+    'src/app/state.c',
     'src/app/state.h',
 ]
 

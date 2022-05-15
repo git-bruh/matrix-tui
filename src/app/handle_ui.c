@@ -1,9 +1,6 @@
 /* SPDX-FileCopyrightText: 2021 git-bruh
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #include "app/state.h"
-#include "matrix.h"
-#include "ui/login_form.h"
-#include "ui/tab_room.h"
 
 #include <assert.h>
 
