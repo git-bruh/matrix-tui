@@ -124,6 +124,7 @@ if get_option('tests')
         'ui/login_form',
         'ui/render_message',
         'ui/message_buffer',
+        'ui/tab_room',
         'util/queue',
         # 'util/scoped_globals',
         # 'db/cache',
