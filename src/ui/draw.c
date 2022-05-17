@@ -21,7 +21,8 @@ enum {
 /* Wrapper for drawing and highlighting borders. */
 static void
 border_highlight(struct widget_points *points, bool highlight) {
-	border_redraw(points, highlight ? BORDER_HIGHLIGHT_FG : TB_DEFAULT, TB_DEFAULT);
+	border_redraw(
+	  points, highlight ? BORDER_HIGHLIGHT_FG : TB_DEFAULT, TB_DEFAULT);
 }
 
 static int
@@ -144,6 +145,19 @@ void
 tab_room_get_buffer_points(struct widget_points *points) {
 	get_buffer_points(points, 1);
 	adjust_inside_border(points);
+}
+
+void
+tab_room_get_points(
+  struct tab_room *tab_room, struct widget_points points[TAB_ROOM_MAX]) {
+	assert(tab_room);
+	assert(points);
+
+	int input_rows = -1;
+
+	get_tree_points(&points[TAB_ROOM_TREE]);
+	get_input_points(&points[TAB_ROOM_INPUT], &tab_room->input, &input_rows);
+	get_buffer_points(&points[TAB_ROOM_MESSAGE_BUFFER], input_rows);
 }
 
 void

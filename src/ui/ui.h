@@ -38,9 +38,9 @@ struct tab_room {
 	enum tab_room_widget {
 		TAB_ROOM_INPUT = 0,
 		TAB_ROOM_TREE,
-		/* TODO */
 		TAB_ROOM_MESSAGE_BUFFER,
-		TAB_ROOM_MEMBERS,
+		TAB_ROOM_MAX
+		/* TODO TAB_ROOM_MEMBERS */
 	} widget;
 	struct input input;
 	struct treeview_node root_nodes[NODE_MAX];
@@ -66,6 +66,9 @@ mxid_to_uint32_t(const char *mxid);
 uintattr_t
 str_attr(const char *str);
 
+void
+tab_room_get_points(
+  struct tab_room *tab_room, struct widget_points points[TAB_ROOM_MAX]);
 void
 tab_room_get_buffer_points(struct widget_points *points);
 void

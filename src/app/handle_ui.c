@@ -108,22 +108,57 @@ handle_message_buffer(struct message_buffer *buf, struct tb_event *event) {
 	return WIDGET_NOOP;
 }
 
+static enum tab_room_widget
+tab_room_find_widget(struct tab_room *tab_room, int x, int y) {
+	struct widget_points points[TAB_ROOM_MAX] = {0};
+	tab_room_get_points(tab_room, points);
+
+	for (enum tab_room_widget widget = 0; widget < TAB_ROOM_MAX; widget++) {
+		if (widget_points_in_bounds(&points[widget], x, y)) {
+			return widget;
+		}
+	}
+
+	return TAB_ROOM_MAX;
+}
+
 enum widget_error
 handle_tab_room(
   struct state *state, struct tab_room *tab_room, struct tb_event *event) {
+	assert(state);
+	assert(tab_room);
+	assert(event);
+
 	enum widget_error ret = WIDGET_NOOP;
-
-	if (!tab_room->selected_room) {
-		return ret;
-	}
-
-	struct room *room = tab_room->selected_room->value;
 
 	if (event->type == TB_EVENT_RESIZE) {
 		return WIDGET_REDRAW;
 	}
 
+	/* Find the new widget to switch to, forwarding the event to the current
+	 * widget in case of no change. */
+	if (event->type == TB_EVENT_MOUSE && event->key == TB_KEY_MOUSE_LEFT) {
+		enum tab_room_widget new_widget
+		  = tab_room_find_widget(tab_room, event->x, event->y);
+
+		if (new_widget == TAB_ROOM_MAX) {
+			return ret;
+		}
+
+		if (new_widget != tab_room->widget) {
+			tab_room->widget = new_widget;
+			return WIDGET_REDRAW;
+		}
+	}
+
 	if (event->type == TB_EVENT_MOUSE) {
+		if (tab_room->widget != TAB_ROOM_MESSAGE_BUFFER
+			|| !tab_room->selected_room) {
+			return WIDGET_NOOP;
+		}
+
+		struct room *room = tab_room->selected_room->value;
+
 		pthread_mutex_lock(&room->realloc_or_modify_mutex);
 		ret = handle_message_buffer(&room->buffer, event);
 		pthread_mutex_unlock(&room->realloc_or_modify_mutex);
@@ -161,6 +196,8 @@ handle_tab_room(
 
 				ret = input_handle_event(&tab_room->input, INPUT_CLEAR);
 			}
+			break;
+		case TAB_ROOM_MESSAGE_BUFFER:
 			break;
 		default:
 			assert(0);
