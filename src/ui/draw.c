@@ -15,7 +15,14 @@ enum {
 	FORM_WIDTH = 68,
 	FORM_ART_GAP = 2,
 	TAB_ROOM_TREE_PERCENT = 20,
+	BORDER_HIGHLIGHT_FG = COLOR_BLUE,
 };
+
+/* Wrapper for drawing and highlighting borders. */
+static void
+border_highlight(struct widget_points *points, bool highlight) {
+	border_redraw(points, highlight ? BORDER_HIGHLIGHT_FG : TB_DEFAULT, TB_DEFAULT);
+}
 
 static int
 part_percent(int total, int percent) {
@@ -144,16 +151,17 @@ tab_room_redraw(struct tab_room *tab_room) {
 	assert(tab_room);
 
 	struct widget_points points = {0};
+	const enum tab_room_widget active = tab_room->widget;
 
 	get_tree_points(&points);
-	border_redraw(&points, TB_DEFAULT, TB_DEFAULT);
+	border_highlight(&points, active == TAB_ROOM_TREE);
 	adjust_inside_border(&points);
 	treeview_redraw(&tab_room->treeview, &points);
 
 	int input_rows = -1;
 
 	get_input_points(&points, &tab_room->input, &input_rows);
-	border_redraw(&points, TB_DEFAULT, TB_DEFAULT);
+	border_highlight(&points, active == TAB_ROOM_INPUT);
 	adjust_inside_border(&points);
 
 	/* Don't pass input_rows as we already set it. */
@@ -161,7 +169,7 @@ tab_room_redraw(struct tab_room *tab_room) {
 
 	/* Draw border even if no active room. */
 	get_buffer_points(&points, input_rows);
-	border_redraw(&points, TB_DEFAULT, TB_DEFAULT);
+	border_highlight(&points, active == TAB_ROOM_MESSAGE_BUFFER);
 
 	if (tab_room->selected_room) {
 		struct room *room = tab_room->selected_room->value;
