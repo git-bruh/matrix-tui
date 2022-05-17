@@ -148,7 +148,7 @@ form_redraw(struct form *form, struct widget_points *points) {
 
 		widget_points_set(&points_new, points->x1 + 1, points->x2 - 1,
 		  (points->y1 + y) - 1, points->y1 + y);
-		input_redraw(&form->fields[i], &points_new, &lines);
+		input_redraw(&form->fields[i], &points_new, &lines, false);
 
 		/* <= as it might not redraw if x2 - x1 is too small. */
 		assert(lines <= 1);
@@ -161,7 +161,8 @@ form_redraw(struct form *form, struct widget_points *points) {
 	  &points_new, points->x1 + 1, points->x2 - 1, y_selected - 1, y_selected);
 	/* We must draw the selected input field here as it sets the cursor
 	 * position. */
-	input_redraw(&form->fields[form->current_field], &points_new, &lines);
+	input_redraw(
+	  &form->fields[form->current_field], &points_new, &lines, false);
 
 	assert(lines <= 1);
 
