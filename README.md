@@ -2,6 +2,10 @@
 
 A terminal based Matrix client, WIP.
 
+![Login](images/login.png)
+
+![Room](images/room.png)
+
 # TODO
 
 - [ ] UI
