@@ -119,11 +119,14 @@ queue_listener(void *arg) {
 }
 
 static void
-reset_room_buffer(struct room *room) {
-	struct widget_points points = {0};
-	tab_room_get_buffer_points(&points);
+reset_selected_room_buffer(struct tab_room *tab_room) {
+	if (tab_room->selected_room) {
+		struct widget_points points[TAB_ROOM_MAX] = {0};
+		tab_room_get_points(tab_room, points);
 
-	room_maybe_reset_and_fill_events(room, &points);
+		room_maybe_reset_and_fill_events(
+		  tab_room->selected_room->value, &points[TAB_ROOM_MESSAGE_BUFFER]);
+	}
 }
 
 static int
@@ -171,9 +174,7 @@ ui_loop(struct state *state) {
 			tb_clear();
 			tb_hide_cursor();
 
-			if (tab_room.selected_room) {
-				reset_room_buffer(tab_room.selected_room->value);
-			}
+			reset_selected_room_buffer(&tab_room);
 
 			tab_room_redraw(&tab_room);
 

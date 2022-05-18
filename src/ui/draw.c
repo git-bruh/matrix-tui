@@ -11,19 +11,11 @@
 
 enum {
 	INPUT_HEIGHT = 5,
-	INPUT_BORDER_PX = 2, /* Border above and below the field. */
 	FORM_WIDTH = 68,
 	FORM_ART_GAP = 2,
 	TAB_ROOM_TREE_PERCENT = 20,
 	BORDER_HIGHLIGHT_FG = COLOR_BLUE,
 };
-
-/* Wrapper for drawing and highlighting borders. */
-static void
-border_highlight(struct widget_points *points, bool highlight) {
-	border_redraw(
-	  points, highlight ? BORDER_HIGHLIGHT_FG : TB_DEFAULT, TB_DEFAULT);
-}
 
 static int
 part_percent(int total, int percent) {
@@ -93,104 +85,87 @@ adjust_inside_border(struct widget_points *points) {
 	  points, points->x1 + 1, points->x2 - 1, points->y1 + 1, points->y2 - 1);
 }
 
+/* nullify adjust_inside_border */
 static void
-get_tree_points(struct widget_points *points) {
-	assert(points);
-
-	widget_points_set(points, 0,
-	  part_percent(tb_width(), TAB_ROOM_TREE_PERCENT), 0, tb_height());
+adjust_outside_border(struct widget_points *points) {
+	widget_points_set(
+	  points, points->x1 - 1, points->x2 + 1, points->y1 - 1, points->y2 + 1);
 }
 
 static void
-get_input_points(
-  struct widget_points *points, struct input *input, int *input_rows) {
-	assert(points);
-	assert(input);
-	assert(input_rows);
+border_highlight(struct widget_points *points, bool highlight) {
+	struct widget_points copy = *points;
 
-	struct widget_points tree_points = {0};
-	get_tree_points(&tree_points);
-
-	widget_points_set(points, tree_points.x2, tb_width(),
-	  tb_height() - INPUT_HEIGHT - INPUT_BORDER_PX, tb_height());
-
-	adjust_inside_border(points);
-	input_redraw(input, points, input_rows, true);
-
-	assert(*input_rows >= 0);
-
-	if (*input_rows == 0) {
-		*input_rows = 1;
-	}
-
-	/* -1 -1 for 2 border on 2 sides. */
-	widget_points_set(points, tree_points.x2, tb_width(),
-	  tb_height() - *input_rows - INPUT_BORDER_PX, tb_height());
-}
-
-static void
-get_buffer_points(struct widget_points *points, int input_rows) {
-	assert(points);
-	assert(input_rows > 0);
-
-	struct widget_points tree_points = {0};
-	get_tree_points(&tree_points);
-
-	widget_points_set(points, tree_points.x2, tb_width(), 0,
-	  tb_height() - input_rows - INPUT_BORDER_PX);
-}
-
-/* Excluding border. */
-void
-tab_room_get_buffer_points(struct widget_points *points) {
-	get_buffer_points(points, 1);
-	adjust_inside_border(points);
+	adjust_outside_border(&copy);
+	border_redraw(
+	  &copy, highlight ? BORDER_HIGHLIGHT_FG : TB_DEFAULT, TB_DEFAULT);
 }
 
 void
 tab_room_get_points(
   struct tab_room *tab_room, struct widget_points points[TAB_ROOM_MAX]) {
-	assert(tab_room);
-	assert(points);
+	const int input_border_px = 2; /* Border above and below the field. */
+
+	int height = tb_height();
+	int width = tb_width();
+
+	widget_points_set(&points[TAB_ROOM_TREE], 0,
+	  part_percent(width, TAB_ROOM_TREE_PERCENT), 0, height);
 
 	int input_rows = -1;
+	widget_points_set(&points[TAB_ROOM_INPUT], points[TAB_ROOM_TREE].x2, width,
+	  height - INPUT_HEIGHT - input_border_px, height);
+	adjust_inside_border(
+	  &points[TAB_ROOM_INPUT]); /* Do a dry run of drawing the input field to
+								   get rows. */
+	input_redraw(&tab_room->input, &points[TAB_ROOM_INPUT], &input_rows, true);
+	assert(input_rows >= 0);
 
-	get_tree_points(&points[TAB_ROOM_TREE]);
-	get_input_points(&points[TAB_ROOM_INPUT], &tab_room->input, &input_rows);
-	get_buffer_points(&points[TAB_ROOM_MESSAGE_BUFFER], input_rows);
+	if (input_rows == 0) {
+		input_rows = 1;
+	}
+
+	widget_points_set(&points[TAB_ROOM_INPUT], points[TAB_ROOM_TREE].x2, width,
+	  height - input_rows - input_border_px, height);
+	widget_points_set(&points[TAB_ROOM_MESSAGE_BUFFER],
+	  points[TAB_ROOM_TREE].x2, width, 0, points[TAB_ROOM_INPUT].y1);
+
+	/* We include borders in the above coordinates for easier organization.
+	 * Provide non-border points. */
+	for (enum tab_room_widget widget = 0; widget < TAB_ROOM_MAX; widget++) {
+		adjust_inside_border(&points[widget]);
+	}
 }
 
 void
 tab_room_redraw(struct tab_room *tab_room) {
 	assert(tab_room);
 
-	struct widget_points points = {0};
-	const enum tab_room_widget active = tab_room->widget;
+	struct widget_points points[TAB_ROOM_MAX] = {0};
+	tab_room_get_points(tab_room, points);
 
-	get_tree_points(&points);
-	border_highlight(&points, active == TAB_ROOM_TREE);
-	adjust_inside_border(&points);
-	treeview_redraw(&tab_room->treeview, &points);
+	for (enum tab_room_widget widget = 0; widget < TAB_ROOM_MAX; widget++) {
+		border_highlight(&points[widget], widget == tab_room->widget);
 
-	int input_rows = -1;
+		switch (widget) {
+		case TAB_ROOM_TREE:
+			treeview_redraw(&tab_room->treeview, &points[widget]);
+			break;
+		case TAB_ROOM_INPUT:
+			/* Don't pass input_rows as we don't neex it here. */
+			input_redraw(&tab_room->input, &points[widget], &(int) {0}, false);
+			break;
+		case TAB_ROOM_MESSAGE_BUFFER:
+			if (tab_room->selected_room) {
+				struct room *room = tab_room->selected_room->value;
 
-	get_input_points(&points, &tab_room->input, &input_rows);
-	border_highlight(&points, active == TAB_ROOM_INPUT);
-	adjust_inside_border(&points);
-
-	/* Don't pass input_rows as we already set it. */
-	input_redraw(&tab_room->input, &points, &(int) {0}, false);
-
-	/* Draw border even if no active room. */
-	get_buffer_points(&points, input_rows);
-	border_highlight(&points, active == TAB_ROOM_MESSAGE_BUFFER);
-
-	if (tab_room->selected_room) {
-		struct room *room = tab_room->selected_room->value;
-
-		adjust_inside_border(&points);
-		pthread_mutex_lock(&room->realloc_or_modify_mutex);
-		message_buffer_redraw(&room->buffer, &points);
-		pthread_mutex_unlock(&room->realloc_or_modify_mutex);
+				pthread_mutex_lock(&room->realloc_or_modify_mutex);
+				message_buffer_redraw(&room->buffer, &points[widget]);
+				pthread_mutex_unlock(&room->realloc_or_modify_mutex);
+			}
+			break;
+		default:
+			assert(0);
+		}
 	}
 }

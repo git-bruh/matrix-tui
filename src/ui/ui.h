@@ -70,8 +70,6 @@ void
 tab_room_get_points(
   struct tab_room *tab_room, struct widget_points points[TAB_ROOM_MAX]);
 void
-tab_room_get_buffer_points(struct widget_points *points);
-void
 tab_room_redraw(struct tab_room *room);
 void
 tab_login_redraw(struct tab_login *login);
