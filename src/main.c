@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <langinfo.h>
 #include <locale.h>
+#include <poll.h>
 
 enum { FD_TTY = 0, FD_RESIZE, FD_PIPE, FD_MAX };
 
