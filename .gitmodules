@@ -1,6 +1,6 @@
 [submodule "third_party/termbox-widgets"]
 	path = third_party/termbox-widgets
-	url = https://git.sr.ht/~git-bruh/termbox-widgets
+	url = https://codeberg.org/git-bruh/termbox-widgets
 [submodule "third_party/termbox2"]
 	path = third_party/termbox2
 	url = https://github.com/termbox/termbox2
@@ -9,4 +9,4 @@
 	url = https://github.com/git-bruh/stb
 [submodule "subprojects/libmatrix"]
 	path = subprojects/libmatrix
-	url = https://git.sr.ht/~git-bruh/libmatrix
+	url = https://codeberg.org/git-bruh/libmatrix
