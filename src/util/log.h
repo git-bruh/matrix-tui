@@ -12,11 +12,11 @@ log_path_set(void);
 const char *
 log_path(void);
 void
-log_mutex_lock();
+log_mutex_lock(void);
 void
-log_mutex_unlock();
+log_mutex_unlock(void);
 void
-log_mutex_destroy();
+log_mutex_destroy(void);
 
 __attribute__((unused)) static inline void
 log_level_and_time(enum log_level level) {

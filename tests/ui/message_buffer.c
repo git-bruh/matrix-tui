@@ -104,7 +104,7 @@ check_select(struct message *last, struct message *prev_to_last) {
 }
 
 static void
-action() {
+action(void) {
 	size_t size = sizeof(messages) / sizeof(*messages);
 
 	TEST_ASSERT_EQUAL(-1, message_buffer_redact(&buf, 2));
