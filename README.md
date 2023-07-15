@@ -1,6 +1,8 @@
 # matrix-tui
 
-A terminal based Matrix client, WIP.
+A terminal based Matrix client, WIP. Abandoned, not likely to be worked on in the near future... :/
+
+[![asciicast](https://asciinema.org/a/596913.png)](https://asciinema.org/a/596913?autoplay=1&speed=3)
 
 ![Login](images/login.png)
 
@@ -83,6 +85,10 @@ Make sure to run `git submodule update --remote --init --depth=1 -f` to clone th
 # Building
 
 * Run `meson . build` and `ninja -C build` to build the project. The binary will be stored at `build/matrix-tui`
+
+# Architecture
+
+...
 
 # Contributing
 
