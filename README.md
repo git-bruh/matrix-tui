@@ -2,7 +2,9 @@
 
 A terminal based Matrix client, WIP. Abandoned, not likely to be worked on in the near future... :/
 
-[![asciicast](https://asciinema.org/a/596913.png)](https://asciinema.org/a/596913?autoplay=1&speed=3)
+Click the below image to view an `asciinema` demo:
+
+[![asciicast](images/preview.png)](https://asciinema.org/a/596913?autoplay=1&speed=3)
 
 ![Login](images/login.png)
 
